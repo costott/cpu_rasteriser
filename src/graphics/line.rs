@@ -1,0 +1,106 @@
+use crate::framebuffer::FrameBuffer;
+use crate::prelude::*;
+
+pub fn draw_horizontal(framebuffer: &mut FrameBuffer, p1: Vertex2D, p2: Vertex2D) {
+    let y = p1.position.y as i32;
+    let x_start = p1.position.x.min(p2.position.x) as i32;
+    let x_end = p1.position.x.max(p2.position.x) as i32;
+
+    for x in x_start..=x_end {
+        framebuffer.set_pixel(
+            (x, y).into(),
+            p1.colour
+                .lerp(&p2.colour, x as f32 / (x_end - x_start) as f32),
+        );
+    }
+}
+
+pub fn draw_vertical(framebuffer: &mut FrameBuffer, p1: Vertex2D, p2: Vertex2D) {
+    let x = p1.position.x as i32;
+    let y_start = p1.position.y.min(p2.position.y) as i32;
+    let y_end = p1.position.y.max(p2.position.y) as i32;
+
+    for y in y_start..=y_end {
+        framebuffer.set_pixel(
+            (x, y).into(),
+            p1.colour
+                .lerp(&p2.colour, y as f32 / (y_end - y_start) as f32),
+        );
+    }
+}
+
+/// Draws a line using Bresenham's line algorithm from point `p1` to point `p2`.
+pub fn draw_line(framebuffer: &mut FrameBuffer, p1: Vertex2D, p2: Vertex2D) {
+    let mut x0 = p1.position.x as i32;
+    let mut y0 = p1.position.y as i32;
+    let x1 = p2.position.x as i32;
+    let y1 = p2.position.y as i32;
+
+    if y0 == y1 {
+        draw_horizontal(framebuffer, p1, p2);
+        return;
+    }
+
+    if x0 == x1 {
+        draw_vertical(framebuffer, p1, p2);
+        return;
+    }
+
+    let dx = (x1 - x0).abs();
+    let dy = (y1 - y0).abs();
+
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let sy = if y0 < y1 { 1 } else { -1 };
+
+    let mut err = dx - dy;
+
+    loop {
+        framebuffer.set_pixel(
+            (x0, y0).into(),
+            p1.colour.lerp(
+                &p2.colour,
+                ((x0 - p1.position.x as i32).abs() as f32) / (dx as f32),
+            ),
+        );
+
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+
+        let e2 = err * 2;
+
+        if e2 > -dy {
+            err -= dy;
+            x0 += sx;
+        }
+
+        if e2 < dx {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+pub fn draw_line_dda(framebuffer: &mut FrameBuffer, p1: Vec2, p2: Vec2, colour: Colour) {
+    let x0 = p1.x;
+    let y0 = p1.y;
+    let x1 = p2.x;
+    let y1 = p2.y;
+
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+
+    let steps = dx.abs().max(dy.abs());
+
+    let x_inc = dx / steps;
+    let y_inc = dy / steps;
+
+    let mut x = x0;
+    let mut y = y0;
+
+    for _ in 0..=steps as usize {
+        framebuffer.set_pixel((x, y).into(), colour);
+        x += x_inc;
+        y += y_inc;
+    }
+}
