@@ -1,7 +1,8 @@
-use crate::graphics::clipping::*;
 use crate::prelude::*;
 
 use crate::graphics::camera::Camera;
+use crate::graphics::clipping::*;
+use crate::graphics::vertex_shader::*;
 
 pub struct GeometryProcessor;
 impl GeometryProcessor {
@@ -19,18 +20,20 @@ impl GeometryProcessor {
         ClipVertex {
             position: clip,
             colour: vertex.colour,
+            normal: vertex.normal,
         }
     }
 
     /// Transforms a triangle of 3D vertices into a triangle of clip space vertices using the model matrix and camera.
     pub fn transform_triangle(
         triangle: Triangle3D,
+        shader: &dyn VertexShader,
         model_matrix: Mat4,
         camera: &Camera,
     ) -> TriangleClip {
-        let a = Self::transform_vertex(triangle.a, model_matrix, camera);
-        let b = Self::transform_vertex(triangle.b, model_matrix, camera);
-        let c = Self::transform_vertex(triangle.c, model_matrix, camera);
+        let a = Self::transform_vertex(shader.shade(triangle.a), model_matrix, camera);
+        let b = Self::transform_vertex(shader.shade(triangle.b), model_matrix, camera);
+        let c = Self::transform_vertex(shader.shade(triangle.c), model_matrix, camera);
 
         TriangleClip { a, b, c }
     }
@@ -46,7 +49,7 @@ impl GeometryProcessor {
             (1.0 - ndc.y) * 0.5 * viewport.height as f32,
         );
 
-        Vertex2D::new(screen, vertex.colour, ndc.z)
+        Vertex2D::new(screen, vertex.colour, vertex.normal, ndc.z)
     }
 
     /// Projects a triangle of clip space vertices into a triangle of 2D screen space vertices using the viewport dimensions.
@@ -60,11 +63,12 @@ impl GeometryProcessor {
 
     pub fn process_triangle(
         triangle: Triangle3D,
+        shader: &dyn VertexShader,
         model_matrix: Mat4,
         camera: &Camera,
         viewport: &Viewport,
     ) -> Vec<Triangle2D> {
-        let triangle_clip = Self::transform_triangle(triangle, model_matrix, camera);
+        let triangle_clip = Self::transform_triangle(triangle, shader, model_matrix, camera);
 
         let clipped = clip_triangle(triangle_clip);
 

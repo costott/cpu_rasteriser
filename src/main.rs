@@ -15,7 +15,9 @@ use prelude::*;
 
 use crate::graphics::{
     camera::{Camera, Projection},
-    geometry_processing::GeometryProcessor,
+    fragment_shader::BasicFragmentShader,
+    lighting::DirectionalLight,
+    vertex_shader::{BasicVertexShader, GouraudVertexShader},
 };
 
 const WIDTH: usize = 640;
@@ -35,7 +37,12 @@ fn main() {
 
     let viewport = Viewport::new(WIDTH, HEIGHT);
 
-    let mut renderer = Renderer::new(&viewport);
+    let mut renderer = Renderer::new(&viewport, Box::new(BasicFragmentShader));
+
+    let vertex_shader = GouraudVertexShader::new(DirectionalLight::new(
+        Vec3::new(0.0, -1.0, -1.0),
+        Colour::WHITE,
+    ));
 
     let mut camera = Camera::new(
         Vec3::new(0.0, -0.75, 1.25),
@@ -52,11 +59,6 @@ fn main() {
         )),
     );
 
-    let y_axis_max = Vertex3D::new(Vec3::new(0.0, 100.0, 0.0), Colour::WHITE);
-    let y_axis_min = Vertex3D::new(Vec3::new(0.0, -100.0, 0.0), Colour::WHITE);
-    let x_axis_max = Vertex3D::new(Vec3::new(100.0, 0.0, 0.0), Colour::WHITE);
-    let x_axis_min = Vertex3D::new(Vec3::new(-100.0, 0.0, 0.0), Colour::WHITE);
-
     let mut cube_model = Model::new(
         Mesh::cube(Colour::WHITE),
         ModelTransform::new(
@@ -65,6 +67,7 @@ fn main() {
             Vec3::new(1.0, 1.0, 1.0),
         ),
     );
+    cube_model.mesh.calculate_vertex_normals();
 
     let mut t: f32 = 0.0;
     let mut angle: f32 = 0.0;
@@ -81,23 +84,12 @@ fn main() {
         renderer.clear(Colour::BLACK);
 
         angle += 1.0 * dt;
-        // camera.eye.z = 1.0 + 1.0 * t.sin();
+        // camera.eye.z = 1.0 + 1.0 * t.sin();c
 
         cube_model.transform.rotation.y = angle;
+        // cube_model.transform.rotation.x = 1.1 * angle;
 
-        // draw axes
-        // draw_line(
-        //     &mut renderer,
-        //     GeometryProcessor::process(y_axis_min, Mat4::identity(), &camera, &viewport),
-        //     GeometryProcessor::process(y_axis_max, Mat4::identity(), &camera, &viewport),
-        // );
-        // draw_line(
-        //     &mut renderer,
-        //     GeometryProcessor::process(x_axis_min, Mat4::identity(), &camera, &viewport),
-        //     GeometryProcessor::process(x_axis_max, Mat4::identity(), &camera, &viewport),
-        // );
-
-        cube_model.draw_filled(&mut renderer, &camera, &viewport);
+        cube_model.draw_filled(&mut renderer, &vertex_shader, &camera, &viewport);
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)

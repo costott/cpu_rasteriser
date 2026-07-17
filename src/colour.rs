@@ -74,6 +74,16 @@ impl Mul<f32> for Colour {
         Self::new(r, g, b)
     }
 }
+impl Mul for Colour {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
+        let r = ((self.r as u16 * other.r as u16) / 255) as u8;
+        let g = ((self.g as u16 * other.g as u16) / 255) as u8;
+        let b = ((self.b as u16 * other.b as u16) / 255) as u8;
+        Self::new(r, g, b)
+    }
+}
 impl Div<f32> for Colour {
     type Output = Self;
 

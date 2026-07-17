@@ -1,3 +1,4 @@
+use crate::graphics::vertex_shader::VertexShader;
 use crate::prelude::*;
 
 use crate::graphics::camera::Camera;
@@ -12,14 +13,36 @@ impl Model {
         Self { mesh, transform }
     }
 
-    pub fn draw_wireframe(&self, renderer: &mut Renderer, camera: &Camera, viewport: &Viewport) {
-        self.mesh
-            .draw_wireframe(renderer, self.transform.model_matrix(), camera, viewport);
+    pub fn draw_wireframe(
+        &self,
+        renderer: &mut Renderer,
+        vertex_shader: &dyn VertexShader,
+        camera: &Camera,
+        viewport: &Viewport,
+    ) {
+        self.mesh.draw_wireframe(
+            renderer,
+            vertex_shader,
+            self.transform.model_matrix(),
+            camera,
+            viewport,
+        );
     }
 
-    pub fn draw_filled(&self, renderer: &mut Renderer, camera: &Camera, viewport: &Viewport) {
-        self.mesh
-            .draw_filled(renderer, self.transform.model_matrix(), camera, viewport);
+    pub fn draw_filled(
+        &self,
+        renderer: &mut Renderer,
+        vertex_shader: &dyn VertexShader,
+        camera: &Camera,
+        viewport: &Viewport,
+    ) {
+        self.mesh.draw_filled(
+            renderer,
+            vertex_shader,
+            self.transform.model_matrix(),
+            camera,
+            viewport,
+        );
     }
 }
 
