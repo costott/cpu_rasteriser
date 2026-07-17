@@ -5,7 +5,9 @@ use crate::graphics::geometry_processing::GeometryProcessor;
 use crate::renderer::Renderer;
 
 pub struct Mesh {
+    /// The vertices of the mesh.
     vertices: Vec<Vertex3D>,
+    /// The indices of the mesh, which define the triangles.
     indices: Vec<u32>,
 }
 impl Mesh {
@@ -16,14 +18,14 @@ impl Mesh {
     /// Creates a white cube mesh with 8 vertices and 12 triangles (36 indices).
     pub fn cube(colour: Colour) -> Self {
         let vertices = vec![
-            Vertex3D::new(Vec3::new(-0.5, -0.5, -0.5), colour),
-            Vertex3D::new(Vec3::new(0.5, -0.5, -0.5), colour),
-            Vertex3D::new(Vec3::new(0.5, 0.5, -0.5), colour),
-            Vertex3D::new(Vec3::new(-0.5, 0.5, -0.5), colour),
-            Vertex3D::new(Vec3::new(-0.5, -0.5, 0.5), colour),
-            Vertex3D::new(Vec3::new(0.5, -0.5, 0.5), colour),
-            Vertex3D::new(Vec3::new(0.5, 0.5, 0.5), colour),
-            Vertex3D::new(Vec3::new(-0.5, 0.5, 0.5), colour),
+            Vertex3D::new(Vec3::new(-0.5, -0.5, -0.5), Colour::RED),
+            Vertex3D::new(Vec3::new(0.5, -0.5, -0.5), Colour::GREEN),
+            Vertex3D::new(Vec3::new(0.5, 0.5, -0.5), Colour::BLUE),
+            Vertex3D::new(Vec3::new(-0.5, 0.5, -0.5), Colour::RED),
+            Vertex3D::new(Vec3::new(-0.5, -0.5, 0.5), Colour::GREEN),
+            Vertex3D::new(Vec3::new(0.5, -0.5, 0.5), Colour::BLUE),
+            Vertex3D::new(Vec3::new(0.5, 0.5, 0.5), Colour::RED),
+            Vertex3D::new(Vec3::new(-0.5, 0.5, 0.5), Colour::GREEN),
         ];
 
         let indices = vec![

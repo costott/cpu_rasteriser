@@ -38,7 +38,7 @@ fn main() {
     let mut renderer = Renderer::new(&viewport);
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, 0.0, 1.0),
+        Vec3::new(0.0, -0.75, 1.25),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
         // Projection::Orthographic(graphics::camera::OrthographicProjection::new(
@@ -81,7 +81,7 @@ fn main() {
         renderer.clear(Colour::BLACK);
 
         angle += 1.0 * dt;
-        camera.eye.z = 1.0 + 1.0 * t.sin();
+        // camera.eye.z = 1.0 + 1.0 * t.sin();
 
         cube_model.transform.rotation.y = angle;
 
@@ -97,7 +97,7 @@ fn main() {
         //     GeometryProcessor::process(x_axis_max, Mat4::identity(), &camera, &viewport),
         // );
 
-        cube_model.draw_wireframe(&mut renderer, &camera, &viewport);
+        cube_model.draw_filled(&mut renderer, &camera, &viewport);
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)

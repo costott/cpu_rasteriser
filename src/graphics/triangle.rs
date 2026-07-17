@@ -74,18 +74,17 @@ impl Triangle2D {
 
             let mut t = (x_start as f32 + 0.5 - left.x) * x_step;
 
-            let mut colour = left.colour.lerp(&right.colour, t);
-
-            let colour_step = left.colour.lerp(&right.colour, x_step) - left.colour;
+            let mut colour = left.colour + (right.colour - left.colour) * t;
+            let colour_step = (right.colour - left.colour) * x_step;
 
             let mut depth = left.depth + (right.depth - left.depth) * t;
 
             let depth_step = (right.depth - left.depth) * x_step;
 
             for x in x_start..x_end {
-                renderer.write_fragment((x, y).into(), colour, depth);
+                renderer.write_fragment((x, y).into(), colour.into(), depth);
 
-                colour += colour_step;
+                colour = colour + colour_step;
                 depth += depth_step;
                 t += x_step;
             }
@@ -102,8 +101,8 @@ struct Edge {
     x: f32,
     x_step: f32,
 
-    colour: Colour,
-    colour_step: Colour,
+    colour: Vec3,
+    colour_step: Vec3,
 
     depth: f32,
     depth_step: f32,
@@ -129,8 +128,13 @@ impl Edge {
             x: a.position.x + (b.position.x - a.position.x) * t,
             x_step: (b.position.x - a.position.x) * height,
 
-            colour: a.colour.lerp(&b.colour, t),
-            colour_step: a.colour.lerp(&b.colour, height) - a.colour.lerp(&b.colour, 0.0),
+            colour: Vec3::new(a.colour.r as f32, a.colour.g as f32, a.colour.b as f32)
+                + (Vec3::new(b.colour.r as f32, b.colour.g as f32, b.colour.b as f32)
+                    - Vec3::new(a.colour.r as f32, a.colour.g as f32, a.colour.b as f32))
+                    * t,
+            colour_step: (Vec3::new(b.colour.r as f32, b.colour.g as f32, b.colour.b as f32)
+                - Vec3::new(a.colour.r as f32, a.colour.g as f32, a.colour.b as f32))
+                * height,
 
             depth: a.depth + (b.depth - a.depth) * t,
             depth_step: (b.depth - a.depth) * height,
@@ -139,7 +143,7 @@ impl Edge {
 
     fn step(&mut self) {
         self.x += self.x_step;
-        self.colour += self.colour_step;
+        self.colour = self.colour + self.colour_step;
         self.depth += self.depth_step;
     }
 }
@@ -204,5 +208,25 @@ mod tests {
 
             assert_eq!(*pixel, black, "unexpected filled pixel at index {index}");
         }
+    }
+
+    #[test]
+    fn draw_filled_interpolates_colour_across_scanlines() {
+        let viewport = Viewport::new(4, 4);
+        let mut renderer = Renderer::new(&viewport);
+        renderer.clear(Colour::BLACK);
+
+        let triangle = Triangle2D::new(
+            Vertex2D::new(Vec2::new(0.5, 0.5), Colour::RED, 0.5),
+            Vertex2D::new(Vec2::new(3.5, 0.5), Colour::GREEN, 0.5),
+            Vertex2D::new(Vec2::new(0.5, 3.5), Colour::RED, 0.5),
+        );
+
+        triangle.draw_filled(&mut renderer);
+
+        let pixel = Colour::from_u32(renderer.pixels()[5]);
+
+        assert!(pixel.r < 255, "expected red channel to decrease across the scanline");
+        assert!(pixel.g > 0, "expected green channel to increase across the scanline");
     }
 }

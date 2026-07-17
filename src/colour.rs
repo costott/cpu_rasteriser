@@ -1,3 +1,4 @@
+use crate::maths::Vec3;
 use std::ops::{Add, AddAssign, Div, Mul, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -81,5 +82,15 @@ impl Div<f32> for Colour {
         let g = (self.g as f32 / scalar).clamp(0.0, 255.0) as u8;
         let b = (self.b as f32 / scalar).clamp(0.0, 255.0) as u8;
         Self::new(r, g, b)
+    }
+}
+
+impl From<Vec3> for Colour {
+    fn from(vec: Vec3) -> Self {
+        Self::new(
+            vec.x.clamp(0.0, 255.0) as u8,
+            vec.y.clamp(0.0, 255.0) as u8,
+            vec.z.clamp(0.0, 255.0) as u8,
+        )
     }
 }
