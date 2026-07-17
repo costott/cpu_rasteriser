@@ -64,9 +64,9 @@ impl GeometryProcessor {
         camera: &Camera,
         viewport: &Viewport,
     ) -> Vec<Triangle2D> {
-        let clip_triangle = Self::transform_triangle(triangle, model_matrix, camera);
+        let triangle_clip = Self::transform_triangle(triangle, model_matrix, camera);
 
-        let clipped = clip_triangle_near(clip_triangle);
+        let clipped = clip_triangle(triangle_clip);
 
         clipped
             .iter()

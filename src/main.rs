@@ -97,7 +97,7 @@ fn main() {
         //     GeometryProcessor::process(x_axis_max, Mat4::identity(), &camera, &viewport),
         // );
 
-        cube_model.draw_filled(&mut renderer, &camera, &viewport);
+        cube_model.draw_wireframe(&mut renderer, &camera, &viewport);
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)

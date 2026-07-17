@@ -1,4 +1,3 @@
-use crate::graphics::clipping::clip_triangle_near;
 use crate::prelude::*;
 
 use crate::graphics::camera::Camera;
