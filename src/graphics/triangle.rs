@@ -1,24 +1,24 @@
-use crate::framebuffer::FrameBuffer;
 use crate::prelude::*;
+use crate::renderer::Renderer;
 
 pub struct Triangle {
-    a: Vertex2D,
-    b: Vertex2D,
-    c: Vertex2D,
+    pub a: Vertex2D,
+    pub b: Vertex2D,
+    pub c: Vertex2D,
 }
 impl Triangle {
     pub fn new(a: Vertex2D, b: Vertex2D, c: Vertex2D) -> Self {
         Self { a, b, c }
     }
 
-    pub fn draw(&self, framebuffer: &mut FrameBuffer) {
-        draw_line(framebuffer, self.a, self.b);
-        draw_line(framebuffer, self.b, self.c);
-        draw_line(framebuffer, self.c, self.a);
+    pub fn draw(&self, renderer: &mut Renderer) {
+        draw_line(renderer, self.a, self.b);
+        draw_line(renderer, self.b, self.c);
+        draw_line(renderer, self.c, self.a);
     }
 
     /// Uses a scanline algorithm to fill the triangle
-    pub fn draw_filled(&self, framebuffer: &mut FrameBuffer) {
+    pub fn draw_filled(&self, renderer: &mut Renderer) {
         let mut vertices = [self.a, self.b, self.c];
 
         vertices.sort_by(|a, b| a.position.y.partial_cmp(&b.position.y).unwrap());
@@ -74,7 +74,7 @@ impl Triangle {
 
                 let pixel = left.lerp(&right, t);
 
-                framebuffer.set_pixel((x, y).into(), pixel.colour);
+                renderer.write_pixel((x, y).into(), pixel.colour, pixel.depth);
             }
         }
     }

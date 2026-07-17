@@ -1,48 +1,50 @@
-use crate::framebuffer::FrameBuffer;
 use crate::prelude::*;
+use crate::renderer::Renderer;
 
-pub fn draw_horizontal(framebuffer: &mut FrameBuffer, p1: Vertex2D, p2: Vertex2D) {
+pub fn draw_horizontal(renderer: &mut Renderer, p1: Vertex2D, p2: Vertex2D) {
     let y = p1.position.y as i32;
     let x_start = p1.position.x.min(p2.position.x) as i32;
     let x_end = p1.position.x.max(p2.position.x) as i32;
 
     for x in x_start..=x_end {
-        framebuffer.set_pixel(
+        let t = x as f32 / (x_end - x_start) as f32;
+        renderer.write_pixel(
             (x, y).into(),
-            p1.colour
-                .lerp(&p2.colour, x as f32 / (x_end - x_start) as f32),
+            p1.colour.lerp(&p2.colour, t),
+            p1.depth * (1.0 - t) + p2.depth * t,
         );
     }
 }
 
-pub fn draw_vertical(framebuffer: &mut FrameBuffer, p1: Vertex2D, p2: Vertex2D) {
+pub fn draw_vertical(renderer: &mut Renderer, p1: Vertex2D, p2: Vertex2D) {
     let x = p1.position.x as i32;
     let y_start = p1.position.y.min(p2.position.y) as i32;
     let y_end = p1.position.y.max(p2.position.y) as i32;
 
     for y in y_start..=y_end {
-        framebuffer.set_pixel(
+        let t = y as f32 / (y_end - y_start) as f32;
+        renderer.write_pixel(
             (x, y).into(),
-            p1.colour
-                .lerp(&p2.colour, y as f32 / (y_end - y_start) as f32),
+            p1.colour.lerp(&p2.colour, t),
+            p1.depth * (1.0 - t) + p2.depth * t,
         );
     }
 }
 
 /// Draws a line using Bresenham's line algorithm from point `p1` to point `p2`.
-pub fn draw_line(framebuffer: &mut FrameBuffer, p1: Vertex2D, p2: Vertex2D) {
+pub fn draw_line(renderer: &mut Renderer, p1: Vertex2D, p2: Vertex2D) {
     let mut x0 = p1.position.x as i32;
     let mut y0 = p1.position.y as i32;
     let x1 = p2.position.x as i32;
     let y1 = p2.position.y as i32;
 
     if y0 == y1 {
-        draw_horizontal(framebuffer, p1, p2);
+        draw_horizontal(renderer, p1, p2);
         return;
     }
 
     if x0 == x1 {
-        draw_vertical(framebuffer, p1, p2);
+        draw_vertical(renderer, p1, p2);
         return;
     }
 
@@ -55,12 +57,11 @@ pub fn draw_line(framebuffer: &mut FrameBuffer, p1: Vertex2D, p2: Vertex2D) {
     let mut err = dx - dy;
 
     loop {
-        framebuffer.set_pixel(
+        let t = ((x0 - p1.position.x as i32).abs() as f32) / (dx as f32);
+        renderer.write_pixel(
             (x0, y0).into(),
-            p1.colour.lerp(
-                &p2.colour,
-                ((x0 - p1.position.x as i32).abs() as f32) / (dx as f32),
-            ),
+            p1.colour.lerp(&p2.colour, t),
+            p1.depth * (1.0 - t) + p2.depth * t,
         );
 
         if x0 == x1 && y0 == y1 {
@@ -81,7 +82,7 @@ pub fn draw_line(framebuffer: &mut FrameBuffer, p1: Vertex2D, p2: Vertex2D) {
     }
 }
 
-pub fn draw_line_dda(framebuffer: &mut FrameBuffer, p1: Vec2, p2: Vec2, colour: Colour) {
+pub fn draw_line_dda(renderer: &mut Renderer, p1: Vec2, p2: Vec2, colour: Colour) {
     let x0 = p1.x;
     let y0 = p1.y;
     let x1 = p2.x;
@@ -99,7 +100,7 @@ pub fn draw_line_dda(framebuffer: &mut FrameBuffer, p1: Vec2, p2: Vec2, colour: 
     let mut y = y0;
 
     for _ in 0..=steps as usize {
-        framebuffer.set_pixel((x, y).into(), colour);
+        renderer.write_pixel((x, y).into(), colour, 0.0);
         x += x_inc;
         y += y_inc;
     }

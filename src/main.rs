@@ -1,10 +1,12 @@
 use minifb::{Key, Window, WindowOptions};
 
-pub mod framebuffer;
-use framebuffer::FrameBuffer;
 pub mod colour;
+pub mod depthbuffer;
+pub mod framebuffer;
 pub mod graphics;
 pub mod maths;
+pub mod renderer;
+use renderer::Renderer;
 
 pub mod prelude;
 use prelude::*;
@@ -24,22 +26,34 @@ fn main() {
     });
     window.set_target_fps(60);
 
-    let mut framebuffer = FrameBuffer::new(WIDTH, HEIGHT);
+    let mut renderer = Renderer::new(WIDTH, HEIGHT);
 
     let triangle = Triangle::new(
-        (100.0, 100.0, Colour::BLUE).into(),
-        (200.0, 150.0, Colour::RED).into(),
-        (150.0, 200.0, Colour::GREEN).into(),
+        (100.0, 100.0, Colour::BLUE, 0.25).into(),
+        (200.0, 150.0, Colour::RED, 0.25).into(),
+        (150.0, 200.0, Colour::GREEN, 0.25).into(),
     );
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        framebuffer.clear(Colour::BLACK);
+    let mut behind_triangle = Triangle::new(
+        (120.0, 100.0, Colour::from_u32(0x338000), 0.5).into(),
+        (220.0, 150.0, Colour::from_u32(0x008080), 0.5).into(),
+        (170.0, 200.0, Colour::from_u32(0x800080), 0.0).into(),
+    );
 
-        triangle.draw_filled(&mut framebuffer);
-        // triangle.draw_filled(&mut framebuffer, Colour::BLUE);
+    let mut t: f32 = 0.0;
+
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        renderer.clear(Colour::BLACK);
+
+        behind_triangle.draw_filled(&mut renderer);
+        triangle.draw_filled(&mut renderer);
+        // triangle.draw_filled(&mut renderer, Colour::BLUE);
+
+        behind_triangle.c.depth = 0.5 + 0.5 * -t.sin().powi(2);
 
         window
-            .update_with_buffer(framebuffer.pixels(), WIDTH, HEIGHT)
+            .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
             .unwrap();
+        t += 0.017;
     }
 }
