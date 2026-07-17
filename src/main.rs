@@ -58,7 +58,7 @@ fn main() {
     let x_axis_min = Vertex3D::new(Vec3::new(-100.0, 0.0, 0.0), Colour::WHITE);
 
     let mut cube_model = Model::new(
-        Mesh::cube(Colour::BLUE),
+        Mesh::cube(Colour::WHITE),
         ModelTransform::new(
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 0.0, 0.0),
@@ -81,7 +81,7 @@ fn main() {
         renderer.clear(Colour::BLACK);
 
         angle += 1.0 * dt;
-        camera.eye.z = 1.0 + 0.5 * (t * 2.0).sin();
+        camera.eye.z = 1.0 + 1.0 * t.sin();
 
         cube_model.transform.rotation.y = angle;
 

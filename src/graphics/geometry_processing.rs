@@ -1,13 +1,12 @@
-use crate::{graphics::camera::Camera, prelude::*};
+use crate::graphics::clipping::*;
+use crate::prelude::*;
+
+use crate::graphics::camera::Camera;
 
 pub struct GeometryProcessor;
 impl GeometryProcessor {
-    pub fn process(
-        vertex: Vertex3D,
-        model_matrix: Mat4,
-        camera: &Camera,
-        viewport: &Viewport,
-    ) -> Vertex2D {
+    /// Transforms a 3D vertex into a clip space vertex using the model matrix and camera.
+    pub fn transform_vertex(vertex: Vertex3D, model_matrix: Mat4, camera: &Camera) -> ClipVertex {
         // Model to World
         let world = model_matrix * vertex.position.to_homogenous();
 
@@ -17,8 +16,29 @@ impl GeometryProcessor {
         // Projection from 3D to 2D coordinates
         let clip = camera.projection_matrix() * view;
 
+        ClipVertex {
+            position: clip,
+            colour: vertex.colour,
+        }
+    }
+
+    /// Transforms a triangle of 3D vertices into a triangle of clip space vertices using the model matrix and camera.
+    pub fn transform_triangle(
+        triangle: Triangle3D,
+        model_matrix: Mat4,
+        camera: &Camera,
+    ) -> TriangleClip {
+        let a = Self::transform_vertex(triangle.a, model_matrix, camera);
+        let b = Self::transform_vertex(triangle.b, model_matrix, camera);
+        let c = Self::transform_vertex(triangle.c, model_matrix, camera);
+
+        TriangleClip { a, b, c }
+    }
+
+    /// Projects a clip space vertex into 2D screen space using the viewport dimensions.
+    pub fn project_vertex(vertex: ClipVertex, viewport: &Viewport) -> Vertex2D {
         // 2D coordiantes to normalised device coordinates
-        let ndc = clip / clip.w;
+        let ndc = vertex.position / vertex.position.w;
 
         // Normalised device coordinates to screen coordinates
         let screen = Vec2::new(
@@ -29,16 +49,28 @@ impl GeometryProcessor {
         Vertex2D::new(screen, vertex.colour, ndc.z)
     }
 
+    /// Projects a triangle of clip space vertices into a triangle of 2D screen space vertices using the viewport dimensions.
+    pub fn project_triangle(triangle: TriangleClip, viewport: &Viewport) -> Triangle2D {
+        let a = Self::project_vertex(triangle.a, viewport);
+        let b = Self::project_vertex(triangle.b, viewport);
+        let c = Self::project_vertex(triangle.c, viewport);
+
+        Triangle2D { a, b, c }
+    }
+
     pub fn process_triangle(
         triangle: Triangle3D,
         model_matrix: Mat4,
         camera: &Camera,
         viewport: &Viewport,
-    ) -> Triangle {
-        let a = Self::process(triangle.a, model_matrix, camera, viewport);
-        let b = Self::process(triangle.b, model_matrix, camera, viewport);
-        let c = Self::process(triangle.c, model_matrix, camera, viewport);
+    ) -> Vec<Triangle2D> {
+        let clip_triangle = Self::transform_triangle(triangle, model_matrix, camera);
 
-        Triangle::new(a, b, c)
+        let clipped = clip_triangle_near(clip_triangle);
+
+        clipped
+            .iter()
+            .map(|t| Self::project_triangle(*t, viewport))
+            .collect()
     }
 }
