@@ -20,7 +20,7 @@ impl Renderer {
         self.depthbuffer.clear();
     }
 
-    pub fn write_pixel(&mut self, p: Vec2, colour: Colour, depth: f32) {
+    pub fn write_fragment(&mut self, p: Vec2, colour: Colour, depth: f32) {
         if depth < self.depthbuffer.get(p) {
             self.framebuffer.set_pixel(p, colour);
             self.depthbuffer.set_depth(p, depth);

@@ -74,7 +74,7 @@ impl Triangle {
 
                 let pixel = left.lerp(&right, t);
 
-                renderer.write_pixel((x, y).into(), pixel.colour, pixel.depth);
+                renderer.write_fragment((x, y).into(), pixel.colour, pixel.depth);
             }
         }
     }

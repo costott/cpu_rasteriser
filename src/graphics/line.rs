@@ -8,7 +8,7 @@ pub fn draw_horizontal(renderer: &mut Renderer, p1: Vertex2D, p2: Vertex2D) {
 
     for x in x_start..=x_end {
         let t = x as f32 / (x_end - x_start) as f32;
-        renderer.write_pixel(
+        renderer.write_fragment(
             (x, y).into(),
             p1.colour.lerp(&p2.colour, t),
             p1.depth * (1.0 - t) + p2.depth * t,
@@ -23,7 +23,7 @@ pub fn draw_vertical(renderer: &mut Renderer, p1: Vertex2D, p2: Vertex2D) {
 
     for y in y_start..=y_end {
         let t = y as f32 / (y_end - y_start) as f32;
-        renderer.write_pixel(
+        renderer.write_fragment(
             (x, y).into(),
             p1.colour.lerp(&p2.colour, t),
             p1.depth * (1.0 - t) + p2.depth * t,
@@ -58,7 +58,7 @@ pub fn draw_line(renderer: &mut Renderer, p1: Vertex2D, p2: Vertex2D) {
 
     loop {
         let t = ((x0 - p1.position.x as i32).abs() as f32) / (dx as f32);
-        renderer.write_pixel(
+        renderer.write_fragment(
             (x0, y0).into(),
             p1.colour.lerp(&p2.colour, t),
             p1.depth * (1.0 - t) + p2.depth * t,
@@ -100,7 +100,7 @@ pub fn draw_line_dda(renderer: &mut Renderer, p1: Vec2, p2: Vec2, colour: Colour
     let mut y = y0;
 
     for _ in 0..=steps as usize {
-        renderer.write_pixel((x, y).into(), colour, 0.0);
+        renderer.write_fragment((x, y).into(), colour, 0.0);
         x += x_inc;
         y += y_inc;
     }
