@@ -2,16 +2,17 @@ use crate::colour::Colour;
 use crate::depthbuffer::DepthBuffer;
 use crate::framebuffer::FrameBuffer;
 use crate::maths::Vec2;
+use crate::viewport::Viewport;
 
 pub struct Renderer {
     framebuffer: FrameBuffer,
     depthbuffer: DepthBuffer,
 }
 impl Renderer {
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn new(viewport: &Viewport) -> Self {
         Self {
-            framebuffer: FrameBuffer::new(width, height),
-            depthbuffer: DepthBuffer::new(width, height),
+            framebuffer: FrameBuffer::new(viewport.width, viewport.height),
+            depthbuffer: DepthBuffer::new(viewport.width, viewport.height),
         }
     }
 
