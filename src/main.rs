@@ -47,7 +47,6 @@ fn main() {
 
         behind_triangle.draw_filled(&mut renderer);
         triangle.draw_filled(&mut renderer);
-        // triangle.draw_filled(&mut renderer, Colour::BLUE);
 
         behind_triangle.c.depth = 0.5 + 0.5 * -t.sin().powi(2);
 
