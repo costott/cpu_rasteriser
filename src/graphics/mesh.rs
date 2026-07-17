@@ -1,3 +1,4 @@
+use crate::graphics::clipping::clip_triangle_near;
 use crate::prelude::*;
 
 use crate::graphics::camera::Camera;
@@ -53,8 +54,11 @@ impl Mesh {
         viewport: &Viewport,
     ) {
         for triangle in self.triangles() {
-            GeometryProcessor::process_triangle(triangle, model_matrix, camera, viewport)
-                .draw(renderer);
+            for triangle_2d in
+                GeometryProcessor::process_triangle(triangle, model_matrix, camera, viewport)
+            {
+                triangle_2d.draw(renderer);
+            }
         }
     }
 
@@ -66,8 +70,11 @@ impl Mesh {
         viewport: &Viewport,
     ) {
         for triangle in self.triangles() {
-            GeometryProcessor::process_triangle(triangle, model_matrix, camera, viewport)
-                .draw_filled(renderer);
+            for triangle_2d in
+                GeometryProcessor::process_triangle(triangle, model_matrix, camera, viewport)
+            {
+                triangle_2d.draw_filled(renderer);
+            }
         }
     }
 }

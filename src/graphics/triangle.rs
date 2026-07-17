@@ -1,12 +1,13 @@
 use crate::prelude::*;
 use crate::renderer::Renderer;
 
-pub struct Triangle {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Triangle2D {
     pub a: Vertex2D,
     pub b: Vertex2D,
     pub c: Vertex2D,
 }
-impl Triangle {
+impl Triangle2D {
     pub fn new(a: Vertex2D, b: Vertex2D, c: Vertex2D) -> Self {
         Self { a, b, c }
     }
@@ -77,5 +78,29 @@ impl Triangle {
                 renderer.write_fragment((x, y).into(), pixel.colour, pixel.depth);
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TriangleClip {
+    pub a: ClipVertex,
+    pub b: ClipVertex,
+    pub c: ClipVertex,
+}
+impl TriangleClip {
+    pub fn new(a: ClipVertex, b: ClipVertex, c: ClipVertex) -> Self {
+        Self { a, b, c }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Triangle3D {
+    pub a: Vertex3D,
+    pub b: Vertex3D,
+    pub c: Vertex3D,
+}
+impl Triangle3D {
+    pub fn new(a: Vertex3D, b: Vertex3D, c: Vertex3D) -> Self {
+        Self { a, b, c }
     }
 }
