@@ -1,4 +1,4 @@
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Colour {
@@ -44,6 +44,13 @@ impl Add for Colour {
         let g = self.g.saturating_add(other.g);
         let b = self.b.saturating_add(other.b);
         Colour { r, g, b }
+    }
+}
+impl AddAssign for Colour {
+    fn add_assign(&mut self, other: Self) {
+        self.r = self.r.saturating_add(other.r);
+        self.g = self.g.saturating_add(other.g);
+        self.b = self.b.saturating_add(other.b);
     }
 }
 impl Sub for Colour {

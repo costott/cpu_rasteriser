@@ -18,7 +18,8 @@ impl Triangle2D {
         draw_line(renderer, self.c, self.a);
     }
 
-    /// Uses a scanline algorithm to fill the triangle
+    // TODO: multithreaded rasterisation
+    /// Uses a scanline algorithm to fill the triangle and interpolate vertex attributes.
     pub fn draw_filled(&self, renderer: &mut Renderer) {
         let mut vertices = [self.a, self.b, self.c];
 
@@ -28,56 +29,118 @@ impl Triangle2D {
         let v1 = vertices[1];
         let v2 = vertices[2];
 
-        // Degenerate triangle
+        // Skip drawing if the triangle has zero height
         if (v0.position.y - v2.position.y).abs() < f32::EPSILON {
             return;
         }
 
-        let y_start = v0.position.y.ceil() as i32;
-        let y_end = v2.position.y.ceil() as i32;
+        let y_start = (v0.position.y - 0.5).ceil() as i32;
+        let y_end = (v2.position.y - 0.5).ceil() as i32;
+
+        let mut left;
+        let mut right;
+
+        let mut edge_long = Edge::new(v0, v2, y_start as f32 + 0.5);
+
+        let mut edge_short = Edge::new(v0, v1, y_start as f32 + 0.5);
 
         for y in y_start..y_end {
-            let fy = y as f32 + 0.5;
+            // // If the scanline is in the second half of the triangle, use the edge from v1 to v2 instead of v0 to v1.
+            let second_half = y as f32 + 0.5 > v1.position.y;
 
-            let second_half =
-                fy > v1.position.y || (v1.position.y - v0.position.y).abs() < f32::EPSILON;
+            if second_half {
+                edge_short = Edge::new(v1, v2, y as f32 + 0.5);
+            }
 
-            let (left, right) = if second_half {
-                let t1 = (fy - v0.position.y) / (v2.position.y - v0.position.y);
-                let t2 = (fy - v1.position.y) / (v2.position.y - v1.position.y);
-
-                (v0.lerp(&v2, t1), v1.lerp(&v2, t2))
+            // Determine which edge is on the left and which is on the right for the current scanline.
+            if edge_long.x < edge_short.x {
+                left = edge_long;
+                right = edge_short;
             } else {
-                let t1 = (fy - v0.position.y) / (v1.position.y - v0.position.y);
-                let t2 = (fy - v0.position.y) / (v2.position.y - v0.position.y);
+                left = edge_short;
+                right = edge_long;
+            }
 
-                (v0.lerp(&v1, t1), v0.lerp(&v2, t2))
+            let x_start = (left.x - 0.5).ceil() as i32;
+            let x_end = (right.x - 0.5).ceil() as i32;
+
+            let width = right.x - left.x;
+
+            let x_step = if width.abs() < f32::EPSILON {
+                0.0
+            } else {
+                1.0 / width
             };
 
-            // Ensure left to right ordering
-            let (left, right) = if left.position.x > right.position.x {
-                (right, left)
-            } else {
-                (left, right)
-            };
+            let mut t = (x_start as f32 + 0.5 - left.x) * x_step;
 
-            let x_start = left.position.x.ceil() as i32;
-            let x_end = right.position.x.ceil() as i32;
+            let mut colour = left.colour.lerp(&right.colour, t);
+
+            let colour_step = left.colour.lerp(&right.colour, x_step) - left.colour;
+
+            let mut depth = left.depth + (right.depth - left.depth) * t;
+
+            let depth_step = (right.depth - left.depth) * x_step;
 
             for x in x_start..x_end {
-                let fx = x as f32 + 0.5;
+                renderer.write_fragment((x, y).into(), colour, depth);
 
-                let t = if (right.position.x - left.position.x).abs() < f32::EPSILON {
-                    0.0
-                } else {
-                    (fx - left.position.x) / (right.position.x - left.position.x)
-                };
-
-                let pixel = left.lerp(&right, t);
-
-                renderer.write_fragment((x, y).into(), pixel.colour, pixel.depth);
+                colour += colour_step;
+                depth += depth_step;
+                t += x_step;
             }
+
+            edge_long.step();
+            edge_short.step();
         }
+    }
+}
+
+/// Represents an edge of a triangle in 2D space, used for scanline rasterization.
+#[derive(Clone, Copy)]
+struct Edge {
+    x: f32,
+    x_step: f32,
+
+    colour: Colour,
+    colour_step: Colour,
+
+    depth: f32,
+    depth_step: f32,
+}
+
+impl Edge {
+    fn new(a: Vertex2D, b: Vertex2D, y_start: f32) -> Self {
+        let dy = b.position.y - a.position.y;
+
+        let t = if dy.abs() < f32::EPSILON {
+            0.0
+        } else {
+            (y_start - a.position.y) / dy
+        };
+
+        let height = if dy.abs() < f32::EPSILON {
+            0.0
+        } else {
+            1.0 / dy
+        };
+
+        Self {
+            x: a.position.x + (b.position.x - a.position.x) * t,
+            x_step: (b.position.x - a.position.x) * height,
+
+            colour: a.colour.lerp(&b.colour, t),
+            colour_step: a.colour.lerp(&b.colour, height) - a.colour.lerp(&b.colour, 0.0),
+
+            depth: a.depth + (b.depth - a.depth) * t,
+            depth_step: (b.depth - a.depth) * height,
+        }
+    }
+
+    fn step(&mut self) {
+        self.x += self.x_step;
+        self.colour += self.colour_step;
+        self.depth += self.depth_step;
     }
 }
 
@@ -102,5 +165,44 @@ pub struct Triangle3D {
 impl Triangle3D {
     pub fn new(a: Vertex3D, b: Vertex3D, c: Vertex3D) -> Self {
         Self { a, b, c }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn draw_filled_uses_pixel_centres_for_coverage() {
+        let viewport = Viewport::new(4, 4);
+        let mut renderer = Renderer::new(&viewport);
+        renderer.clear(Colour::BLACK);
+
+        let triangle = Triangle2D::new(
+            Vertex2D::new(Vec2::new(0.1, 0.1), Colour::RED, 0.5),
+            Vertex2D::new(Vec2::new(2.9, 0.1), Colour::RED, 0.5),
+            Vertex2D::new(Vec2::new(0.1, 2.9), Colour::RED, 0.5),
+        );
+
+        triangle.draw_filled(&mut renderer);
+
+        let black = Colour::BLACK.to_u32();
+        let covered_pixels = [0, 1, 4, 5];
+
+        for &index in &covered_pixels {
+            assert_ne!(
+                renderer.pixels()[index],
+                black,
+                "expected coverage at index {index}"
+            );
+        }
+
+        for (index, pixel) in renderer.pixels().iter().enumerate() {
+            if covered_pixels.contains(&index) {
+                continue;
+            }
+
+            assert_eq!(*pixel, black, "unexpected filled pixel at index {index}");
+        }
     }
 }
