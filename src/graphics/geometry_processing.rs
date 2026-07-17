@@ -28,4 +28,17 @@ impl GeometryProcessor {
 
         Vertex2D::new(screen, vertex.colour, ndc.z)
     }
+
+    pub fn process_triangle(
+        triangle: Triangle3D,
+        model_matrix: Mat4,
+        camera: &Camera,
+        viewport: &Viewport,
+    ) -> Triangle {
+        let a = Self::process(triangle.a, model_matrix, camera, viewport);
+        let b = Self::process(triangle.b, model_matrix, camera, viewport);
+        let c = Self::process(triangle.c, model_matrix, camera, viewport);
+
+        Triangle::new(a, b, c)
+    }
 }

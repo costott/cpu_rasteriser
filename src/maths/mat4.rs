@@ -1,4 +1,4 @@
-use crate::maths::Vec4;
+use crate::maths::{Vec3, Vec4};
 use std::ops::{Add, Mul, Sub};
 
 /// Represents a 4x4 matrix, stored in row-major order
@@ -34,6 +34,10 @@ impl Mat4 {
         }
     }
 
+    pub fn translation_vec(position: Vec3) -> Self {
+        Self::translation(position.x, position.y, position.z)
+    }
+
     pub fn scaling(x: f32, y: f32, z: f32) -> Self {
         Self {
             data: [
@@ -43,6 +47,10 @@ impl Mat4 {
                 [0.0, 0.0, 0.0, 1.0],
             ],
         }
+    }
+
+    pub fn scaling_vec(scale: Vec3) -> Self {
+        Self::scaling(scale.x, scale.y, scale.z)
     }
 
     pub fn reflect_x() -> Self {
@@ -126,6 +134,14 @@ impl Mat4 {
                 [0.0, 0.0, 0.0, 1.0],
             ],
         }
+    }
+
+    pub fn rotate_vec(rotation: Vec3) -> Self {
+        let rx = Self::rotate_x(rotation.x);
+        let ry = Self::rotate_y(rotation.y);
+        let rz = Self::rotate_z(rotation.z);
+
+        rz * ry * rx
     }
 }
 
