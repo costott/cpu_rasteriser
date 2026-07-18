@@ -85,14 +85,25 @@ impl Triangle2D {
             let mut normal = left.normal + (right.normal - left.normal) * t;
             let normal_step = (right.normal - left.normal) * x_step;
 
+            let mut world_position =
+                left.world_position + (right.world_position - left.world_position) * t;
+            let world_position_step = (right.world_position - left.world_position) * x_step;
+
             let mut depth = left.depth + (right.depth - left.depth) * t;
             let depth_step = (right.depth - left.depth) * x_step;
 
             for x in x_start..x_end {
-                callback(Fragment::new((x, y).into(), colour.into(), normal, depth));
+                callback(Fragment::new(
+                    (x, y).into(),
+                    world_position,
+                    colour.into(),
+                    normal,
+                    depth,
+                ));
 
                 colour = colour + colour_step;
                 normal = normal + normal_step;
+                world_position = world_position + world_position_step;
                 depth += depth_step;
             }
 
@@ -113,6 +124,9 @@ struct Edge {
 
     normal: Vec3,
     normal_step: Vec3,
+
+    world_position: Vec3,
+    world_position_step: Vec3,
 
     depth: f32,
     depth_step: f32,
@@ -148,6 +162,9 @@ impl Edge {
 
             normal: a.normal + (b.normal - a.normal) * t,
             normal_step: (b.normal - a.normal) * height,
+
+            world_position: a.world_position + (b.world_position - a.world_position) * t,
+            world_position_step: (b.world_position - a.world_position) * height,
 
             depth: a.depth + (b.depth - a.depth) * t,
             depth_step: (b.depth - a.depth) * height,
@@ -209,9 +226,27 @@ mod tests {
         renderer.clear(Colour::BLACK);
 
         let triangle = Triangle2D::new(
-            Vertex2D::new(Vec2::new(0.1, 0.1), Colour::RED, Vec3::ZERO, 0.5),
-            Vertex2D::new(Vec2::new(2.9, 0.1), Colour::RED, Vec3::ZERO, 0.5),
-            Vertex2D::new(Vec2::new(0.1, 2.9), Colour::RED, Vec3::ZERO, 0.5),
+            Vertex2D::new(
+                Vec2::new(0.1, 0.1),
+                Vec3::ZERO,
+                Colour::RED,
+                Vec3::ZERO,
+                0.5,
+            ),
+            Vertex2D::new(
+                Vec2::new(2.9, 0.1),
+                Vec3::ZERO,
+                Colour::RED,
+                Vec3::ZERO,
+                0.5,
+            ),
+            Vertex2D::new(
+                Vec2::new(0.1, 2.9),
+                Vec3::ZERO,
+                Colour::RED,
+                Vec3::ZERO,
+                0.5,
+            ),
         );
 
         triangle.rasterise(|fragment| {
@@ -249,9 +284,27 @@ mod tests {
         renderer.clear(Colour::BLACK);
 
         let triangle = Triangle2D::new(
-            Vertex2D::new(Vec2::new(0.5, 0.5), Colour::RED, Vec3::ZERO, 0.5),
-            Vertex2D::new(Vec2::new(3.5, 0.5), Colour::GREEN, Vec3::ZERO, 0.5),
-            Vertex2D::new(Vec2::new(0.5, 3.5), Colour::RED, Vec3::ZERO, 0.5),
+            Vertex2D::new(
+                Vec2::new(0.5, 0.5),
+                Vec3::ZERO,
+                Colour::RED,
+                Vec3::ZERO,
+                0.5,
+            ),
+            Vertex2D::new(
+                Vec2::new(3.5, 0.5),
+                Vec3::ZERO,
+                Colour::GREEN,
+                Vec3::ZERO,
+                0.5,
+            ),
+            Vertex2D::new(
+                Vec2::new(0.5, 3.5),
+                Vec3::ZERO,
+                Colour::RED,
+                Vec3::ZERO,
+                0.5,
+            ),
         );
 
         triangle.rasterise(|fragment| {
@@ -274,12 +327,14 @@ mod tests {
     fn draw_filled_interpolates_normals_across_scanlines() {
         let left = Vertex2D::new(
             Vec2::new(0.0, 0.0),
+            Vec3::ZERO,
             Colour::WHITE,
             Vec3::new(1.0, 0.0, 0.0),
             0.0,
         );
         let right = Vertex2D::new(
             Vec2::new(0.0, 4.0),
+            Vec3::ZERO,
             Colour::WHITE,
             Vec3::new(0.0, 1.0, 0.0),
             0.0,

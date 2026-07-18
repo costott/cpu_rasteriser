@@ -60,16 +60,23 @@ fn main() {
         )),
     );
 
-    let shiny_material = Material::new(
-        Colour::from_u32(0xfffde8),
-        Colour::from_u32(0xfffde8),
-        Colour::from_u32(0xfffde8),
-        50.0,
+    let red_plastic = Material::new(
+        Colour::from_u32(0xff0000),
+        Colour::from_u32(0x990000),
+        Colour::from_u32(0xffffff),
+        64.0,
+    );
+
+    let polished_brass = Material::new(
+        Colour::from_u32(0x543808),
+        Colour::from_u32(0x8b7500),
+        Colour::from_u32(0xffffff),
+        21.8,
     );
 
     let mut cube_model = Model::new(
         vec![Mesh::cube(Colour::WHITE, 0)],
-        vec![shiny_material],
+        vec![polished_brass],
         ModelTransform::new(
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 0.0, 0.0),
