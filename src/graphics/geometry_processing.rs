@@ -32,6 +32,7 @@ impl GeometryProcessor {
 
         ClipVertex {
             position: clip,
+            world_position: vertex.position,
             colour: vertex.colour,
             normal: vertex.normal,
         }
@@ -85,7 +86,13 @@ impl GeometryProcessor {
             (1.0 - ndc.y) * 0.5 * viewport.height as f32,
         );
 
-        Vertex2D::new(screen, vertex.colour, vertex.normal, ndc.z)
+        Vertex2D::new(
+            screen,
+            vertex.world_position,
+            vertex.colour,
+            vertex.normal,
+            ndc.z,
+        )
     }
 
     /// Projects a triangle of clip space vertices into a triangle of 2D screen space vertices using the viewport dimensions.
