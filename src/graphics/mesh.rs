@@ -1,23 +1,24 @@
 use crate::prelude::*;
 
-use crate::graphics::camera::Camera;
-use crate::graphics::geometry_processing::GeometryProcessor;
-use crate::graphics::vertex_shader::VertexShader;
-use crate::renderer::Renderer;
-
 pub struct Mesh {
     /// The vertices of the mesh.
     vertices: Vec<Vertex3D>,
     /// The indices of the mesh, which define the triangles.
     indices: Vec<u32>,
+    /// The index of the material to use for this mesh.
+    pub material_index: usize,
 }
 impl Mesh {
-    pub fn new(vertices: Vec<Vertex3D>, indices: Vec<u32>) -> Self {
-        Self { vertices, indices }
+    pub fn new(vertices: Vec<Vertex3D>, indices: Vec<u32>, material_index: usize) -> Self {
+        Self {
+            vertices,
+            indices,
+            material_index,
+        }
     }
 
     /// Creates a white cube mesh with 8 vertices and 12 triangles (36 indices).
-    pub fn cube(colour: Colour) -> Self {
+    pub fn cube(colour: Colour, material_index: usize) -> Self {
         let vertices = vec![
             Vertex3D::new(Vec3::new(-0.5, -0.5, -0.5), colour),
             Vertex3D::new(Vec3::new(0.5, -0.5, -0.5), colour),
@@ -50,7 +51,11 @@ impl Mesh {
             3, 6, 2, //
         ];
 
-        Self { vertices, indices }
+        Self {
+            vertices,
+            indices,
+            material_index,
+        }
     }
 
     /// Returns an iterator over the triangles in the mesh, where each triangle is represented by three vertices.
@@ -83,50 +88,6 @@ impl Mesh {
 
         for (vertex, normal) in self.vertices.iter_mut().zip(normals.iter()) {
             vertex.normal = normal.normalise();
-        }
-    }
-
-    pub fn draw_wireframe(
-        &self,
-        renderer: &mut Renderer,
-        vertex_shader: &dyn VertexShader,
-        model_matrix: Mat4,
-        camera: &Camera,
-        viewport: &Viewport,
-    ) {
-        for triangle in self.triangles() {
-            for triangle_2d in GeometryProcessor::process_triangle(
-                triangle,
-                vertex_shader,
-                model_matrix,
-                camera,
-                viewport,
-                renderer.culling_mode(),
-            ) {
-                triangle_2d.draw(renderer);
-            }
-        }
-    }
-
-    pub fn draw_filled(
-        &self,
-        renderer: &mut Renderer,
-        vertex_shader: &dyn VertexShader,
-        model_matrix: Mat4,
-        camera: &Camera,
-        viewport: &Viewport,
-    ) {
-        for triangle in self.triangles() {
-            for triangle_2d in GeometryProcessor::process_triangle(
-                triangle,
-                vertex_shader,
-                model_matrix,
-                camera,
-                viewport,
-                renderer.culling_mode(),
-            ) {
-                triangle_2d.draw_filled(renderer);
-            }
         }
     }
 }

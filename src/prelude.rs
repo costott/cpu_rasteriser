@@ -1,8 +1,10 @@
 pub use crate::colour::*;
 pub use crate::graphics::circle::*;
 pub use crate::graphics::line::*;
+pub use crate::graphics::material::*;
 pub use crate::graphics::mesh::*;
 pub use crate::graphics::model::*;
+pub use crate::graphics::scene::*;
 pub use crate::graphics::triangle::*;
 pub use crate::graphics::vertex::*;
 pub use crate::maths::*;

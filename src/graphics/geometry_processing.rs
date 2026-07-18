@@ -64,11 +64,12 @@ impl GeometryProcessor {
     fn triangle_world_to_clip(
         triangle: Triangle3D,
         shader: &dyn VertexShader,
+        vertex_uniforms: &VertexUniforms,
         camera: &Camera,
     ) -> TriangleClip {
-        let a = Self::world_to_clip(shader.shade(triangle.a), camera);
-        let b = Self::world_to_clip(shader.shade(triangle.b), camera);
-        let c = Self::world_to_clip(shader.shade(triangle.c), camera);
+        let a = Self::world_to_clip(shader.shade(triangle.a, vertex_uniforms), camera);
+        let b = Self::world_to_clip(shader.shade(triangle.b, vertex_uniforms), camera);
+        let c = Self::world_to_clip(shader.shade(triangle.c, vertex_uniforms), camera);
 
         TriangleClip { a, b, c }
     }
@@ -96,9 +97,11 @@ impl GeometryProcessor {
         Triangle2D { a, b, c }
     }
 
+    /// Processes a triangle through the entire graphics pipeline, returning a list of 2D triangles ready for rasterisation.
     pub fn process_triangle(
         triangle: Triangle3D,
         shader: &dyn VertexShader,
+        vertex_uniforms: &VertexUniforms,
         model_matrix: Mat4,
         camera: &Camera,
         viewport: &Viewport,
@@ -111,7 +114,7 @@ impl GeometryProcessor {
             return vec![];
         }
 
-        let triangle_clip = Self::triangle_world_to_clip(triangle, shader, camera);
+        let triangle_clip = Self::triangle_world_to_clip(triangle, shader, vertex_uniforms, camera);
 
         let clipped = clip_triangle(triangle_clip);
 
@@ -147,10 +150,12 @@ mod tests {
             Vertex3D::new(Vec3::new(1.0, -1.0, -2.0), Colour::WHITE),
             Vertex3D::new(Vec3::new(0.0, 1.0, -2.0), Colour::WHITE),
         );
+        let vertex_uniforms = VertexUniforms { lights: &[] };
 
         let triangles = GeometryProcessor::process_triangle(
             triangle,
             &shader,
+            &vertex_uniforms,
             Mat4::identity(),
             &camera,
             &viewport,
@@ -170,10 +175,12 @@ mod tests {
             Vertex3D::new(Vec3::new(0.0, 1.0, -2.0), Colour::WHITE),
             Vertex3D::new(Vec3::new(1.0, -1.0, -2.0), Colour::WHITE),
         );
+        let vertex_uniforms = VertexUniforms { lights: &[] };
 
         let triangles = GeometryProcessor::process_triangle(
             triangle,
             &shader,
+            &vertex_uniforms,
             Mat4::identity(),
             &camera,
             &viewport,
@@ -193,10 +200,12 @@ mod tests {
             Vertex3D::new(Vec3::new(0.0, 1.0, -2.0), Colour::WHITE),
             Vertex3D::new(Vec3::new(1.0, -1.0, -2.0), Colour::WHITE),
         );
+        let vertex_uniforms = VertexUniforms { lights: &[] };
 
         let triangles = GeometryProcessor::process_triangle(
             triangle,
             &shader,
+            &vertex_uniforms,
             Mat4::identity(),
             &camera,
             &viewport,
