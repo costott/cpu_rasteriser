@@ -84,10 +84,10 @@ fn main() {
         renderer.clear(Colour::BLACK);
 
         angle += 1.0 * dt;
-        // camera.eye.z = 1.0 + 1.0 * t.sin();c
+        // camera.eye.z = 1.0 + 1.0 * t.sin();
 
         cube_model.transform.rotation.y = angle;
-        // cube_model.transform.rotation.x = 1.1 * angle;
+        cube_model.transform.rotation.x = 1.1 * angle;
 
         cube_model.draw_filled(&mut renderer, &vertex_shader, &camera, &viewport);
 
