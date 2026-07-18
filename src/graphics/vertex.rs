@@ -8,6 +8,8 @@ pub struct Vertex2D {
     pub colour: Colour,
     pub normal: Vec3,
     pub depth: f32,
+
+    pub inv_w: f32,
 }
 impl Vertex2D {
     pub fn new(
@@ -16,6 +18,7 @@ impl Vertex2D {
         colour: Colour,
         normal: Vec3,
         depth: f32,
+        inv_w: f32,
     ) -> Self {
         Self {
             position,
@@ -23,6 +26,7 @@ impl Vertex2D {
             colour,
             normal,
             depth,
+            inv_w,
         }
     }
 
@@ -33,6 +37,7 @@ impl Vertex2D {
             colour: self.colour.lerp(&other.colour, t),
             normal: self.normal.lerp(&other.normal, t),
             depth: self.depth * (1.0 - t) + other.depth * t,
+            inv_w: self.inv_w * (1.0 - t) + other.inv_w * t,
         }
     }
 }
