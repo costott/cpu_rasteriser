@@ -77,8 +77,10 @@ impl GeometryProcessor {
 
     /// Projects a clip space vertex into 2D screen space using the viewport dimensions.
     fn project_vertex(vertex: ClipVertex, viewport: &Viewport) -> Vertex2D {
+        let inv_w = 1.0 / vertex.position.w;
+
         // 2D coordiantes to normalised device coordinates
-        let ndc = vertex.position / vertex.position.w;
+        let ndc = vertex.position * inv_w;
 
         // Normalised device coordinates to screen coordinates
         let screen = Vec2::new(
@@ -88,10 +90,11 @@ impl GeometryProcessor {
 
         Vertex2D::new(
             screen,
-            vertex.world_position,
-            vertex.colour,
-            vertex.normal,
+            vertex.world_position * inv_w,
+            vertex.colour * inv_w,
+            vertex.normal * inv_w,
             ndc.z,
+            inv_w,
         )
     }
 

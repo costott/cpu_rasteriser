@@ -89,21 +89,31 @@ impl Triangle2D {
                 left.world_position + (right.world_position - left.world_position) * t;
             let world_position_step = (right.world_position - left.world_position) * x_step;
 
+            let mut inv_w = left.inv_w + (right.inv_w - left.inv_w) * t;
+            let inv_w_step = (right.inv_w - left.inv_w) * x_step;
+
             let mut depth = left.depth + (right.depth - left.depth) * t;
             let depth_step = (right.depth - left.depth) * x_step;
 
             for x in x_start..x_end {
+                let perspective = if inv_w.abs() < f32::EPSILON {
+                    0.0
+                } else {
+                    1.0 / inv_w
+                };
+
                 callback(Fragment::new(
                     (x, y).into(),
-                    world_position,
-                    colour.into(),
-                    normal,
+                    world_position * perspective,
+                    (colour * perspective).into(),
+                    (normal * perspective).normalise(),
                     depth,
                 ));
 
                 colour = colour + colour_step;
                 normal = normal + normal_step;
                 world_position = world_position + world_position_step;
+                inv_w = inv_w + inv_w_step;
                 depth += depth_step;
             }
 
@@ -127,6 +137,9 @@ struct Edge {
 
     world_position: Vec3,
     world_position_step: Vec3,
+
+    inv_w: f32,
+    inv_w_step: f32,
 
     depth: f32,
     depth_step: f32,
@@ -168,6 +181,9 @@ impl Edge {
 
             depth: a.depth + (b.depth - a.depth) * t,
             depth_step: (b.depth - a.depth) * height,
+
+            inv_w: a.inv_w + (b.inv_w - a.inv_w) * t,
+            inv_w_step: (b.inv_w - a.inv_w) * height,
         }
     }
 
@@ -177,6 +193,7 @@ impl Edge {
         self.normal = self.normal + self.normal_step;
         self.world_position = self.world_position + self.world_position_step;
         self.depth += self.depth_step;
+        self.inv_w += self.inv_w_step;
     }
 }
 
@@ -233,6 +250,7 @@ mod tests {
                 Colour::RED,
                 Vec3::ZERO,
                 0.5,
+                1.0,
             ),
             Vertex2D::new(
                 Vec2::new(2.9, 0.1),
@@ -240,6 +258,7 @@ mod tests {
                 Colour::RED,
                 Vec3::ZERO,
                 0.5,
+                1.0,
             ),
             Vertex2D::new(
                 Vec2::new(0.1, 2.9),
@@ -247,6 +266,7 @@ mod tests {
                 Colour::RED,
                 Vec3::ZERO,
                 0.5,
+                1.0,
             ),
         );
 
@@ -291,6 +311,7 @@ mod tests {
                 Colour::RED,
                 Vec3::ZERO,
                 0.5,
+                1.0,
             ),
             Vertex2D::new(
                 Vec2::new(3.5, 0.5),
@@ -298,6 +319,7 @@ mod tests {
                 Colour::GREEN,
                 Vec3::ZERO,
                 0.5,
+                1.0,
             ),
             Vertex2D::new(
                 Vec2::new(0.5, 3.5),
@@ -305,6 +327,7 @@ mod tests {
                 Colour::RED,
                 Vec3::ZERO,
                 0.5,
+                1.0,
             ),
         );
 
@@ -332,6 +355,7 @@ mod tests {
             Colour::WHITE,
             Vec3::new(1.0, 0.0, 0.0),
             0.0,
+            1.0,
         );
         let right = Vertex2D::new(
             Vec2::new(0.0, 4.0),
@@ -339,6 +363,7 @@ mod tests {
             Colour::WHITE,
             Vec3::new(0.0, 1.0, 0.0),
             0.0,
+            1.0,
         );
 
         let edge = Edge::new(left, right, 0.0);
