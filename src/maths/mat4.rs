@@ -143,6 +143,74 @@ impl Mat4 {
 
         rz * ry * rx
     }
+
+    /// Inverts the matrix using Gaussian elimination.
+    /// Returns the identity matrix if the matrix is singular (non-invertible).
+    pub fn inverse(&self) -> Self {
+        let mut m = self.data;
+        let mut inv = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+
+        for col in 0..4 {
+            let mut pivot_row = col;
+            let mut pivot_value = m[pivot_row][col].abs();
+
+            for row in (col + 1)..4 {
+                let value = m[row][col].abs();
+                if value > pivot_value {
+                    pivot_row = row;
+                    pivot_value = value;
+                }
+            }
+
+            if pivot_value < 1e-6 {
+                return Self::identity();
+            }
+
+            if pivot_row != col {
+                m.swap(col, pivot_row);
+                inv.swap(col, pivot_row);
+            }
+
+            let pivot = m[col][col];
+            for j in 0..4 {
+                m[col][j] /= pivot;
+                inv[col][j] /= pivot;
+            }
+
+            for row in 0..4 {
+                if row == col {
+                    continue;
+                }
+
+                let factor = m[row][col];
+                if factor == 0.0 {
+                    continue;
+                }
+
+                for j in 0..4 {
+                    m[row][j] -= factor * m[col][j];
+                    inv[row][j] -= factor * inv[col][j];
+                }
+            }
+        }
+
+        Self { data: inv }
+    }
+
+    pub fn transpose(&self) -> Self {
+        let mut transposed = [[0.0; 4]; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                transposed[i][j] = self.data[j][i];
+            }
+        }
+        Self { data: transposed }
+    }
 }
 
 impl Add for Mat4 {
@@ -445,5 +513,43 @@ mod tests {
 
         assert_mat4_approx_eq(Mat4::identity() * m, m);
         assert_mat4_approx_eq(m * Mat4::identity(), m);
+    }
+
+    #[test]
+    fn inverse_of_identity_is_identity() {
+        let inverse = Mat4::identity().inverse();
+
+        assert_mat4_approx_eq(inverse, Mat4::identity());
+    }
+
+    #[test]
+    fn inverse_of_translation_reverses_translation() {
+        let translation = Mat4::translation(2.0, -3.0, 4.0);
+        let inverse = translation.inverse();
+        let point = Vec4::new(1.0, 2.0, 3.0, 1.0);
+
+        assert_vec4_approx_eq(inverse * (translation * point), point);
+    }
+
+    // test transpose
+    #[test]
+    fn transpose_swaps_rows_and_columns() {
+        let m = Mat4::new([
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [9.0, 10.0, 11.0, 12.0],
+            [13.0, 14.0, 15.0, 16.0],
+        ]);
+        let transposed = m.transpose();
+
+        assert_eq!(
+            transposed,
+            Mat4::new([
+                [1.0, 5.0, 9.0, 13.0],
+                [2.0, 6.0, 10.0, 14.0],
+                [3.0, 7.0, 11.0, 15.0],
+                [4.0, 8.0, 12.0, 16.0],
+            ])
+        );
     }
 }

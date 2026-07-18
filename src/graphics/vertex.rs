@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+/// Represents a 2D vertex with position, colour, normal, and depth.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vertex2D {
     pub position: Vec2,

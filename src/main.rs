@@ -40,8 +40,8 @@ fn main() {
     let mut renderer = Renderer::new(&viewport, Box::new(BasicFragmentShader));
 
     let vertex_shader = GouraudVertexShader::new(DirectionalLight::new(
-        Vec3::new(0.0, -1.0, -1.0),
-        Colour::WHITE,
+        Vec3::new(0.0, 1.0, -1.0),
+        Colour::from_u32(0xfffde8),
     ));
 
     let mut camera = Camera::new(
