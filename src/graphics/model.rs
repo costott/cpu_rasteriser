@@ -1,48 +1,24 @@
-use crate::graphics::vertex_shader::VertexShader;
 use crate::prelude::*;
 
-use crate::graphics::camera::Camera;
-use crate::renderer::Renderer;
-
 pub struct Model {
-    pub mesh: Mesh,
+    // pub mesh: Mesh,
+    pub meshes: Vec<Mesh>,
+    pub materials: Vec<Material>,
     pub transform: ModelTransform,
 }
 impl Model {
-    pub fn new(mesh: Mesh, transform: ModelTransform) -> Self {
-        Self { mesh, transform }
+    pub fn new(meshes: Vec<Mesh>, materials: Vec<Material>, transform: ModelTransform) -> Self {
+        Self {
+            meshes,
+            materials,
+            transform,
+        }
     }
 
-    pub fn draw_wireframe(
-        &self,
-        renderer: &mut Renderer,
-        vertex_shader: &dyn VertexShader,
-        camera: &Camera,
-        viewport: &Viewport,
-    ) {
-        self.mesh.draw_wireframe(
-            renderer,
-            vertex_shader,
-            self.transform.model_matrix(),
-            camera,
-            viewport,
-        );
-    }
-
-    pub fn draw_filled(
-        &self,
-        renderer: &mut Renderer,
-        vertex_shader: &dyn VertexShader,
-        camera: &Camera,
-        viewport: &Viewport,
-    ) {
-        self.mesh.draw_filled(
-            renderer,
-            vertex_shader,
-            self.transform.model_matrix(),
-            camera,
-            viewport,
-        );
+    pub fn calculate_vertex_normals(&mut self) {
+        for mesh in &mut self.meshes {
+            mesh.calculate_vertex_normals();
+        }
     }
 }
 

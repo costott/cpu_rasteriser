@@ -22,7 +22,10 @@ impl Triangle2D {
 
     // TODO: multithreaded rasterisation
     /// Uses a scanline algorithm to fill the triangle and interpolate vertex attributes.
-    pub fn draw_filled(&self, renderer: &mut Renderer) {
+    pub fn rasterise<F>(&self, mut callback: F)
+    where
+        F: FnMut(Fragment),
+    {
         let mut vertices = [self.a, self.b, self.c];
 
         vertices.sort_by(|a, b| a.position.y.partial_cmp(&b.position.y).unwrap());
@@ -86,7 +89,7 @@ impl Triangle2D {
             let depth_step = (right.depth - left.depth) * x_step;
 
             for x in x_start..x_end {
-                renderer.shade(Fragment::new((x, y).into(), colour.into(), normal, depth));
+                callback(Fragment::new((x, y).into(), colour.into(), normal, depth));
 
                 colour = colour + colour_step;
                 normal = normal + normal_step;
@@ -193,12 +196,16 @@ impl Triangle3D {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graphics::fragment_shader::BasicFragmentShader;
+    use crate::graphics::{fragment_shader::BasicFragmentShader, vertex_shader::BasicVertexShader};
 
     #[test]
     fn draw_filled_uses_pixel_centres_for_coverage() {
         let viewport = Viewport::new(4, 4);
-        let mut renderer = Renderer::new(&viewport, Box::new(BasicFragmentShader));
+        let mut renderer = Renderer::new(
+            &viewport,
+            Box::new(BasicVertexShader),
+            Box::new(BasicFragmentShader),
+        );
         renderer.clear(Colour::BLACK);
 
         let triangle = Triangle2D::new(
@@ -207,7 +214,9 @@ mod tests {
             Vertex2D::new(Vec2::new(0.1, 2.9), Colour::RED, Vec3::ZERO, 0.5),
         );
 
-        triangle.draw_filled(&mut renderer);
+        triangle.rasterise(|fragment| {
+            renderer.write_fragment(fragment.position, fragment.colour, fragment.depth);
+        });
 
         let black = Colour::BLACK.to_u32();
         let covered_pixels = [0, 1, 4, 5];
@@ -232,7 +241,11 @@ mod tests {
     #[test]
     fn draw_filled_interpolates_colour_across_scanlines() {
         let viewport = Viewport::new(4, 4);
-        let mut renderer = Renderer::new(&viewport, Box::new(BasicFragmentShader));
+        let mut renderer = Renderer::new(
+            &viewport,
+            Box::new(BasicVertexShader),
+            Box::new(BasicFragmentShader),
+        );
         renderer.clear(Colour::BLACK);
 
         let triangle = Triangle2D::new(
@@ -241,7 +254,9 @@ mod tests {
             Vertex2D::new(Vec2::new(0.5, 3.5), Colour::RED, Vec3::ZERO, 0.5),
         );
 
-        triangle.draw_filled(&mut renderer);
+        triangle.rasterise(|fragment| {
+            renderer.write_fragment(fragment.position, fragment.colour, fragment.depth);
+        });
 
         let pixel = Colour::from_u32(renderer.pixels()[5]);
 
