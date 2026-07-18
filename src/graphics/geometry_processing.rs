@@ -7,12 +7,9 @@ use crate::graphics::vertex_shader::*;
 pub struct GeometryProcessor;
 impl GeometryProcessor {
     /// Transforms a 3D vertex into a clip space vertex using the model matrix and camera.
-    pub fn transform_vertex(vertex: Vertex3D, model_matrix: Mat4, camera: &Camera) -> ClipVertex {
-        // Model to World
-        let world = model_matrix * vertex.position.to_homogenous();
-
+    fn world_to_clip(vertex: Vertex3D, camera: &Camera) -> ClipVertex {
         // World to View
-        let view = camera.view_matrix() * world;
+        let view = camera.view_matrix() * vertex.position.to_homogenous();
 
         // Projection from 3D to 2D coordinates
         let clip = camera.projection_matrix() * view;
@@ -24,22 +21,41 @@ impl GeometryProcessor {
         }
     }
 
+    /// Transforms a 3D vertex into a world space vertex using the model matrix.
+    fn model_to_world(vertex: Vertex3D, model_matrix: Mat4) -> Vertex3D {
+        let world_pos = model_matrix * vertex.position.to_homogenous();
+
+        let normal_matrix = model_matrix.inverse().transpose();
+
+        Vertex3D {
+            position: world_pos.homogenize_to_vec3(),
+            colour: vertex.colour,
+            normal: (normal_matrix * vertex.normal.to_homogenous())
+                .homogenize_to_vec3()
+                .normalise(),
+        }
+    }
+
     /// Transforms a triangle of 3D vertices into a triangle of clip space vertices using the model matrix and camera.
-    pub fn transform_triangle(
+    fn transform_triangle(
         triangle: Triangle3D,
         shader: &dyn VertexShader,
         model_matrix: Mat4,
         camera: &Camera,
     ) -> TriangleClip {
-        let a = Self::transform_vertex(shader.shade(triangle.a), model_matrix, camera);
-        let b = Self::transform_vertex(shader.shade(triangle.b), model_matrix, camera);
-        let c = Self::transform_vertex(shader.shade(triangle.c), model_matrix, camera);
+        let a = Self::model_to_world(triangle.a, model_matrix);
+        let b = Self::model_to_world(triangle.b, model_matrix);
+        let c = Self::model_to_world(triangle.c, model_matrix);
+
+        let a = Self::world_to_clip(shader.shade(a), camera);
+        let b = Self::world_to_clip(shader.shade(b), camera);
+        let c = Self::world_to_clip(shader.shade(c), camera);
 
         TriangleClip { a, b, c }
     }
 
     /// Projects a clip space vertex into 2D screen space using the viewport dimensions.
-    pub fn project_vertex(vertex: ClipVertex, viewport: &Viewport) -> Vertex2D {
+    fn project_vertex(vertex: ClipVertex, viewport: &Viewport) -> Vertex2D {
         // 2D coordiantes to normalised device coordinates
         let ndc = vertex.position / vertex.position.w;
 
@@ -53,7 +69,7 @@ impl GeometryProcessor {
     }
 
     /// Projects a triangle of clip space vertices into a triangle of 2D screen space vertices using the viewport dimensions.
-    pub fn project_triangle(triangle: TriangleClip, viewport: &Viewport) -> Triangle2D {
+    fn project_triangle(triangle: TriangleClip, viewport: &Viewport) -> Triangle2D {
         let a = Self::project_vertex(triangle.a, viewport);
         let b = Self::project_vertex(triangle.b, viewport);
         let c = Self::project_vertex(triangle.c, viewport);
