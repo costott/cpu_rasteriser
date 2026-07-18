@@ -10,6 +10,8 @@ pub struct Renderer {
     framebuffer: FrameBuffer,
     depthbuffer: DepthBuffer,
     fragment_shader: Box<dyn FragmentShader>,
+
+    culling_mode: CullingMode,
 }
 impl Renderer {
     pub fn new(viewport: &Viewport, fragment_shader: Box<dyn FragmentShader>) -> Self {
@@ -17,7 +19,16 @@ impl Renderer {
             framebuffer: FrameBuffer::new(viewport.width, viewport.height),
             depthbuffer: DepthBuffer::new(viewport.width, viewport.height),
             fragment_shader,
+            culling_mode: CullingMode::None,
         }
+    }
+
+    pub fn culling_mode(&self) -> CullingMode {
+        self.culling_mode
+    }
+
+    pub fn set_culling_mode(&mut self, culling_mode: CullingMode) {
+        self.culling_mode = culling_mode;
     }
 
     pub fn clear(&mut self, colour: Colour) {
@@ -41,4 +52,10 @@ impl Renderer {
     pub fn pixels(&self) -> &[u32] {
         self.framebuffer.pixels()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CullingMode {
+    None,
+    BackFace,
 }
