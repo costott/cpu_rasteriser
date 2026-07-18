@@ -101,9 +101,6 @@ impl Renderer {
                 viewport,
                 self.culling_mode(),
             ) {
-                // for fragment in triangle_2d.rasterise() {
-                //     self.shade(fragment, &uniforms);
-                // }
                 triangle_2d.rasterise(|fragment| {
                     self.shade(fragment, &fragment_uniforms);
                 });

@@ -34,8 +34,12 @@ impl Vec3 {
         }
     }
 
+    pub fn length(&self) -> f32 {
+        self.dot(self).sqrt()
+    }
+
     pub fn normalise(&self) -> Vec3 {
-        let length = self.dot(self).sqrt();
+        let length = self.length();
         if length > 0.0 { *self / length } else { *self }
     }
 
