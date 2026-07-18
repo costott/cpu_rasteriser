@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::graphics::camera::Camera;
 use crate::graphics::clipping::*;
 use crate::graphics::vertex_shader::*;
+use crate::renderer::CullingMode;
 
 pub struct GeometryProcessor;
 impl GeometryProcessor {
@@ -101,10 +102,12 @@ impl GeometryProcessor {
         model_matrix: Mat4,
         camera: &Camera,
         viewport: &Viewport,
+        culling_mode: CullingMode,
     ) -> Vec<Triangle2D> {
         let triangle = Self::triangle_model_to_world(triangle, model_matrix);
 
-        if Self::is_back_facing(&triangle, camera) {
+        if matches!(culling_mode, CullingMode::BackFace) && Self::is_back_facing(&triangle, camera)
+        {
             return vec![];
         }
 
@@ -151,6 +154,7 @@ mod tests {
             Mat4::identity(),
             &camera,
             &viewport,
+            CullingMode::BackFace,
         );
 
         assert_eq!(triangles.len(), 1);
@@ -173,8 +177,32 @@ mod tests {
             Mat4::identity(),
             &camera,
             &viewport,
+            CullingMode::BackFace,
         );
 
         assert!(triangles.is_empty());
+    }
+
+    #[test]
+    fn process_triangle_keeps_back_facing_triangles_when_culling_is_disabled() {
+        let viewport = Viewport::new(8, 8);
+        let camera = test_camera();
+        let shader = BasicVertexShader;
+        let triangle = Triangle3D::new(
+            Vertex3D::new(Vec3::new(-1.0, -1.0, -2.0), Colour::WHITE),
+            Vertex3D::new(Vec3::new(0.0, 1.0, -2.0), Colour::WHITE),
+            Vertex3D::new(Vec3::new(1.0, -1.0, -2.0), Colour::WHITE),
+        );
+
+        let triangles = GeometryProcessor::process_triangle(
+            triangle,
+            &shader,
+            Mat4::identity(),
+            &camera,
+            &viewport,
+            CullingMode::None,
+        );
+
+        assert_eq!(triangles.len(), 1);
     }
 }

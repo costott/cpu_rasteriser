@@ -101,6 +101,7 @@ impl Mesh {
                 model_matrix,
                 camera,
                 viewport,
+                renderer.culling_mode(),
             ) {
                 triangle_2d.draw(renderer);
             }
@@ -122,6 +123,7 @@ impl Mesh {
                 model_matrix,
                 camera,
                 viewport,
+                renderer.culling_mode(),
             ) {
                 triangle_2d.draw_filled(renderer);
             }

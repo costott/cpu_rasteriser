@@ -19,6 +19,7 @@ use crate::graphics::{
     lighting::DirectionalLight,
     vertex_shader::{BasicVertexShader, GouraudVertexShader},
 };
+use crate::renderer::CullingMode;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
@@ -38,6 +39,7 @@ fn main() {
     let viewport = Viewport::new(WIDTH, HEIGHT);
 
     let mut renderer = Renderer::new(&viewport, Box::new(BasicFragmentShader));
+    renderer.set_culling_mode(CullingMode::BackFace);
 
     let vertex_shader = GouraudVertexShader::new(DirectionalLight::new(
         Vec3::new(0.0, 1.0, -1.0),
