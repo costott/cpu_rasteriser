@@ -76,7 +76,7 @@ impl GeometryProcessor {
     }
 
     /// Projects a clip space vertex into 2D screen space using the viewport dimensions.
-    fn project_vertex(vertex: ClipVertex, viewport: &Viewport) -> Vertex2D {
+    fn clip_to_screen(vertex: ClipVertex, viewport: &Viewport) -> Vertex2D {
         let inv_w = 1.0 / vertex.position.w;
 
         // 2D coordiantes to normalised device coordinates
@@ -99,10 +99,10 @@ impl GeometryProcessor {
     }
 
     /// Projects a triangle of clip space vertices into a triangle of 2D screen space vertices using the viewport dimensions.
-    fn project_triangle(triangle: TriangleClip, viewport: &Viewport) -> Triangle2D {
-        let a = Self::project_vertex(triangle.a, viewport);
-        let b = Self::project_vertex(triangle.b, viewport);
-        let c = Self::project_vertex(triangle.c, viewport);
+    fn triangle_clip_to_screen(triangle: TriangleClip, viewport: &Viewport) -> Triangle2D {
+        let a = Self::clip_to_screen(triangle.a, viewport);
+        let b = Self::clip_to_screen(triangle.b, viewport);
+        let c = Self::clip_to_screen(triangle.c, viewport);
 
         Triangle2D { a, b, c }
     }
@@ -117,20 +117,22 @@ impl GeometryProcessor {
         viewport: &Viewport,
         culling_mode: CullingMode,
     ) -> Vec<Triangle2D> {
-        let triangle = Self::triangle_model_to_world(triangle, model_matrix);
+        let world_triangle = Self::triangle_model_to_world(triangle, model_matrix);
 
-        if matches!(culling_mode, CullingMode::BackFace) && Self::is_back_facing(&triangle, camera)
+        if matches!(culling_mode, CullingMode::BackFace)
+            && Self::is_back_facing(&world_triangle, camera)
         {
             return vec![];
         }
 
-        let triangle_clip = Self::triangle_world_to_clip(triangle, shader, vertex_uniforms, camera);
+        let triangle_clip =
+            Self::triangle_world_to_clip(world_triangle, shader, vertex_uniforms, camera);
 
         let clipped = clip_triangle(triangle_clip);
 
         clipped
             .iter()
-            .map(|t| Self::project_triangle(*t, viewport))
+            .map(|t| Self::triangle_clip_to_screen(*t, viewport))
             .collect()
     }
 }

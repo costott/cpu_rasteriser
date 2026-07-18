@@ -4,7 +4,7 @@ use crate::graphics::camera::Camera;
 use crate::graphics::lighting::DirectionalLight;
 
 pub struct Scene {
-    camera: Camera,
+    pub camera: Camera,
     models: Vec<Model>,
     lights: Vec<DirectionalLight>,
 }

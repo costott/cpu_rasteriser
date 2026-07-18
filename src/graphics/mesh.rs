@@ -58,6 +58,56 @@ impl Mesh {
         }
     }
 
+    pub fn sphere(
+        radius: f32,
+        latitude_segments: usize,
+        longitude_segments: usize,
+        colour: Colour,
+        material_index: usize,
+    ) -> Self {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for lat in 0..=latitude_segments {
+            let theta = lat as f32 * std::f32::consts::PI / latitude_segments as f32;
+            let sin_theta = theta.sin();
+            let cos_theta = theta.cos();
+
+            for lon in 0..=longitude_segments {
+                let phi = lon as f32 * 2.0 * std::f32::consts::PI / longitude_segments as f32;
+                let sin_phi = phi.sin();
+                let cos_phi = phi.cos();
+
+                let x = radius * sin_theta * cos_phi;
+                let y = radius * cos_theta;
+                let z = radius * sin_theta * sin_phi;
+
+                vertices.push(Vertex3D::new(Vec3::new(x, y, z), colour));
+            }
+        }
+
+        for lat in 0..latitude_segments {
+            for lon in 0..longitude_segments {
+                let first = (lat * (longitude_segments + 1) + lon) as u32;
+                let second = first + longitude_segments as u32 + 1;
+
+                indices.push(first);
+                indices.push(second);
+                indices.push(first + 1);
+
+                indices.push(second);
+                indices.push(second + 1);
+                indices.push(first + 1);
+            }
+        }
+
+        Self {
+            vertices,
+            indices,
+            material_index,
+        }
+    }
+
     /// Returns an iterator over the triangles in the mesh, where each triangle is represented by three vertices.
     pub fn triangles(&self) -> impl Iterator<Item = Triangle3D> + '_ {
         self.indices.chunks(3).map(move |chunk| {
