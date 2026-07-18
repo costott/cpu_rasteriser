@@ -175,6 +175,7 @@ impl Edge {
         self.x += self.x_step;
         self.colour = self.colour + self.colour_step;
         self.normal = self.normal + self.normal_step;
+        self.world_position = self.world_position + self.world_position_step;
         self.depth += self.depth_step;
     }
 }
