@@ -76,7 +76,7 @@ impl GeometryProcessor {
     }
 
     /// Projects a clip space vertex into 2D screen space using the viewport dimensions.
-    fn clip_to_screen(vertex: ClipVertex, viewport: &Viewport) -> Vertex2D {
+    fn clip_to_screen(vertex: ClipVertex, viewport: &Viewport) -> RasterVertex {
         let inv_w = 1.0 / vertex.position.w;
 
         // 2D coordiantes to normalised device coordinates
@@ -88,13 +88,15 @@ impl GeometryProcessor {
             (1.0 - ndc.y) * 0.5 * viewport.height as f32,
         );
 
-        Vertex2D::new(
+        RasterVertex::new(
             screen,
-            vertex.world_position * inv_w,
-            vertex.colour * inv_w,
-            vertex.normal * inv_w,
-            ndc.z,
-            inv_w,
+            RasterVaryings::new(
+                vertex.world_position * inv_w,
+                (vertex.colour * inv_w).into(),
+                vertex.normal * inv_w,
+                ndc.z,
+                inv_w,
+            ),
         )
     }
 

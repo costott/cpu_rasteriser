@@ -104,3 +104,8 @@ impl From<Vec3> for Colour {
         )
     }
 }
+impl From<Colour> for Vec3 {
+    fn from(colour: Colour) -> Self {
+        Self::new(colour.r as f32, colour.g as f32, colour.b as f32)
+    }
+}

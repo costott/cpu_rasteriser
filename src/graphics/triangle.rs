@@ -5,13 +5,55 @@ use crate::renderer::Renderer;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Triangle2D {
-    pub a: Vertex2D,
-    pub b: Vertex2D,
-    pub c: Vertex2D,
+    pub a: RasterVertex,
+    pub b: RasterVertex,
+    pub c: RasterVertex,
 }
 impl Triangle2D {
-    pub fn new(a: Vertex2D, b: Vertex2D, c: Vertex2D) -> Self {
+    pub fn new(a: RasterVertex, b: RasterVertex, c: RasterVertex) -> Self {
         Self { a, b, c }
+    }
+
+    pub fn bounding_box(&self) -> (Vec2, Vec2) {
+        let min_x = self
+            .a
+            .position
+            .x
+            .min(self.b.position.x)
+            .min(self.c.position.x);
+        let max_x = self
+            .a
+            .position
+            .x
+            .max(self.b.position.x)
+            .max(self.c.position.x);
+        let min_y = self
+            .a
+            .position
+            .y
+            .min(self.b.position.y)
+            .min(self.c.position.y);
+        let max_y = self
+            .a
+            .position
+            .y
+            .max(self.b.position.y)
+            .max(self.c.position.y);
+        (Vec2::new(min_x, min_y), Vec2::new(max_x, max_y))
+    }
+
+    pub fn intersects_rect(&self, rect: crate::renderer::Rect) -> bool {
+        let (min, max) = self.bounding_box();
+
+        let triangle_min_x = min.x.floor() as i32;
+        let triangle_max_x = max.x.ceil() as i32;
+        let triangle_min_y = min.y.floor() as i32;
+        let triangle_max_y = max.y.ceil() as i32;
+
+        !(triangle_max_x < rect.min_x
+            || triangle_min_x > rect.max_x
+            || triangle_max_y < rect.min_y
+            || triangle_min_y > rect.max_y)
     }
 
     pub fn draw(&self, renderer: &mut Renderer) {
@@ -79,42 +121,108 @@ impl Triangle2D {
 
             let t = (x_start as f32 + 0.5 - left.x) * x_step;
 
-            let mut colour = left.colour + (right.colour - left.colour) * t;
-            let colour_step = (right.colour - left.colour) * x_step;
-
-            let mut normal = left.normal + (right.normal - left.normal) * t;
-            let normal_step = (right.normal - left.normal) * x_step;
-
-            let mut world_position =
-                left.world_position + (right.world_position - left.world_position) * t;
-            let world_position_step = (right.world_position - left.world_position) * x_step;
-
-            let mut inv_w = left.inv_w + (right.inv_w - left.inv_w) * t;
-            let inv_w_step = (right.inv_w - left.inv_w) * x_step;
-
-            let mut depth = left.depth + (right.depth - left.depth) * t;
-            let depth_step = (right.depth - left.depth) * x_step;
+            let mut varyings = left.varyings + (right.varyings - left.varyings) * t;
+            let varyings_step = (right.varyings - left.varyings) * x_step;
 
             for x in x_start..x_end {
-                let perspective = if inv_w.abs() < f32::EPSILON {
+                let perspective = if varyings.inv_w.abs() < f32::EPSILON {
                     0.0
                 } else {
-                    1.0 / inv_w
+                    1.0 / varyings.inv_w
                 };
 
                 callback(Fragment::new(
                     (x, y).into(),
-                    world_position * perspective,
-                    (colour * perspective).into(),
-                    (normal * perspective).normalise(),
-                    depth,
+                    varyings.world_position * perspective,
+                    (varyings.colour * perspective).into(),
+                    (varyings.normal * perspective).normalise(),
+                    varyings.depth,
                 ));
 
-                colour = colour + colour_step;
-                normal = normal + normal_step;
-                world_position = world_position + world_position_step;
-                inv_w = inv_w + inv_w_step;
-                depth += depth_step;
+                varyings = varyings + varyings_step;
+            }
+
+            edge_long.step();
+            edge_short.step();
+        }
+    }
+
+    pub fn rasterise_segment<F>(&self, bounds: crate::renderer::Rect, mut callback: F)
+    where
+        F: FnMut(Fragment),
+    {
+        let mut vertices = [self.a, self.b, self.c];
+
+        vertices.sort_by(|a, b| a.position.y.partial_cmp(&b.position.y).unwrap());
+
+        let v0 = vertices[0];
+        let v1 = vertices[1];
+        let v2 = vertices[2];
+
+        // Skip drawing if the triangle has zero height
+        if (v0.position.y - v2.position.y).abs() < f32::EPSILON {
+            return;
+        }
+
+        let y_start = ((v0.position.y - 0.5).ceil() as i32).max(bounds.min_y);
+        let y_end = ((v2.position.y - 0.5).ceil() as i32).min(bounds.max_y);
+
+        let mut left;
+        let mut right;
+
+        let mut edge_long = Edge::new(v0, v2, y_start as f32 + 0.5);
+
+        let mut edge_short = Edge::new(v0, v1, y_start as f32 + 0.5);
+
+        for y in y_start..y_end {
+            // // If the scanline is in the second half of the triangle, use the edge from v1 to v2 instead of v0 to v1.
+            let second_half = y as f32 + 0.5 > v1.position.y;
+
+            if second_half {
+                edge_short = Edge::new(v1, v2, y as f32 + 0.5);
+            }
+
+            // Determine which edge is on the left and which is on the right for the current scanline.
+            if edge_long.x < edge_short.x {
+                left = edge_long;
+                right = edge_short;
+            } else {
+                left = edge_short;
+                right = edge_long;
+            }
+
+            let x_start = ((left.x - 0.5).ceil() as i32).max(bounds.min_x);
+            let x_end = ((right.x - 0.5).ceil() as i32).min(bounds.max_x);
+
+            let width = right.x - left.x;
+
+            let x_step = if width.abs() < f32::EPSILON {
+                0.0
+            } else {
+                1.0 / width
+            };
+
+            let t = (x_start as f32 + 0.5 - left.x) * x_step;
+
+            let mut varyings = left.varyings + (right.varyings - left.varyings) * t;
+            let varyings_step = (right.varyings - left.varyings) * x_step;
+
+            for x in x_start..x_end {
+                let perspective = if varyings.inv_w.abs() < f32::EPSILON {
+                    0.0
+                } else {
+                    1.0 / varyings.inv_w
+                };
+
+                callback(Fragment::new(
+                    (x, y).into(),
+                    varyings.world_position * perspective,
+                    (varyings.colour * perspective).into(),
+                    (varyings.normal * perspective).normalise(),
+                    varyings.depth,
+                ));
+
+                varyings = varyings + varyings_step;
             }
 
             edge_long.step();
@@ -129,24 +237,12 @@ struct Edge {
     x: f32,
     x_step: f32,
 
-    colour: Vec3,
-    colour_step: Vec3,
-
-    normal: Vec3,
-    normal_step: Vec3,
-
-    world_position: Vec3,
-    world_position_step: Vec3,
-
-    inv_w: f32,
-    inv_w_step: f32,
-
-    depth: f32,
-    depth_step: f32,
+    varyings: RasterVaryings,
+    varyings_step: RasterVaryings,
 }
 
 impl Edge {
-    fn new(a: Vertex2D, b: Vertex2D, y_start: f32) -> Self {
+    fn new(a: RasterVertex, b: RasterVertex, y_start: f32) -> Self {
         let dy = b.position.y - a.position.y;
 
         let t = if dy.abs() < f32::EPSILON {
@@ -165,35 +261,14 @@ impl Edge {
             x: a.position.x + (b.position.x - a.position.x) * t,
             x_step: (b.position.x - a.position.x) * height,
 
-            colour: Vec3::new(a.colour.r as f32, a.colour.g as f32, a.colour.b as f32)
-                + (Vec3::new(b.colour.r as f32, b.colour.g as f32, b.colour.b as f32)
-                    - Vec3::new(a.colour.r as f32, a.colour.g as f32, a.colour.b as f32))
-                    * t,
-            colour_step: (Vec3::new(b.colour.r as f32, b.colour.g as f32, b.colour.b as f32)
-                - Vec3::new(a.colour.r as f32, a.colour.g as f32, a.colour.b as f32))
-                * height,
-
-            normal: a.normal + (b.normal - a.normal) * t,
-            normal_step: (b.normal - a.normal) * height,
-
-            world_position: a.world_position + (b.world_position - a.world_position) * t,
-            world_position_step: (b.world_position - a.world_position) * height,
-
-            depth: a.depth + (b.depth - a.depth) * t,
-            depth_step: (b.depth - a.depth) * height,
-
-            inv_w: a.inv_w + (b.inv_w - a.inv_w) * t,
-            inv_w_step: (b.inv_w - a.inv_w) * height,
+            varyings: a.varyings + (b.varyings - a.varyings) * t,
+            varyings_step: (b.varyings - a.varyings) * height,
         }
     }
 
     fn step(&mut self) {
         self.x += self.x_step;
-        self.colour = self.colour + self.colour_step;
-        self.normal = self.normal + self.normal_step;
-        self.world_position = self.world_position + self.world_position_step;
-        self.depth += self.depth_step;
-        self.inv_w += self.inv_w_step;
+        self.varyings = self.varyings + self.varyings_step;
     }
 }
 
@@ -230,6 +305,8 @@ impl Triangle3D {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::graphics::{fragment_shader::BasicFragmentShader, vertex_shader::BasicVertexShader};
 
@@ -239,34 +316,23 @@ mod tests {
         let mut renderer = Renderer::new(
             &viewport,
             Box::new(BasicVertexShader),
-            Box::new(BasicFragmentShader),
-        );
+            Arc::new(BasicFragmentShader),
+        )
+        .unwrap();
         renderer.clear(Colour::BLACK);
 
         let triangle = Triangle2D::new(
-            Vertex2D::new(
+            RasterVertex::new(
                 Vec2::new(0.1, 0.1),
-                Vec3::ZERO,
-                Colour::RED,
-                Vec3::ZERO,
-                0.5,
-                1.0,
+                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
             ),
-            Vertex2D::new(
+            RasterVertex::new(
                 Vec2::new(2.9, 0.1),
-                Vec3::ZERO,
-                Colour::RED,
-                Vec3::ZERO,
-                0.5,
-                1.0,
+                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
             ),
-            Vertex2D::new(
+            RasterVertex::new(
                 Vec2::new(0.1, 2.9),
-                Vec3::ZERO,
-                Colour::RED,
-                Vec3::ZERO,
-                0.5,
-                1.0,
+                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
             ),
         );
 
@@ -300,34 +366,23 @@ mod tests {
         let mut renderer = Renderer::new(
             &viewport,
             Box::new(BasicVertexShader),
-            Box::new(BasicFragmentShader),
-        );
+            Arc::new(BasicFragmentShader),
+        )
+        .unwrap();
         renderer.clear(Colour::BLACK);
 
         let triangle = Triangle2D::new(
-            Vertex2D::new(
+            RasterVertex::new(
                 Vec2::new(0.5, 0.5),
-                Vec3::ZERO,
-                Colour::RED,
-                Vec3::ZERO,
-                0.5,
-                1.0,
+                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
             ),
-            Vertex2D::new(
+            RasterVertex::new(
                 Vec2::new(3.5, 0.5),
-                Vec3::ZERO,
-                Colour::GREEN,
-                Vec3::ZERO,
-                0.5,
-                1.0,
+                RasterVaryings::new(Vec3::ZERO, Colour::GREEN.into(), Vec3::ZERO, 0.5, 1.0),
             ),
-            Vertex2D::new(
+            RasterVertex::new(
                 Vec2::new(0.5, 3.5),
-                Vec3::ZERO,
-                Colour::RED,
-                Vec3::ZERO,
-                0.5,
-                1.0,
+                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
             ),
         );
 
@@ -349,31 +404,35 @@ mod tests {
 
     #[test]
     fn draw_filled_interpolates_normals_across_scanlines() {
-        let left = Vertex2D::new(
+        let left = RasterVertex::new(
             Vec2::new(0.0, 0.0),
-            Vec3::ZERO,
-            Colour::WHITE,
-            Vec3::new(1.0, 0.0, 0.0),
-            0.0,
-            1.0,
+            RasterVaryings::new(
+                Vec3::ZERO,
+                Colour::WHITE.into(),
+                Vec3::new(1.0, 0.0, 0.0),
+                0.0,
+                1.0,
+            ),
         );
-        let right = Vertex2D::new(
+        let right = RasterVertex::new(
             Vec2::new(0.0, 4.0),
-            Vec3::ZERO,
-            Colour::WHITE,
-            Vec3::new(0.0, 1.0, 0.0),
-            0.0,
-            1.0,
+            RasterVaryings::new(
+                Vec3::ZERO,
+                Colour::WHITE.into(),
+                Vec3::new(0.0, 1.0, 0.0),
+                0.0,
+                1.0,
+            ),
         );
 
         let edge = Edge::new(left, right, 0.0);
 
-        assert_eq!(edge.normal, Vec3::new(1.0, 0.0, 0.0));
-        assert_eq!(edge.normal_step, Vec3::new(-0.25, 0.25, 0.0));
+        assert_eq!(edge.varyings.normal, Vec3::new(1.0, 0.0, 0.0));
+        assert_eq!(edge.varyings_step.normal, Vec3::new(-0.25, 0.25, 0.0));
 
         let mut stepped = edge;
         stepped.step();
 
-        assert_eq!(stepped.normal, Vec3::new(0.75, 0.25, 0.0));
+        assert_eq!(stepped.varyings.normal, Vec3::new(0.75, 0.25, 0.0));
     }
 }
