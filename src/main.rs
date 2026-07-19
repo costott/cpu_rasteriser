@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use minifb::{Key, Window, WindowOptions};
 
 pub mod colour;
@@ -41,8 +43,9 @@ fn main() {
     let mut renderer = Renderer::new(
         &viewport,
         Box::new(BasicVertexShader),
-        Box::new(PhongFragmentShader),
-    );
+        Arc::new(PhongFragmentShader),
+    )
+    .unwrap();
     renderer.set_culling_mode(CullingMode::BackFace);
 
     let mut camera = Camera::new(

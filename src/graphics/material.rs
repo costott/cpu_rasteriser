@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Material {
     pub ambient: Colour,
     pub diffuse: Colour,

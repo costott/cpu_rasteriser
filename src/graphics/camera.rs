@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+#[derive(Debug, Clone)]
 pub struct Camera {
     pub eye: Vec3,
     pub lookat: Vec3,
@@ -34,6 +35,7 @@ impl Camera {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Projection {
     Perspective(PerspectiveProjection),
     Orthographic(OrthographicProjection),
@@ -47,6 +49,7 @@ impl Projection {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct OrthographicProjection {
     pub left: f32,
     pub right: f32,
@@ -92,6 +95,7 @@ impl OrthographicProjection {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PerspectiveProjection {
     pub fov: f32,
     pub aspect_ratio: f32,
