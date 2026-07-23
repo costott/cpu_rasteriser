@@ -1,12 +1,13 @@
-use std::{collections::HashMap, eprintln, num::FpCategory::Normal};
-
-use super::mtl::load_mtl;
 use crate::prelude::*;
 
+use crate::loaders::mtl::load_mtl;
+
+use std::{collections::HashMap, eprintln};
+
+/// Load a 3D model from an OBJ file
 pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model, ObjError> {
     let obj_data = std::fs::read_to_string(&file_path).map_err(|e| ObjError::IoError(e))?;
 
-    // let mut vertices: Vec<Vertex3D> = Vec::new();
     let mut positions: Vec<Vec3> = Vec::new();
     let mut texcoords: Vec<Vec2> = Vec::new();
     let mut normals: Vec<Vec3> = Vec::new();
@@ -24,6 +25,9 @@ pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model, ObjErro
         }
 
         match parts[0] {
+            "#" => {
+                // Comment line, ignore
+            }
             "v" => {
                 // Vertex position
                 if parts.len() < 4 {

@@ -1,30 +1,20 @@
-use minifb::{Key, Window, WindowOptions};
+use cpu_rasteriser::prelude::*;
 
-pub mod colour;
-pub mod depthbuffer;
-pub mod framebuffer;
-pub mod graphics;
-pub mod loaders;
-use loaders::*;
-pub mod maths;
-pub mod renderer;
-use renderer::Renderer;
-pub mod viewport;
-use viewport::Viewport;
-
-pub mod prelude;
-use prelude::*;
-
-use crate::renderer::CullingMode;
-use crate::{
+use cpu_rasteriser::{
     graphics::{
-        camera::{Camera, OrbitControls, Projection},
-        fragment_shader::{BasicFragmentShader, PhongFragmentShader},
+        camera::{Camera, Projection},
+        fragment_shader::PhongFragmentShader,
         lighting::DirectionalLight,
-        vertex_shader::{BasicVertexShader, GouraudVertexShader},
+        vertex_shader::BasicVertexShader,
     },
     loaders::obj::load_obj,
+    renderer::{CullingMode, Renderer},
 };
+
+mod common;
+use common::camera_controller::FirstPersonControls;
+
+use minifb::{Key, Window, WindowOptions};
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
@@ -54,17 +44,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Vec3::new(0.0, 0.75, 1.25),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
-        // Projection::Orthographic(graphics::camera::OrthographicProjection::new(
-        //     -1.0, 1.0, -1.0, 1.0, 0.1, 10.0,
-        // )),
-        Projection::Perspective(graphics::camera::PerspectiveProjection::new(
-            90.0,
-            WIDTH as f32 / HEIGHT as f32,
-            0.01,
-            50.0,
-        )),
+        Projection::Perspective(
+            cpu_rasteriser::graphics::camera::PerspectiveProjection::new(
+                90.0,
+                WIDTH as f32 / HEIGHT as f32,
+                0.01,
+                50.0,
+            ),
+        ),
     );
-    let mut controls = OrbitControls::new(&camera);
+    let mut controls = FirstPersonControls::new(&camera);
 
     let floor_material = Material::new(
         "Floor".to_string(),
@@ -160,10 +149,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         controls.update(&mut scene.camera, &window, dt);
 
-        // renderer.draw_model(&floor_model, &scene, &viewport);
-        // renderer.draw_model(&cube1, &scene, &viewport);
-        // renderer.draw_model(&cube2, &scene, &viewport);
-        // renderer.draw_model(&teapot, &scene, &viewport);
+        renderer.draw_model(&floor_model, &scene, &viewport);
+        renderer.draw_model(&cube1, &scene, &viewport);
+        renderer.draw_model(&cube2, &scene, &viewport);
+        renderer.draw_model(&teapot, &scene, &viewport);
         renderer.draw_model(&loaded_cube, &scene, &viewport);
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
