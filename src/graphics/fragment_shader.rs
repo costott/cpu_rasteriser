@@ -11,7 +11,7 @@ pub trait FragmentShader {
 pub struct FragmentUniforms<'a> {
     pub camera: &'a Camera,
     pub lights: &'a [DirectionalLight],
-    pub material: &'a Material,
+    pub material: Option<&'a Material>,
 }
 
 pub struct BasicFragmentShader;
@@ -22,11 +22,16 @@ impl FragmentShader for BasicFragmentShader {
 }
 
 pub struct PhongFragmentShader;
-impl FragmentShader for PhongFragmentShader {
-    fn shade(&self, fragment: Fragment, uniforms: &FragmentUniforms) -> Option<Fragment> {
+impl PhongFragmentShader {
+    fn phong_shade(
+        &self,
+        fragment: Fragment,
+        uniforms: &FragmentUniforms,
+        material: &Material,
+    ) -> Option<Fragment> {
         let normal = fragment.normal.normalise();
 
-        let mut colour = uniforms.material.ambient;
+        let mut colour = material.ambient;
 
         let view_dir = (uniforms.camera.eye - fragment.world_position).normalise();
 
@@ -36,22 +41,28 @@ impl FragmentShader for PhongFragmentShader {
             // Diffuse
             let diffuse_strength = normal.dot(&light_dir).max(0.0);
 
-            let diffuse = uniforms.material.diffuse * light.colour * diffuse_strength;
+            let diffuse = material.diffuse * light.colour * diffuse_strength;
 
             // Specular
             let reflect_dir = reflect(-light_dir, normal);
 
-            let specular_strength = view_dir
-                .dot(&reflect_dir)
-                .max(0.0)
-                .powf(uniforms.material.shininess);
+            let specular_strength = view_dir.dot(&reflect_dir).max(0.0).powf(material.shininess);
 
-            let specular = uniforms.material.specular * light.colour * specular_strength;
+            let specular = material.specular * light.colour * specular_strength;
 
             colour = colour + diffuse + specular;
         }
 
         Some(Fragment { colour, ..fragment })
+    }
+}
+impl FragmentShader for PhongFragmentShader {
+    fn shade(&self, fragment: Fragment, uniforms: &FragmentUniforms) -> Option<Fragment> {
+        if let Some(material) = uniforms.material {
+            self.phong_shade(fragment, uniforms, material)
+        } else {
+            Some(fragment)
+        }
     }
 }
 

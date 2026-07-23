@@ -1,0 +1,40 @@
+newmtl Red
+Ka 0.2 0.0 0.0
+Kd 1.0 0.0 0.0
+Ks 1.0 1.0 1.0
+Ns 32
+
+
+newmtl Green
+Ka 0.0 0.2 0.0
+Kd 0.0 1.0 0.0
+Ks 1.0 1.0 1.0
+Ns 32
+
+
+newmtl Blue
+Ka 0.0 0.0 0.2
+Kd 0.0 0.0 1.0
+Ks 1.0 1.0 1.0
+Ns 32
+
+
+newmtl Yellow
+Ka 0.2 0.2 0.0
+Kd 1.0 1.0 0.0
+Ks 1.0 1.0 1.0
+Ns 32
+
+
+newmtl Purple
+Ka 0.2 0.0 0.2
+Kd 1.0 0.0 1.0
+Ks 1.0 1.0 1.0
+Ns 32
+
+
+newmtl Cyan
+Ka 0.0 0.2 0.2
+Kd 0.0 1.0 1.0
+Ks 1.0 1.0 1.0
+Ns 32

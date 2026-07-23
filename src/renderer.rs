@@ -74,10 +74,9 @@ impl Renderer {
 
     pub fn draw_model(&mut self, model: &Model, scene: &Scene, viewport: &Viewport) {
         for mesh in &model.meshes {
-            if let Some(material) = model.materials.get(mesh.material_index) {
-                let draw_call = DrawCall::new(mesh, material, model.transform.model_matrix());
-                self.draw_mesh(&draw_call, scene, viewport);
-            }
+            let material = mesh.material_index.map(|index| &model.materials[index]);
+            let draw_call = DrawCall::new(mesh, material, model.transform.model_matrix());
+            self.draw_mesh(&draw_call, scene, viewport);
         }
     }
 
@@ -117,11 +116,11 @@ pub enum CullingMode {
 
 pub struct DrawCall<'a> {
     pub mesh: &'a Mesh,
-    pub material: &'a Material,
+    pub material: Option<&'a Material>,
     pub model_matrix: Mat4,
 }
 impl<'a> DrawCall<'a> {
-    pub fn new(mesh: &'a Mesh, material: &'a Material, model_matrix: Mat4) -> DrawCall<'a> {
+    pub fn new(mesh: &'a Mesh, material: Option<&'a Material>, model_matrix: Mat4) -> DrawCall<'a> {
         DrawCall {
             mesh,
             material,

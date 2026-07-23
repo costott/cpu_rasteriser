@@ -1,18 +1,36 @@
 use crate::prelude::*;
 
+#[derive(Debug)]
 pub struct Model {
-    // pub mesh: Mesh,
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
     pub transform: ModelTransform,
 }
 impl Model {
-    pub fn new(meshes: Vec<Mesh>, materials: Vec<Material>, transform: ModelTransform) -> Self {
-        Self {
+    /// Creates a new model with the given meshes, materials, and transform.
+    pub fn new(
+        meshes: Vec<Mesh>,
+        materials: Vec<Material>,
+        transform: ModelTransform,
+    ) -> Result<Self, ModelError> {
+        let model = Self {
             meshes,
             materials,
             transform,
+        };
+        model.validate()?;
+        Ok(model)
+    }
+
+    fn validate(&self) -> Result<(), ModelError> {
+        for (i, mesh) in self.meshes.iter().enumerate() {
+            if let Some(material_index) = mesh.material_index {
+                if material_index >= self.materials.len() {
+                    return Err(ModelError::InvalidMaterialIndex(i, material_index));
+                }
+            }
         }
+        Ok(())
     }
 
     pub fn calculate_vertex_normals(&mut self) {
@@ -22,6 +40,24 @@ impl Model {
     }
 }
 
+#[derive(Debug)]
+pub enum ModelError {
+    InvalidMaterialIndex(usize, usize), // (mesh_index, material_index)
+}
+impl std::fmt::Display for ModelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ModelError::InvalidMaterialIndex(mesh_index, material_index) => write!(
+                f,
+                "Mesh {} has an invalid material index: {}",
+                mesh_index, material_index
+            ),
+        }
+    }
+}
+impl std::error::Error for ModelError {}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelTransform {
     pub position: Vec3,
     pub rotation: Vec3,
