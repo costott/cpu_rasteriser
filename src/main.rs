@@ -46,7 +46,7 @@ fn main() {
     renderer.set_culling_mode(CullingMode::BackFace);
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, -0.75, 1.25),
+        Vec3::new(0.0, 0.75, 1.25),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
         // Projection::Orthographic(graphics::camera::OrthographicProjection::new(
@@ -86,7 +86,7 @@ fn main() {
         vec![Mesh::cube(Colour::from_u32(0x808080), 0)],
         vec![floor_material],
         ModelTransform::new(
-            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(50.0, 0.1, 50.0),
         ),
@@ -108,7 +108,7 @@ fn main() {
         vec![Mesh::cube(Colour::WHITE, 0)],
         vec![red_plastic],
         ModelTransform::new(
-            Vec3::new(0.5, 0.8, 0.5),
+            Vec3::new(0.5, 0.25, 0.5),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.5, 0.5, 0.5),
         ),
@@ -117,7 +117,7 @@ fn main() {
 
     let mut scene = Scene::new(camera);
     scene.add_light(DirectionalLight::new(
-        Vec3::new(0.0, 1.0, -1.0),
+        Vec3::new(0.0, -1.0, -1.0),
         Colour::from_u32(0xfffde8),
     ));
 
