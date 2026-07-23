@@ -83,4 +83,12 @@ impl Vertex3D {
             normal: Vec3::ZERO,
         }
     }
+
+    pub fn new_with_normal(position: Vec3, colour: Colour, normal: Vec3) -> Self {
+        Self {
+            position,
+            colour,
+            normal,
+        }
+    }
 }

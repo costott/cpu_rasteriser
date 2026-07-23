@@ -1,15 +1,16 @@
 use crate::prelude::*;
 
+#[derive(Debug)]
 pub struct Mesh {
     /// The vertices of the mesh.
     vertices: Vec<Vertex3D>,
     /// The indices of the mesh, which define the triangles.
     indices: Vec<u32>,
     /// The index of the material to use for this mesh.
-    pub material_index: usize,
+    pub material_index: Option<usize>,
 }
 impl Mesh {
-    pub fn new(vertices: Vec<Vertex3D>, indices: Vec<u32>, material_index: usize) -> Self {
+    pub fn new(vertices: Vec<Vertex3D>, indices: Vec<u32>, material_index: Option<usize>) -> Self {
         Self {
             vertices,
             indices,
@@ -18,7 +19,7 @@ impl Mesh {
     }
 
     /// Creates a white cube mesh with 8 vertices and 12 triangles (36 indices).
-    pub fn cube(colour: Colour, material_index: usize) -> Self {
+    pub fn cube(colour: Colour, material_index: Option<usize>) -> Self {
         let vertices = vec![
             Vertex3D::new(Vec3::new(-0.5, -0.5, -0.5), colour),
             Vertex3D::new(Vec3::new(0.5, -0.5, -0.5), colour),
@@ -63,7 +64,7 @@ impl Mesh {
         latitude_segments: usize,
         longitude_segments: usize,
         colour: Colour,
-        material_index: usize,
+        material_index: Option<usize>,
     ) -> Self {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();

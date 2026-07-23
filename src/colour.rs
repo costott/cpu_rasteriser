@@ -33,6 +33,13 @@ impl Colour {
         Self { r, g, b }
     }
 
+    pub fn from_f32(r: f32, g: f32, b: f32) -> Self {
+        let r = (r.clamp(0.0, 1.0) * 255.0) as u8;
+        let g = (g.clamp(0.0, 1.0) * 255.0) as u8;
+        let b = (b.clamp(0.0, 1.0) * 255.0) as u8;
+        Self { r, g, b }
+    }
+
     pub fn lerp(&self, other: &Self, t: f32) -> Self {
         *self * (1.0 - t) + *other * t
     }
