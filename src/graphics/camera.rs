@@ -19,7 +19,7 @@ impl Camera {
     pub fn view_matrix(&self) -> Mat4 {
         let n = (self.eye - self.lookat).normalise();
         let u = self.up.cross(&n).normalise();
-        let v = u.cross(&n);
+        let v = n.cross(&u);
 
         Mat4::new([
             [u.x, u.y, u.z, -u.dot(&self.eye)],

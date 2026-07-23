@@ -58,7 +58,7 @@ impl GeometryProcessor {
         let normal = (b - a).cross(&(c - a));
         let centroid = (a + b + c) / 3.0;
 
-        normal.dot(&centroid) <= 0.0
+        normal.dot(&centroid) >= 0.0
     }
 
     /// Transforms a triangle of 3D vertices into a triangle of clip space vertices using the model matrix and camera.
