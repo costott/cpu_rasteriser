@@ -46,6 +46,11 @@ impl Renderer {
         self.culling_mode = culling_mode;
     }
 
+    pub fn resize(&mut self, viewport: &Viewport) {
+        self.framebuffer.resize(viewport.width, viewport.height);
+        self.depthbuffer.resize(viewport.width, viewport.height);
+    }
+
     pub fn add_light(&mut self, light: DirectionalLight) {
         self.lights.push(light);
     }
@@ -70,6 +75,12 @@ impl Renderer {
 
     pub fn pixels(&self) -> &[u32] {
         self.framebuffer.pixels()
+    }
+
+    pub fn draw_scene(&mut self, scene: &Scene, viewport: &Viewport) {
+        for model in scene.models() {
+            self.draw_model(model, scene, viewport);
+        }
     }
 
     pub fn draw_model(&mut self, model: &Model, scene: &Scene, viewport: &Viewport) {

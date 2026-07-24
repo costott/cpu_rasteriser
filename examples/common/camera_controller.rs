@@ -101,7 +101,7 @@ impl FirstPersonControls {
     }
 
     fn update_mouse(&mut self, camera: &mut Camera, window: &minifb::Window) {
-        if let Some((x, y)) = window.get_mouse_pos(minifb::MouseMode::Discard) {
+        if let Some((x, y)) = window.get_mouse_pos(minifb::MouseMode::Pass) {
             if let Some((last_x, last_y)) = self.last_mouse {
                 let dx = x - last_x;
                 let dy = y - last_y;
