@@ -30,6 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         panic!("{}", e);
     });
     window.set_target_fps(60);
+    window.set_cursor_visibility(false);
 
     let viewport = Viewport::new(WIDTH, HEIGHT);
 

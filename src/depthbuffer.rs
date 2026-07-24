@@ -18,6 +18,12 @@ impl DepthBuffer {
         self.buffer.fill(1.0);
     }
 
+    pub fn resize(&mut self, width: usize, height: usize) {
+        self.width = width;
+        self.height = height;
+        self.buffer.resize(width * height, 1.0);
+    }
+
     pub fn set_depth(&mut self, p: Vec2, depth: f32) {
         let x = p.x as i32;
         let y = p.y as i32;
