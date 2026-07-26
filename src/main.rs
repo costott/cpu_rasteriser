@@ -149,6 +149,7 @@ fn main() {
         renderer.draw_model(&floor_model, &scene, &viewport);
         renderer.draw_model(&cube1, &scene, &viewport);
         renderer.draw_model(&cube2, &scene, &viewport);
+        renderer.finish_frame(&scene);
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
