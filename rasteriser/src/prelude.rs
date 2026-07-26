@@ -1,5 +1,6 @@
 pub use crate::colour::*;
 pub use crate::graphics::circle::*;
+pub use crate::graphics::interpolate::*;
 pub use crate::graphics::line::*;
 pub use crate::graphics::material::*;
 pub use crate::graphics::mesh::*;

@@ -4,13 +4,20 @@ use crate::prelude::*;
 
 /// Represents a 2D vertex with position, colour, normal, and depth.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RasterVertex {
+pub struct RasterVertex<V> {
     pub position: Vec2,
-    pub varyings: RasterVaryings,
+    pub depth: f32,
+    pub inv_w: f32,
+    pub varyings: V,
 }
-impl RasterVertex {
-    pub fn new(position: Vec2, varyings: RasterVaryings) -> Self {
-        Self { position, varyings }
+impl<V> RasterVertex<V> {
+    pub fn new(position: Vec2, depth: f32, inv_w: f32, varyings: V) -> Self {
+        Self {
+            position,
+            depth,
+            inv_w,
+            varyings,
+        }
     }
 
     pub fn lerp(&self, other: &Self, t: f32) -> Self {
@@ -19,6 +26,13 @@ impl RasterVertex {
             varyings: self.varyings.lerp(&other.varyings, t),
         }
     }
+}
+
+#[derive(Interpolate)]
+pub struct InternalVaryings {
+    pub world_position: Vec3,
+    pub colour: Vec3,
+    pub normal: Vec3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

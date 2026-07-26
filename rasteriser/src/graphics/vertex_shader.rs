@@ -3,6 +3,10 @@ use crate::prelude::*;
 use crate::graphics::lighting::DirectionalLight;
 
 pub trait VertexShader {
+    type Vertex;
+    type Uniforms;
+    type Varying: Interpolate;
+
     /// Processes a world-space vertex, before projection and clipping.
     fn shade(&self, vertex: Vertex3D, uniforms: &VertexUniforms) -> Vertex3D;
 }
