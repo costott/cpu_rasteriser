@@ -82,6 +82,16 @@ impl Renderer {
         self.framebuffer.pixels()
     }
 
+    pub fn render_scene(&mut self, scene: &Scene, viewport: &Viewport) {
+        self.begin_frame(viewport);
+
+        for model in scene.models() {
+            self.draw_model(model, scene, viewport);
+        }
+
+        self.finish_frame(scene);
+    }
+
     pub fn begin_frame(&mut self, viewport: &Viewport) {
         self.framebuffer.clear(Colour::BLACK);
         self.depthbuffer.clear();

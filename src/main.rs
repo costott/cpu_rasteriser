@@ -123,6 +123,9 @@ fn main() {
         Vec3::new(0.0, 1.0, -1.0),
         Colour::from_u32(0xfffde8),
     ));
+    scene.add_model(floor_model);
+    scene.add_model(cube1);
+    scene.add_model(cube2);
 
     let mut t: f32 = 0.0;
     let mut angle: f32 = 0.0;
@@ -144,11 +147,12 @@ fn main() {
 
         controls.update(&mut scene.camera, &window, dt);
 
-        renderer.begin_frame(&viewport);
-        renderer.draw_model(&floor_model, &scene, &viewport);
-        renderer.draw_model(&cube1, &scene, &viewport);
-        renderer.draw_model(&cube2, &scene, &viewport);
-        renderer.finish_frame(&scene);
+        // renderer.begin_frame(&viewport);
+        // renderer.draw_model(&floor_model, &scene, &viewport);
+        // renderer.draw_model(&cube1, &scene, &viewport);
+        // renderer.draw_model(&cube2, &scene, &viewport);
+        // renderer.finish_frame(&scene);
+        renderer.render_scene(&scene, &viewport);
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
