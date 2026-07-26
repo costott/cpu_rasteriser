@@ -15,6 +15,7 @@ mod common;
 use common::camera_controller::OrbitControls;
 
 use minifb::{Key, Window, WindowOptions};
+use std::sync::Arc;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
@@ -36,8 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = Renderer::new(
         &viewport,
         Box::new(GouraudVertexShader),
-        Box::new(BasicFragmentShader),
-    );
+        Arc::new(BasicFragmentShader),
+    )?;
     renderer.set_culling_mode(CullingMode::None);
 
     let mut camera = Camera::new(
@@ -64,6 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Vec3::new(0.0, -1.0, -1.0),
         Colour::from_u32(0xfffde8),
     ));
+    scene.add_model(teapot);
 
     let mut previous_time = std::time::Instant::now();
 
@@ -73,11 +75,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .as_secs_f32();
         previous_time = std::time::Instant::now();
 
-        renderer.clear(Colour::BLACK);
-
         controls.update(&mut scene.camera, &window, dt);
 
-        renderer.draw_model(&teapot, &scene, &viewport);
+        renderer.draw_scene(&scene, &viewport);
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)

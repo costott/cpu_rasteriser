@@ -61,11 +61,6 @@ impl Renderer {
         self.depthbuffer.resize(viewport.width, viewport.height);
     }
 
-    pub fn resize(&mut self, viewport: &Viewport) {
-        self.framebuffer.resize(viewport.width, viewport.height);
-        self.depthbuffer.resize(viewport.width, viewport.height);
-    }
-
     pub fn set_thread_pool_size(&mut self, size: usize) {
         self.thread_pool = ThreadPool::new(size);
     }
