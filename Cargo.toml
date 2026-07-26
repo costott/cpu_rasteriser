@@ -5,4 +5,7 @@ edition = "2024"
 
 [dependencies]
 minifb = "0.28"
+softbuffer = "0.4.8"
+winit = "0.30.13"
+
 threadpool = "1.8.1"

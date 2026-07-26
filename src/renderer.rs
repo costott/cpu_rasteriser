@@ -56,6 +56,16 @@ impl Renderer {
         self.culling_mode = culling_mode;
     }
 
+    pub fn resize(&mut self, viewport: &Viewport) {
+        self.framebuffer.resize(viewport.width, viewport.height);
+        self.depthbuffer.resize(viewport.width, viewport.height);
+    }
+
+    pub fn resize(&mut self, viewport: &Viewport) {
+        self.framebuffer.resize(viewport.width, viewport.height);
+        self.depthbuffer.resize(viewport.width, viewport.height);
+    }
+
     pub fn set_thread_pool_size(&mut self, size: usize) {
         self.thread_pool = ThreadPool::new(size);
     }
@@ -82,7 +92,7 @@ impl Renderer {
         self.framebuffer.pixels()
     }
 
-    pub fn render_scene(&mut self, scene: &Scene, viewport: &Viewport) {
+    pub fn draw_scene(&mut self, scene: &Scene, viewport: &Viewport) {
         self.begin_frame(viewport);
 
         for model in scene.models() {
@@ -122,10 +132,9 @@ impl Renderer {
 
     pub fn draw_model(&mut self, model: &Model, scene: &Scene, viewport: &Viewport) {
         for mesh in &model.meshes {
-            if let Some(material) = model.materials.get(mesh.material_index) {
-                let draw_call = DrawCall::new(mesh, material, model.transform.model_matrix());
-                self.draw_mesh(&draw_call, scene, viewport);
-            }
+            let material = mesh.material_index.map(|index| &model.materials[index]);
+            let draw_call = DrawCall::new(mesh, material, model.transform.model_matrix());
+            self.draw_mesh(&draw_call, scene, viewport);
         }
     }
 
@@ -144,12 +153,12 @@ impl Renderer {
                 viewport,
                 self.culling_mode(),
             ) {
-                self.bin_triangle(triangle_2d, *draw_call.material);
+                self.bin_triangle(triangle_2d, draw_call.material);
             }
         }
     }
 
-    fn bin_triangle(&mut self, triangle: Triangle2D, material: Material) {
+    fn bin_triangle(&mut self, triangle: Triangle2D, material: Option<&Material>) {
         // Determine which tiles the triangle overlaps and add it to those
         let (mins, maxs) = triangle.bounding_box();
 
@@ -163,9 +172,10 @@ impl Renderer {
                 let index = tile_y as usize * self.tiles_x + tile_x as usize;
 
                 if triangle.intersects_rect(self.tiles[index].bounds) {
-                    self.tiles[index]
-                        .triangles
-                        .push(TileTriangle { triangle, material });
+                    self.tiles[index].triangles.push(TileTriangle {
+                        triangle,
+                        material: material.cloned(),
+                    });
                 }
             }
         }
@@ -231,7 +241,7 @@ fn render_tile(
         let uniforms = FragmentUniforms {
             camera,
             lights,
-            material: &tile_triangle.material,
+            material: tile_triangle.material.as_ref(),
         };
 
         tile_triangle
@@ -265,11 +275,11 @@ pub enum CullingMode {
 
 pub struct DrawCall<'a> {
     pub mesh: &'a Mesh,
-    pub material: &'a Material,
+    pub material: Option<&'a Material>,
     pub model_matrix: Mat4,
 }
 impl<'a> DrawCall<'a> {
-    pub fn new(mesh: &'a Mesh, material: &'a Material, model_matrix: Mat4) -> DrawCall<'a> {
+    pub fn new(mesh: &'a Mesh, material: Option<&'a Material>, model_matrix: Mat4) -> DrawCall<'a> {
         DrawCall {
             mesh,
             material,
@@ -291,7 +301,7 @@ struct Tile {
 #[derive(Clone)]
 struct TileTriangle {
     triangle: Triangle2D,
-    material: Material,
+    material: Option<Material>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

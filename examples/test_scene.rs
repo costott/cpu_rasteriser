@@ -1,32 +1,25 @@
-use std::sync::Arc;
+use cpu_rasteriser::prelude::*;
+
+use cpu_rasteriser::{
+    graphics::{
+        camera::{Camera, Projection},
+        fragment_shader::PhongFragmentShader,
+        lighting::DirectionalLight,
+        vertex_shader::BasicVertexShader,
+    },
+    loaders::obj::load_obj,
+    renderer::{CullingMode, Renderer},
+};
+
+mod common;
+use common::camera_controller::FirstPersonControls;
 
 use minifb::{Key, Window, WindowOptions};
-
-pub mod colour;
-pub mod depthbuffer;
-pub mod framebuffer;
-pub mod graphics;
-pub mod maths;
-pub mod renderer;
-use renderer::Renderer;
-pub mod viewport;
-use viewport::Viewport;
-
-pub mod prelude;
-use prelude::*;
-
-use crate::graphics::{
-    camera::{Camera, OrbitControls, Projection},
-    fragment_shader::{BasicFragmentShader, PhongFragmentShader},
-    lighting::DirectionalLight,
-    vertex_shader::{BasicVertexShader, GouraudVertexShader},
-};
-use crate::renderer::CullingMode;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut window = Window::new(
         "CPU rasteriser - ESC to exit",
         WIDTH,
@@ -37,6 +30,7 @@ fn main() {
         panic!("{}", e);
     });
     window.set_target_fps(60);
+    window.set_cursor_visibility(false);
 
     let viewport = Viewport::new(WIDTH, HEIGHT);
 
@@ -49,22 +43,22 @@ fn main() {
     renderer.set_culling_mode(CullingMode::BackFace);
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, -0.75, 1.25),
+        Vec3::new(0.0, 0.75, 1.25),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
-        // Projection::Orthographic(graphics::camera::OrthographicProjection::new(
-        //     -1.0, 1.0, -1.0, 1.0, 0.1, 10.0,
-        // )),
-        Projection::Perspective(graphics::camera::PerspectiveProjection::new(
-            90.0,
-            WIDTH as f32 / HEIGHT as f32,
-            0.1,
-            50.0,
-        )),
+        Projection::Perspective(
+            cpu_rasteriser::graphics::camera::PerspectiveProjection::new(
+                90.0,
+                WIDTH as f32 / HEIGHT as f32,
+                0.01,
+                50.0,
+            ),
+        ),
     );
-    let mut controls = OrbitControls::new(&camera);
+    let mut controls = FirstPersonControls::new(&camera);
 
     let floor_material = Material::new(
+        "Floor".to_string(),
         Colour::from_u32(0x808080),
         Colour::from_u32(0x404040),
         Colour::from_u32(0xffffff),
@@ -72,6 +66,7 @@ fn main() {
     );
 
     let red_plastic = Material::new(
+        "Red Plastic".to_string(),
         Colour::from_u32(0xff0000),
         Colour::from_u32(0x990000),
         Colour::from_u32(0xffffff),
@@ -79,6 +74,7 @@ fn main() {
     );
 
     let polished_brass = Material::new(
+        "Polished Brass".to_string(),
         Colour::from_u32(0x543808),
         Colour::from_u32(0x8b7500),
         Colour::from_u32(0xffffff),
@@ -86,41 +82,50 @@ fn main() {
     );
 
     let mut floor_model = Model::new(
-        vec![Mesh::cube(Colour::from_u32(0x808080), 0)],
+        vec![Mesh::cube(Colour::from_u32(0x808080), Some(0))],
         vec![floor_material],
         ModelTransform::new(
-            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(50.0, 0.1, 50.0),
         ),
-    );
+    )
+    .unwrap();
     floor_model.calculate_vertex_normals();
 
     let mut cube1 = Model::new(
-        vec![Mesh::cube(Colour::WHITE, 0)],
+        vec![Mesh::cube(Colour::WHITE, Some(0))],
         vec![polished_brass],
         ModelTransform::new(
             Vec3::new(-0.8, 0.5, -1.0),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(1.0, 1.0, 1.0),
         ),
-    );
+    )
+    .unwrap();
     cube1.calculate_vertex_normals();
 
     let mut cube2 = Model::new(
-        vec![Mesh::cube(Colour::WHITE, 0)],
+        vec![Mesh::cube(Colour::WHITE, Some(0))],
         vec![red_plastic],
         ModelTransform::new(
-            Vec3::new(0.5, 0.8, 0.5),
+            Vec3::new(0.5, 0.25, 0.5),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.5, 0.5, 0.5),
         ),
-    );
+    )
+    .unwrap();
     cube2.calculate_vertex_normals();
+
+    let mut teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
+    teapot.transform.scale = Vec3::ONE * 0.1;
+
+    let mut loaded_cube = load_obj(std::path::Path::new("assets/cube/cube.obj"))?;
+    loaded_cube.transform.scale = Vec3::ONE * 0.5;
 
     let mut scene = Scene::new(camera);
     scene.add_light(DirectionalLight::new(
-        Vec3::new(0.0, 1.0, -1.0),
+        Vec3::new(0.0, -1.0, -1.0),
         Colour::from_u32(0xfffde8),
     ));
     scene.add_model(floor_model);
@@ -158,4 +163,6 @@ fn main() {
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
             .unwrap();
     }
+
+    Ok(())
 }
