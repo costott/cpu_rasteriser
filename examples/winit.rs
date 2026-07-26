@@ -57,8 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         renderer: Renderer::new(
             &Viewport::new(WIDTH, HEIGHT),
             Box::new(GouraudVertexShader),
-            Box::new(BasicFragmentShader),
-        ),
+            std::sync::Arc::new(BasicFragmentShader),
+        )?,
         scene,
     };
     event_loop.run_app(&mut app)?;

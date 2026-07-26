@@ -15,6 +15,7 @@ mod common;
 use common::camera_controller::FirstPersonControls;
 
 use minifb::{Key, Window, WindowOptions};
+use std::sync::Arc;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
@@ -157,7 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // renderer.draw_model(&cube1, &scene, &viewport);
         // renderer.draw_model(&cube2, &scene, &viewport);
         // renderer.finish_frame(&scene);
-        renderer.render_scene(&scene, &viewport);
+        renderer.draw_scene(&scene, &viewport);
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
