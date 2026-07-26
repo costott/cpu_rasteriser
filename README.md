@@ -1,8 +1,8 @@
 # Rust Software Rasteriser
 
->A fully custom 3D software rasteriser written in Rust, implementing a modern graphics pipeline from scratch without relying on OpenGL, Vulkan, or DirectX.
+> A fully custom 3D software rasteriser written in Rust, implementing a modern graphics pipeline from scratch without relying on OpenGL, Vulkan, or DirectX.
 
->The project explores the fundamentals of real-time rendering by building the core systems behind a traditional GPU pipeline, including vertex processing, clipping, rasterisation, interpolation, lighting, and materials.
+> The project explores the fundamentals of real-time rendering by building the core systems behind a traditional GPU pipeline, including vertex processing, clipping, rasterisation, interpolation, lighting, and materials.
 
 ![Rust](https://img.shields.io/badge/Rust-Programming%20Language-orange)
 
@@ -53,10 +53,10 @@ The renderer implements a configurable lighting system supporting:
 - Phong shading
 - Directional lights
 - Material properties:
-  - Ambient colour
-  - Diffuse colour
-  - Specular colour
-  - Shininess
+    - Ambient colour
+    - Diffuse colour
+    - Specular colour
+    - Shininess
 
 Lighting is calculated per-fragment using interpolated surface attributes.
 
@@ -73,6 +73,41 @@ The rasteriser includes custom implementations of:
 - Perspective-correct interpolation
 
 Perspective correction ensures attributes such as normals, colours, and depth values are correctly interpolated across projected triangles.
+
+---
+
+# Parallel Tile-Based Rendering
+
+To improve rendering performance, the rasteriser uses a tile-based rendering pipeline executed across multiple CPU threads.
+
+After vertex processing and clipping, triangles are binned into fixed-size screen-space tiles. Each tile is then rasterised independently by a worker thread using its own framebuffer and depth buffer, eliminating contention during fragment processing.
+
+Once all worker threads have completed, the tile framebuffers are merged into the final image.
+
+Pipeline:
+
+```
+Triangles
+    ↓
+Tile Binning
+    ↓
++---------+---------+---------+
+| Tile 0  | Tile 1  | Tile 2  |
++---------+---------+---------+
+      ↓         ↓         ↓
+ Worker 0  Worker 1  Worker 2
+      ↓         ↓         ↓
+ Per-tile framebuffer + depth buffer
+      ↓
+Framebuffer Merge
+```
+
+This approach provides:
+
+- Parallel triangle rasterisation across CPU cores
+- No locking during fragment processing
+- Improved cache locality through tile-based rendering
+- Memory-safe multithreading using Rust's ownership model
 
 ---
 
@@ -106,21 +141,23 @@ This design allows new rendering techniques to be added without changing the und
 
 # Supported Features
 
-| Feature | Status |
-|---|---|
-| 3D transformations | ✅ |
-| Perspective camera | ✅ |
-| Orthographic camera | ✅ |
-| Triangle rasterisation | ✅ |
-| Depth buffering | ✅ |
-| Backface culling | ✅ |
-| Frustum clipping | ✅ |
-| Indexed meshes | ✅ |
-| Multiple materials | ✅ |
-| Directional lighting | ✅ |
-| Gouraud shading | ✅ |
-| Phong shading | ✅ |
-| Perspective-correct interpolation | ✅ |
+| Feature                           | Status |
+| --------------------------------- | ------ |
+| 3D transformations                | ✅     |
+| Perspective camera                | ✅     |
+| Orthographic camera               | ✅     |
+| Triangle rasterisation            | ✅     |
+| Depth buffering                   | ✅     |
+| Backface culling                  | ✅     |
+| Frustum clipping                  | ✅     |
+| Indexed meshes                    | ✅     |
+| Multiple materials                | ✅     |
+| Directional lighting              | ✅     |
+| Gouraud shading                   | ✅     |
+| Phong shading                     | ✅     |
+| Perspective-correct interpolation | ✅     |
+| Tile-based rendering              | ✅     |
+| Multithreaded rasterisation       | ✅     |
 
 ---
 
@@ -129,13 +166,14 @@ This design allows new rendering techniques to be added without changing the und
 This project demonstrates experience with:
 
 - Rust systems programming
+- Graphics pipeline architecture
 - Linear algebra and 3D mathematics
-- Graphics pipeline design
-- Rendering algorithms
-- CPU optimisation
-- Concurrent programming
-- Memory-safe multithreading
-- Software architecture
+- CPU rasterisation algorithms
+- Programmable shader design
+- Tile-based rendering
+- Concurrent rendering using thread pools
+- Memory-safe multithreading with Rust
+- Performance optimisation and cache-aware rendering
 
 ---
 
