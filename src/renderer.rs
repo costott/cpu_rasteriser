@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use threadpool::ThreadPool;
 
-use crate::graphics::camera::Camera;
 use crate::prelude::*;
 
 use crate::depthbuffer::DepthBuffer;
 use crate::framebuffer::FrameBuffer;
+use crate::graphics::camera::Camera;
 use crate::graphics::fragment::Fragment;
 use crate::graphics::fragment_shader::{FragmentShader, FragmentUniforms};
 use crate::graphics::geometry_processing::GeometryProcessor;
@@ -52,6 +52,7 @@ impl Renderer {
         self.culling_mode = culling_mode;
     }
 
+    /// Resizes the renderer's buffers to match the given viewport.
     pub fn resize(&mut self, viewport: &Viewport) {
         self.framebuffer.resize(viewport.width, viewport.height);
         self.depthbuffer.resize(viewport.width, viewport.height);
@@ -59,21 +60,16 @@ impl Renderer {
         self.tile_binner = TileBinner::new(viewport);
     }
 
+    /// Sets the number of threads used for rendering.
     pub fn set_thread_pool_size(&mut self, size: usize) {
         self.thread_pool = ThreadPool::new(size);
     }
 
-    pub fn clear(&mut self, colour: Colour) {
-        self.framebuffer.clear(colour);
-        self.depthbuffer.clear();
-    }
-
-    pub fn shade(&mut self, fragment: Fragment, uniforms: &FragmentUniforms) {
-        if let Some(fragment) = self.fragment_shader.shade(fragment, uniforms) {
-            self.write_fragment(fragment.position, fragment.colour, fragment.depth);
-        }
-    }
-
+    /// Directly writes a fragment to the frame and depth buffer.
+    ///
+    /// # Safety / Warning
+    /// This bypasses standard pipeline stages. Use `render_scene` instead.
+    #[doc(hidden)]
     pub fn write_fragment(&mut self, p: Vec2, colour: Colour, depth: f32) {
         if depth < self.depthbuffer.get(p) {
             self.framebuffer.set_pixel(p, colour);
@@ -81,10 +77,21 @@ impl Renderer {
         }
     }
 
+    /// Returns a reference to the framebuffer's pixel data.
     pub fn pixels(&self) -> &[u32] {
         self.framebuffer.pixels()
     }
 
+    /// Renders an entire scene.
+    ///
+    /// This performs a complete frame:
+    /// - clears the frame and depth buffers
+    /// - transforms and clips geometry
+    /// - bins triangles into tiles
+    /// - rasterises all tiles
+    /// - writes the final image to the framebuffer
+    ///
+    /// This is the recommended entry point for rendering.
     pub fn draw_scene(&mut self, scene: &Scene, viewport: &Viewport) {
         self.begin_frame();
 
@@ -92,9 +99,14 @@ impl Renderer {
             self.draw_model(model, scene, viewport);
         }
 
-        self.finish_frame(scene);
+        self.submit_frame(scene);
     }
 
+    /// Begins a new frame.
+    ///
+    /// This clears the framebuffer, depth buffer, and tile bins.
+    ///
+    /// Must be called before any draw calls.
     pub fn begin_frame(&mut self) {
         self.framebuffer.clear(Colour::BLACK);
         self.depthbuffer.clear();
@@ -102,6 +114,12 @@ impl Renderer {
         self.tile_binner.clear();
     }
 
+    /// Queues a model for rendering.
+    ///
+    /// Geometry is transformed, clipped and binned into tiles.
+    /// Rasterisation does not occur until `submit_frame` is called.
+    ///
+    /// Requires `begin_frame` to have been called.
     pub fn draw_model(&mut self, model: &Model, scene: &Scene, viewport: &Viewport) {
         for mesh in &model.meshes {
             let material = mesh.material_index.map(|index| &model.materials[index]);
@@ -110,6 +128,12 @@ impl Renderer {
         }
     }
 
+    /// Queues a mesh for rendering.
+    ///
+    /// Geometry is transformed, clipped and binned into tiles.
+    /// Rasterisation does not occur until `submit_frame` is called.
+    ///
+    /// Requires `begin_frame` to have been called.
     pub fn draw_mesh(&mut self, draw_call: &DrawCall, scene: &Scene, viewport: &Viewport) {
         let vertex_uniforms = VertexUniforms {
             lights: scene.lights(),
@@ -131,7 +155,13 @@ impl Renderer {
         }
     }
 
-    pub fn finish_frame(&mut self, scene: &Scene) {
+    /// Rasterises all queued geometry.
+    ///
+    /// This processes every populated tile and merges the results into the
+    /// framebuffer.
+    ///
+    /// Must be called after all draw calls have completed.
+    pub fn submit_frame(&mut self, scene: &Scene) {
         let (tx, rx) = std::sync::mpsc::channel();
 
         for tile in self.tile_binner.tiles.iter().cloned() {
@@ -281,7 +311,9 @@ fn render_tile(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CullingMode {
+    /// No culling is performed; all triangles are rendered.
     None,
+    /// Triangles facing away from the camera are culled.
     BackFace,
 }
 
