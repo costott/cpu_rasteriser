@@ -319,7 +319,7 @@ mod tests {
             Arc::new(BasicFragmentShader),
         )
         .unwrap();
-        renderer.clear(Colour::BLACK);
+        renderer.begin_frame();
 
         let triangle = Triangle2D::new(
             RasterVertex::new(
@@ -369,7 +369,7 @@ mod tests {
             Arc::new(BasicFragmentShader),
         )
         .unwrap();
-        renderer.clear(Colour::BLACK);
+        renderer.begin_frame();
 
         let triangle = Triangle2D::new(
             RasterVertex::new(
