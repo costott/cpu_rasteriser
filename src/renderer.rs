@@ -20,8 +20,6 @@ pub struct Renderer {
     vertex_shader: Box<dyn VertexShader>,
     fragment_shader: Arc<dyn FragmentShader + Send + Sync>,
 
-    lights: Vec<DirectionalLight>,
-
     culling_mode: CullingMode,
 
     thread_pool: ThreadPool,
@@ -42,7 +40,6 @@ impl Renderer {
             depthbuffer: DepthBuffer::new(viewport.width, viewport.height),
             vertex_shader,
             fragment_shader,
-            lights: vec![],
             culling_mode: CullingMode::None,
             thread_pool: ThreadPool::new(std::thread::available_parallelism()?.get()),
             tiles_x: 0,
@@ -61,10 +58,6 @@ impl Renderer {
 
     pub fn set_thread_pool_size(&mut self, size: usize) {
         self.thread_pool = ThreadPool::new(size);
-    }
-
-    pub fn add_light(&mut self, light: DirectionalLight) {
-        self.lights.push(light);
     }
 
     pub fn clear(&mut self, colour: Colour) {
@@ -130,11 +123,6 @@ impl Renderer {
         let vertex_uniforms = VertexUniforms {
             lights: scene.lights(),
         };
-        // let fragment_uniforms = FragmentUniforms {
-        //     camera: scene.camera(),
-        //     lights: scene.lights(),
-        //     material: draw_call.material,
-        // };
 
         for triangle in draw_call.mesh.triangles() {
             for triangle_2d in GeometryProcessor::process_triangle(
@@ -146,9 +134,6 @@ impl Renderer {
                 viewport,
                 self.culling_mode(),
             ) {
-                // triangle_2d.rasterise(|fragment| {
-                //     self.shade(fragment, &fragment_uniforms);
-                // });
                 self.bin_triangle(triangle_2d, *draw_call.material);
             }
         }
