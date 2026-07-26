@@ -23,9 +23,7 @@ pub struct Renderer {
     culling_mode: CullingMode,
 
     thread_pool: ThreadPool,
-    tiles_x: usize,
-    tiles_y: usize,
-    tiles: Vec<Tile>,
+    tile_binner: TileBinner,
 }
 impl Renderer {
     const TILE_SIZE: i32 = 64;
@@ -42,9 +40,7 @@ impl Renderer {
             fragment_shader,
             culling_mode: CullingMode::None,
             thread_pool: ThreadPool::new(std::thread::available_parallelism()?.get()),
-            tiles_x: 0,
-            tiles_y: 0,
-            tiles: vec![],
+            tile_binner: TileBinner::new(viewport),
         })
     }
 
@@ -59,6 +55,8 @@ impl Renderer {
     pub fn resize(&mut self, viewport: &Viewport) {
         self.framebuffer.resize(viewport.width, viewport.height);
         self.depthbuffer.resize(viewport.width, viewport.height);
+
+        self.tile_binner = TileBinner::new(viewport);
     }
 
     pub fn set_thread_pool_size(&mut self, size: usize) {
@@ -88,7 +86,7 @@ impl Renderer {
     }
 
     pub fn draw_scene(&mut self, scene: &Scene, viewport: &Viewport) {
-        self.begin_frame(viewport);
+        self.begin_frame();
 
         for model in scene.models() {
             self.draw_model(model, scene, viewport);
@@ -97,32 +95,11 @@ impl Renderer {
         self.finish_frame(scene);
     }
 
-    pub fn begin_frame(&mut self, viewport: &Viewport) {
+    pub fn begin_frame(&mut self) {
         self.framebuffer.clear(Colour::BLACK);
         self.depthbuffer.clear();
 
-        // Preallocate tiles at the start of the frame
-
-        self.tiles_x = viewport.width.div_ceil(Self::TILE_SIZE as usize);
-        self.tiles_y = viewport.height.div_ceil(Self::TILE_SIZE as usize);
-
-        self.tiles.clear();
-        self.tiles.reserve(self.tiles_x * self.tiles_y);
-
-        for tile_y in 0..self.tiles_y {
-            for tile_x in 0..self.tiles_x {
-                self.tiles.push(Tile {
-                    bounds: Rect {
-                        min_x: (tile_x * Self::TILE_SIZE as usize) as i32,
-                        min_y: (tile_y * Self::TILE_SIZE as usize) as i32,
-                        max_x: ((tile_x + 1) * Self::TILE_SIZE as usize).min(viewport.width) as i32,
-                        max_y: ((tile_y + 1) * Self::TILE_SIZE as usize).min(viewport.height)
-                            as i32,
-                    },
-                    triangles: Vec::new(),
-                });
-            }
-        }
+        self.tile_binner.clear();
     }
 
     pub fn draw_model(&mut self, model: &Model, scene: &Scene, viewport: &Viewport) {
@@ -148,30 +125,8 @@ impl Renderer {
                 viewport,
                 self.culling_mode(),
             ) {
-                self.bin_triangle(triangle_2d, draw_call.material);
-            }
-        }
-    }
-
-    fn bin_triangle(&mut self, triangle: Triangle2D, material: Option<&Material>) {
-        // Determine which tiles the triangle overlaps and add it to those
-        let (mins, maxs) = triangle.bounding_box();
-
-        let min_tile_x = (mins.x as i32 / Self::TILE_SIZE).max(0);
-        let min_tile_y = (mins.y as i32 / Self::TILE_SIZE).max(0);
-        let max_tile_x = (maxs.x as i32 / Self::TILE_SIZE).min(self.tiles_x as i32 - 1);
-        let max_tile_y = (maxs.y as i32 / Self::TILE_SIZE).min(self.tiles_y as i32 - 1);
-
-        for tile_y in min_tile_y..=max_tile_y {
-            for tile_x in min_tile_x..=max_tile_x {
-                let index = tile_y as usize * self.tiles_x + tile_x as usize;
-
-                if triangle.intersects_rect(self.tiles[index].bounds) {
-                    self.tiles[index].triangles.push(TileTriangle {
-                        triangle,
-                        material: material.cloned(),
-                    });
-                }
+                self.tile_binner
+                    .bin_triangle(triangle_2d, draw_call.material);
             }
         }
     }
@@ -179,7 +134,7 @@ impl Renderer {
     pub fn finish_frame(&mut self, scene: &Scene) {
         let (tx, rx) = std::sync::mpsc::channel();
 
-        for tile in self.tiles.drain(..) {
+        for tile in self.tile_binner.tiles.iter().cloned() {
             let tx = tx.clone();
 
             let camera = scene.camera.clone();
@@ -214,6 +169,68 @@ impl Renderer {
                     );
 
                     self.framebuffer.set_pixel(screen_position, colour);
+                }
+            }
+        }
+    }
+}
+
+struct TileBinner {
+    tiles: Vec<Tile>,
+    tiles_x: usize,
+    tiles_y: usize,
+}
+impl TileBinner {
+    fn new(viewport: &Viewport) -> Self {
+        let tiles_x = viewport.width.div_ceil(Renderer::TILE_SIZE as usize);
+        let tiles_y = viewport.height.div_ceil(Renderer::TILE_SIZE as usize);
+        let mut tiles = Vec::with_capacity(tiles_x * tiles_y);
+
+        for tile_y in 0..tiles_y {
+            for tile_x in 0..tiles_x {
+                tiles.push(Tile {
+                    bounds: Rect {
+                        min_x: (tile_x * Renderer::TILE_SIZE as usize) as i32,
+                        min_y: (tile_y * Renderer::TILE_SIZE as usize) as i32,
+                        max_x: ((tile_x + 1) * Renderer::TILE_SIZE as usize) as i32,
+                        max_y: ((tile_y + 1) * Renderer::TILE_SIZE as usize) as i32,
+                    },
+                    triangles: Vec::new(),
+                });
+            }
+        }
+
+        Self {
+            tiles,
+            tiles_x,
+            tiles_y,
+        }
+    }
+
+    fn clear(&mut self) {
+        for tile in &mut self.tiles {
+            tile.triangles.clear();
+        }
+    }
+
+    fn bin_triangle(&mut self, triangle: Triangle2D, material: Option<&Material>) {
+        // Determine which tiles the triangle overlaps and add it to those
+        let (mins, maxs) = triangle.bounding_box();
+
+        let min_tile_x = (mins.x as i32 / Renderer::TILE_SIZE).max(0);
+        let min_tile_y = (mins.y as i32 / Renderer::TILE_SIZE).max(0);
+        let max_tile_x = (maxs.x as i32 / Renderer::TILE_SIZE).min(self.tiles_x as i32 - 1);
+        let max_tile_y = (maxs.y as i32 / Renderer::TILE_SIZE).min(self.tiles_y as i32 - 1);
+
+        for tile_y in min_tile_y..=max_tile_y {
+            for tile_x in min_tile_x..=max_tile_x {
+                let index = tile_y as usize * self.tiles_x + tile_x as usize;
+
+                if triangle.intersects_rect(self.tiles[index].bounds) {
+                    self.tiles[index].triangles.push(TileTriangle {
+                        triangle,
+                        material: material.cloned(),
+                    });
                 }
             }
         }
@@ -288,12 +305,13 @@ struct TileResult {
     framebuffer: FrameBuffer,
 }
 
+#[derive(Debug, Clone)]
 struct Tile {
     pub bounds: Rect,
     pub triangles: Vec<TileTriangle>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct TileTriangle {
     triangle: Triangle2D,
     material: Option<Material>,
