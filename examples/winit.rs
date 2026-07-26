@@ -15,7 +15,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 
 mod common;
-use common::camera_controller::FirstPersonControls;
+use common::timer::Timer;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
@@ -60,6 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::sync::Arc::new(BasicFragmentShader),
         )?,
         scene,
+        timer: Timer::new(),
     };
     event_loop.run_app(&mut app)?;
 
@@ -72,6 +73,7 @@ struct App {
     viewport: Viewport,
     renderer: Renderer,
     scene: Scene,
+    timer: Timer,
 }
 
 #[derive(Debug)]
@@ -161,7 +163,8 @@ impl winit::application::ApplicationHandler for App {
                 }
             }
             winit::event::WindowEvent::RedrawRequested => {
-                self.renderer.clear(Colour::BLACK);
+                let dt = self.timer.delta();
+                self.scene.models_mut()[0].transform.rotation.y += 0.5 * dt.as_secs_f32();
 
                 self.renderer.draw_scene(&self.scene, &self.viewport);
 
@@ -178,6 +181,12 @@ impl winit::application::ApplicationHandler for App {
                 event_loop.exit();
             }
             _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if let AppState::Running { surface } = &mut self.state {
+            surface.window().request_redraw();
         }
     }
 }
