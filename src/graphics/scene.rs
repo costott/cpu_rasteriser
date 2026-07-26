@@ -29,6 +29,10 @@ impl Scene {
         &self.models
     }
 
+    pub fn models_mut(&mut self) -> &mut [Model] {
+        &mut self.models
+    }
+
     pub fn add_light(&mut self, light: DirectionalLight) {
         self.lights.push(light);
     }
