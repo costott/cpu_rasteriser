@@ -136,8 +136,6 @@ fn main() {
         previous_time = std::time::Instant::now();
         t += dt;
 
-        renderer.clear(Colour::BLACK);
-
         angle += 1.0 * dt;
         // scene.camera.eye.z = 1.0 + 1.0 * t.sin();
 
@@ -146,6 +144,7 @@ fn main() {
 
         controls.update(&mut scene.camera, &window, dt);
 
+        renderer.begin_frame(&viewport);
         renderer.draw_model(&floor_model, &scene, &viewport);
         renderer.draw_model(&cube1, &scene, &viewport);
         renderer.draw_model(&cube2, &scene, &viewport);

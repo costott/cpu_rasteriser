@@ -25,6 +25,8 @@ pub struct Renderer {
     culling_mode: CullingMode,
 
     thread_pool: ThreadPool,
+    tiles_x: usize,
+    tiles_y: usize,
     tiles: Vec<Tile>,
 }
 impl Renderer {
@@ -43,6 +45,8 @@ impl Renderer {
             lights: vec![],
             culling_mode: CullingMode::None,
             thread_pool: ThreadPool::new(std::thread::available_parallelism()?.get()),
+            tiles_x: 0,
+            tiles_y: 0,
             tiles: vec![],
         })
     }
@@ -85,9 +89,32 @@ impl Renderer {
         self.framebuffer.pixels()
     }
 
-    pub fn begin_frame(&mut self) {
+    pub fn begin_frame(&mut self, viewport: &Viewport) {
         self.framebuffer.clear(Colour::BLACK);
         self.depthbuffer.clear();
+
+        // Preallocate tiles at the start of the frame
+
+        self.tiles_x = viewport.width.div_ceil(Self::TILE_SIZE as usize);
+        self.tiles_y = viewport.height.div_ceil(Self::TILE_SIZE as usize);
+
+        self.tiles.clear();
+        self.tiles.reserve(self.tiles_x * self.tiles_y);
+
+        for tile_y in 0..self.tiles_y {
+            for tile_x in 0..self.tiles_x {
+                self.tiles.push(Tile {
+                    bounds: Rect {
+                        min_x: (tile_x * Self::TILE_SIZE as usize) as i32,
+                        min_y: (tile_y * Self::TILE_SIZE as usize) as i32,
+                        max_x: ((tile_x + 1) * Self::TILE_SIZE as usize).min(viewport.width) as i32,
+                        max_y: ((tile_y + 1) * Self::TILE_SIZE as usize).min(viewport.height)
+                            as i32,
+                    },
+                    triangles: Vec::new(),
+                });
+            }
+        }
     }
 
     pub fn draw_model(&mut self, model: &Model, scene: &Scene, viewport: &Viewport) {
@@ -131,32 +158,19 @@ impl Renderer {
         // Determine which tiles the triangle overlaps and add it to those
         let (mins, maxs) = triangle.bounding_box();
 
-        let min_tile_x = mins.x as i32 / Self::TILE_SIZE;
-        let min_tile_y = mins.y as i32 / Self::TILE_SIZE;
-        let max_tile_x = maxs.x as i32 / Self::TILE_SIZE;
-        let max_tile_y = maxs.y as i32 / Self::TILE_SIZE;
+        let min_tile_x = (mins.x as i32 / Self::TILE_SIZE).max(0);
+        let min_tile_y = (mins.y as i32 / Self::TILE_SIZE).max(0);
+        let max_tile_x = (maxs.x as i32 / Self::TILE_SIZE).min(self.tiles_x as i32 - 1);
+        let max_tile_y = (maxs.y as i32 / Self::TILE_SIZE).min(self.tiles_y as i32 - 1);
 
         for tile_y in min_tile_y..=max_tile_y {
             for tile_x in min_tile_x..=max_tile_x {
-                let tile_bounds = Rect {
-                    min_x: tile_x * Self::TILE_SIZE,
-                    min_y: tile_y * Self::TILE_SIZE,
-                    max_x: (tile_x + 1) * Self::TILE_SIZE,
-                    max_y: (tile_y + 1) * Self::TILE_SIZE,
-                };
+                let index = tile_y as usize * self.tiles_x + tile_x as usize;
 
-                if triangle.intersects_rect(tile_bounds) {
-                    if let Some(tile) = self.tiles.iter_mut().find(|t| t.bounds == tile_bounds) {
-                        tile.triangles.push(TileTriangle { triangle, material });
-                    } else {
-                        self.tiles.push(Tile {
-                            bounds: tile_bounds,
-                            triangles: vec![TileTriangle {
-                                triangle,
-                                material: material,
-                            }],
-                        });
-                    }
+                if triangle.intersects_rect(self.tiles[index].bounds) {
+                    self.tiles[index]
+                        .triangles
+                        .push(TileTriangle { triangle, material });
                 }
             }
         }
