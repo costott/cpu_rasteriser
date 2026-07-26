@@ -27,6 +27,12 @@ impl FrameBuffer {
         self.pixels.fill(colour.to_u32());
     }
 
+    pub fn resize(&mut self, width: usize, height: usize) {
+        self.width = width;
+        self.height = height;
+        self.pixels.resize(width * height, 0);
+    }
+
     pub fn set_pixel(&mut self, p: Vec2, colour: Colour) {
         let x = p.x as i32;
         let y = p.y as i32;

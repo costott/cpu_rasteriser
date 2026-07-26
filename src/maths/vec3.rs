@@ -1,5 +1,5 @@
 use crate::maths::Vec4;
-use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3 {
@@ -12,6 +12,12 @@ impl Vec3 {
         x: 0.0,
         y: 0.0,
         z: 0.0,
+    };
+
+    pub const ONE: Vec3 = Vec3 {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
     };
 
     pub fn new(x: f32, y: f32, z: f32) -> Self {
@@ -73,6 +79,11 @@ impl Sub for Vec3 {
             y: self.y - other.y,
             z: self.z - other.z,
         }
+    }
+}
+impl SubAssign for Vec3 {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
     }
 }
 impl Neg for Vec3 {
