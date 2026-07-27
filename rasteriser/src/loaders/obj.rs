@@ -5,7 +5,7 @@ use crate::loaders::mtl::load_mtl;
 use std::{collections::HashMap, eprintln};
 
 /// Load a 3D model from an OBJ file
-pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model, ObjError> {
+pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model<ObjVertex>, ObjError> {
     let obj_data = std::fs::read_to_string(&file_path).map_err(|e| ObjError::IoError(e))?;
 
     let mut positions: Vec<Vec3> = Vec::new();
@@ -145,7 +145,7 @@ pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model, ObjErro
                                 })?;
 
                             let vertex =
-                                Vertex3D::new_with_normal(*position, Colour::WHITE, *normal);
+                                ObjVertex::new_with_normal(*position, Colour::WHITE, *normal);
                             current_mesh.vertices.push(vertex);
 
                             let new_index = (current_mesh.vertices.len() - 1) as u32;
@@ -231,7 +231,7 @@ pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model, ObjErro
 
 #[derive(Clone)]
 struct ObjMesh {
-    vertices: Vec<Vertex3D>,
+    vertices: Vec<ObjVertex>,
     indices: Vec<u32>,
     material_index: Option<usize>,
 

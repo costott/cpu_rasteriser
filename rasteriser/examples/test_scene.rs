@@ -3,9 +3,9 @@ use cpu_rasteriser::prelude::*;
 use cpu_rasteriser::{
     graphics::{
         camera::{Camera, Projection},
-        fragment_shader::PhongFragmentShader,
+        fragment_shader::FragmentShader,
         lighting::DirectionalLight,
-        vertex_shader::BasicVertexShader,
+        vertex_shader::VertexShader,
     },
     loaders::obj::load_obj,
     renderer::{CullingMode, Renderer},
@@ -19,6 +19,93 @@ use std::sync::Arc;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
+
+struct VertexUniforms {
+    pub model_matrix: Mat4,
+    pub view_matrix: Mat4,
+    pub projection_matrix: Mat4,
+}
+
+#[derive(Interpolate)]
+struct Varyings {
+    pub world_position: Vec3,
+    pub colour: Colour,
+    pub normal: Vec3,
+}
+
+struct BasicVertexShader;
+impl VertexShader for BasicVertexShader {
+    type Vertex = ObjVertex;
+    type Uniforms = VertexUniforms;
+    type Varyings = Varyings;
+
+    fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
+        let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
+        let normal_matrix = uniforms.model_matrix.inverse().transpose();
+
+        let view_position = uniforms.view_matrix * world_position;
+        let clip_position = uniforms.projection_matrix * view_position;
+
+        let varyings = Varyings {
+            world_position: world_position.homogenize_to_vec3(),
+            colour: vertex.colour,
+            normal: (normal_matrix * vertex.normal.to_homogenous())
+                .homogenize_to_vec3()
+                .normalise(),
+        };
+
+        (clip_position, varyings)
+    }
+}
+
+struct FragmentUniforms {
+    camera: Camera,
+    lights: Vec<DirectionalLight>,
+    material: Option<Material>,
+}
+
+struct PhongFragmentShader;
+impl FragmentShader<Varyings> for PhongFragmentShader {
+    type Uniforms = FragmentUniforms;
+
+    fn shade(&self, varyings: Varyings, uniforms: &Self::Uniforms) -> Colour {
+        let normal = varyings.normal.normalise();
+
+        let mut colour = Colour::BLACK;
+
+        let view_dir = (uniforms.camera.eye - varyings.world_position).normalise();
+
+        if let Some(material) = &uniforms.material {
+            colour = material.ambient;
+
+            for light in &uniforms.lights {
+                let light_dir = (-light.direction).normalise();
+
+                // Diffuse
+                let diffuse_strength = normal.dot(&light_dir).max(0.0);
+
+                let diffuse = material.diffuse * light.colour * diffuse_strength;
+
+                // Specular
+                let reflect_dir = reflect(-light_dir, normal);
+
+                let specular_strength =
+                    view_dir.dot(&reflect_dir).max(0.0).powf(material.shininess);
+
+                let specular = material.specular * light.colour * specular_strength;
+
+                colour = colour + diffuse + specular;
+            }
+        }
+
+        colour
+    }
+}
+
+/// Reflects a vector around a normal, using the formula: R = V - 2 * (V . N) * N
+fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
+    vector - normal * 2.0 * vector.dot(&normal)
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut window = Window::new(
@@ -35,12 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let viewport = Viewport::new(WIDTH, HEIGHT);
 
-    let mut renderer = Renderer::new(
-        &viewport,
-        Box::new(BasicVertexShader),
-        Arc::new(PhongFragmentShader),
-    )
-    .unwrap();
+    let mut renderer = Renderer::new(&viewport, BasicVertexShader, PhongFragmentShader)?;
     renderer.set_culling_mode(CullingMode::BackFace);
 
     let mut camera = Camera::new(
@@ -158,7 +240,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // renderer.draw_model(&cube1, &scene, &viewport);
         // renderer.draw_model(&cube2, &scene, &viewport);
         // renderer.finish_frame(&scene);
-        renderer.draw_scene(&scene, &viewport);
+        renderer.begin_frame();
+
+        let floor_vertex_uniforms = VertexUniforms {
+            model_matrix: scene.models()[0].transform.model_matrix(),
+            view_matrix: scene.camera.view_matrix(),
+            projection_matrix: scene.camera.projection_matrix(),
+        };
+        let floor_fragment_uniforms = FragmentUniforms {
+            camera: scene.camera.clone(),
+            lights: scene.lights().to_vec(),
+            material: scene.models()[0].materials().get(0).cloned(),
+        };
+        renderer.draw_model(&scene.models()[0], &floor_vertex_uniforms, &viewport);
+
+        // TODO: unique uniforms for models
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)

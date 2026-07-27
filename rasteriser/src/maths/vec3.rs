@@ -1,7 +1,7 @@
-use crate::maths::Vec4;
+use crate::prelude::*;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Copy, PartialEq, Interpolate)]
 pub struct Vec3 {
     pub x: f32,
     pub y: f32,
@@ -24,7 +24,7 @@ impl Vec3 {
         Self { x, y, z }
     }
 
-    pub fn lerp(&self, other: &Self, t: f32) -> Self {
+    pub fn interpolate(&self, other: &Self, t: f32) -> Self {
         *self * (1.0 - t) + *other * t
     }
 
@@ -222,31 +222,31 @@ mod tests {
     }
 
     #[test]
-    fn lerp_at_zero_returns_self() {
+    fn interpolate_at_zero_returns_self() {
         let a = Vec3::new(-2.0, 5.0, 3.0);
         let b = Vec3::new(8.0, -1.0, 7.0);
 
-        let result = a.lerp(&b, 0.0);
+        let result = a.interpolate(&b, 0.0);
 
         assert_eq!(result, a);
     }
 
     #[test]
-    fn lerp_at_one_returns_other() {
+    fn interpolate_at_one_returns_other() {
         let a = Vec3::new(-2.0, 5.0, 3.0);
         let b = Vec3::new(8.0, -1.0, 7.0);
 
-        let result = a.lerp(&b, 1.0);
+        let result = a.interpolate(&b, 1.0);
 
         assert_eq!(result, b);
     }
 
     #[test]
-    fn lerp_at_halfway_returns_midpoint() {
+    fn interpolate_at_halfway_returns_midpoint() {
         let a = Vec3::new(2.0, 4.0, 6.0);
         let b = Vec3::new(6.0, 8.0, 10.0);
 
-        let result = a.lerp(&b, 0.5);
+        let result = a.interpolate(&b, 0.5);
 
         assert_vec3_approx_eq(result, Vec3::new(4.0, 6.0, 8.0));
     }

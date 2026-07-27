@@ -7,37 +7,45 @@ use crate::depthbuffer::DepthBuffer;
 use crate::framebuffer::FrameBuffer;
 use crate::graphics::camera::Camera;
 use crate::graphics::fragment::Fragment;
-use crate::graphics::fragment_shader::{FragmentShader, FragmentUniforms};
+use crate::graphics::fragment_shader::FragmentShader;
 use crate::graphics::geometry_processing::GeometryProcessor;
 use crate::graphics::lighting::DirectionalLight;
-use crate::graphics::vertex_shader::{VertexShader, VertexUniforms};
+use crate::graphics::vertex_shader::VertexShader;
 use crate::viewport::Viewport;
 
-pub struct Renderer {
+pub struct Renderer<VS, FS>
+where
+    VS: VertexShader,
+    FS: FragmentShader<VS::Varyings>,
+{
     framebuffer: FrameBuffer,
     depthbuffer: DepthBuffer,
 
-    vertex_shader: Box<dyn VertexShader>,
-    fragment_shader: Arc<dyn FragmentShader + Send + Sync>,
+    vertex_shader: VS,
+    fragment_shader: Arc<FS>,
 
     culling_mode: CullingMode,
 
     thread_pool: ThreadPool,
-    tile_binner: TileBinner,
+    tile_binner: TileBinner<VS::Varyings>,
 }
-impl Renderer {
-    const TILE_SIZE: i32 = 64;
-
+impl<VS, FS> Renderer<VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: Interpolate + Send + Sync + 'static,
+    FS: FragmentShader<VS::Varyings> + Send + Sync + 'static,
+    FS::Uniforms: Send + Sync + 'static,
+{
     pub fn new(
         viewport: &Viewport,
-        vertex_shader: Box<dyn VertexShader>,
-        fragment_shader: Arc<dyn FragmentShader + Send + Sync>,
+        vertex_shader: VS,
+        fragment_shader: FS,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
             framebuffer: FrameBuffer::new(viewport.width, viewport.height),
             depthbuffer: DepthBuffer::new(viewport.width, viewport.height),
             vertex_shader,
-            fragment_shader,
+            fragment_shader: Arc::new(fragment_shader),
             culling_mode: CullingMode::None,
             thread_pool: ThreadPool::new(std::thread::available_parallelism()?.get()),
             tile_binner: TileBinner::new(viewport),
@@ -91,14 +99,20 @@ impl Renderer {
     /// - writes the final image to the framebuffer
     ///
     /// This is the recommended entry point for rendering.
-    pub fn draw_scene(&mut self, scene: &Scene, viewport: &Viewport) {
+    pub fn draw_scene(
+        &mut self,
+        scene: &Scene<VS::Vertex>,
+        vertex_uniforms: &VS::Uniforms,
+        fragment_uniforms: Arc<FS::Uniforms>,
+        viewport: &Viewport,
+    ) {
         self.begin_frame();
 
         for model in scene.models() {
-            self.draw_model(model, scene, viewport);
+            self.draw_model(model, vertex_uniforms, viewport);
         }
 
-        self.submit_frame(scene);
+        self.submit_frame(fragment_uniforms);
     }
 
     /// Begins a new frame.
@@ -119,11 +133,16 @@ impl Renderer {
     /// Rasterisation does not occur until `submit_frame` is called.
     ///
     /// Requires `begin_frame` to have been called.
-    pub fn draw_model(&mut self, model: &Model, scene: &Scene, viewport: &Viewport) {
+    pub fn draw_model(
+        &mut self,
+        model: &Model<VS::Vertex>,
+        vertex_uniforms: &VS::Uniforms,
+        viewport: &Viewport,
+    ) {
         for mesh in &model.meshes {
             let material = mesh.material_index.map(|index| &model.materials[index]);
             let draw_call = DrawCall::new(mesh, material, model.transform.model_matrix());
-            self.draw_mesh(&draw_call, scene, viewport);
+            self.draw_mesh(&draw_call, vertex_uniforms, viewport);
         }
     }
 
@@ -133,18 +152,17 @@ impl Renderer {
     /// Rasterisation does not occur until `submit_frame` is called.
     ///
     /// Requires `begin_frame` to have been called.
-    pub fn draw_mesh(&mut self, draw_call: &DrawCall, scene: &Scene, viewport: &Viewport) {
-        let vertex_uniforms = VertexUniforms {
-            lights: scene.lights(),
-        };
-
+    pub fn draw_mesh(
+        &mut self,
+        draw_call: &DrawCall<VS::Vertex>,
+        vertex_uniforms: &VS::Uniforms,
+        viewport: &Viewport,
+    ) {
         for triangle in draw_call.mesh.triangles() {
             for triangle_2d in GeometryProcessor::process_triangle(
                 triangle,
-                &*self.vertex_shader,
-                &vertex_uniforms,
-                draw_call.model_matrix,
-                scene.camera(),
+                &self.vertex_shader,
+                vertex_uniforms,
                 viewport,
                 self.culling_mode(),
             ) {
@@ -160,19 +178,17 @@ impl Renderer {
     /// framebuffer.
     ///
     /// Must be called after all draw calls have completed.
-    pub fn submit_frame(&mut self, scene: &Scene) {
+    pub fn submit_frame(&mut self, fragment_uniforms: Arc<FS::Uniforms>) {
         let (tx, rx) = std::sync::mpsc::channel();
 
         for tile in self.tile_binner.tiles.iter().cloned() {
             let tx = tx.clone();
 
-            let camera = scene.camera.clone();
-            let lights = scene.lights().to_vec();
-
             let fragment_shader = self.fragment_shader.clone();
+            let fragment_uniforms = fragment_uniforms.clone();
 
             self.thread_pool.execute(move || {
-                let result = render_tile(tile, &camera, &lights, &*fragment_shader);
+                let result = render_tile(tile, fragment_shader, fragment_uniforms);
                 tx.send(result).unwrap();
             });
         }
@@ -204,25 +220,30 @@ impl Renderer {
     }
 }
 
-struct TileBinner {
-    tiles: Vec<Tile>,
+struct TileBinner<V>
+where
+    V: Interpolate,
+{
+    tiles: Vec<Tile<V>>,
     tiles_x: usize,
     tiles_y: usize,
 }
-impl TileBinner {
+impl<V: Interpolate> TileBinner<V> {
+    const TILE_SIZE: i32 = 64;
+
     fn new(viewport: &Viewport) -> Self {
-        let tiles_x = viewport.width.div_ceil(Renderer::TILE_SIZE as usize);
-        let tiles_y = viewport.height.div_ceil(Renderer::TILE_SIZE as usize);
+        let tiles_x = viewport.width.div_ceil(Self::TILE_SIZE as usize);
+        let tiles_y = viewport.height.div_ceil(Self::TILE_SIZE as usize);
         let mut tiles = Vec::with_capacity(tiles_x * tiles_y);
 
         for tile_y in 0..tiles_y {
             for tile_x in 0..tiles_x {
                 tiles.push(Tile {
                     bounds: Rect {
-                        min_x: (tile_x * Renderer::TILE_SIZE as usize) as i32,
-                        min_y: (tile_y * Renderer::TILE_SIZE as usize) as i32,
-                        max_x: ((tile_x + 1) * Renderer::TILE_SIZE as usize) as i32,
-                        max_y: ((tile_y + 1) * Renderer::TILE_SIZE as usize) as i32,
+                        min_x: (tile_x * Self::TILE_SIZE as usize) as i32,
+                        min_y: (tile_y * Self::TILE_SIZE as usize) as i32,
+                        max_x: ((tile_x + 1) * Self::TILE_SIZE as usize) as i32,
+                        max_y: ((tile_y + 1) * Self::TILE_SIZE as usize) as i32,
                     },
                     triangles: Vec::new(),
                 });
@@ -242,14 +263,14 @@ impl TileBinner {
         }
     }
 
-    fn bin_triangle(&mut self, triangle: Triangle2D, material: Option<&Material>) {
+    fn bin_triangle(&mut self, triangle: Triangle2D<V>, material: Option<&Material>) {
         // Determine which tiles the triangle overlaps and add it to those
         let (mins, maxs) = triangle.bounding_box();
 
-        let min_tile_x = (mins.x as i32 / Renderer::TILE_SIZE).max(0);
-        let min_tile_y = (mins.y as i32 / Renderer::TILE_SIZE).max(0);
-        let max_tile_x = (maxs.x as i32 / Renderer::TILE_SIZE).min(self.tiles_x as i32 - 1);
-        let max_tile_y = (maxs.y as i32 / Renderer::TILE_SIZE).min(self.tiles_y as i32 - 1);
+        let min_tile_x = (mins.x as i32 / Self::TILE_SIZE).max(0);
+        let min_tile_y = (mins.y as i32 / Self::TILE_SIZE).max(0);
+        let max_tile_x = (maxs.x as i32 / Self::TILE_SIZE).min(self.tiles_x as i32 - 1);
+        let max_tile_y = (maxs.y as i32 / Self::TILE_SIZE).min(self.tiles_y as i32 - 1);
 
         for tile_y in min_tile_y..=max_tile_y {
             for tile_x in min_tile_x..=max_tile_x {
@@ -257,7 +278,7 @@ impl TileBinner {
 
                 if triangle.intersects_rect(self.tiles[index].bounds) {
                     self.tiles[index].triangles.push(TileTriangle {
-                        triangle,
+                        triangle: triangle.clone(),
                         material: material.cloned(),
                     });
                 }
@@ -266,12 +287,16 @@ impl TileBinner {
     }
 }
 
-fn render_tile(
-    tile: Tile,
-    camera: &Camera,
-    lights: &[DirectionalLight],
-    fragment_shader: &dyn FragmentShader,
-) -> TileResult {
+fn render_tile<V, FS>(
+    tile: Tile<V>,
+    fragment_shader: Arc<FS>,
+    fragment_uniforms: Arc<FS::Uniforms>,
+) -> TileResult
+where
+    V: Interpolate + Send + Sync + 'static,
+    FS: FragmentShader<V> + Send + Sync + 'static,
+    FS::Uniforms: Send + Sync + 'static,
+{
     let width = (tile.bounds.max_x - tile.bounds.min_x) as usize;
     let height = (tile.bounds.max_y - tile.bounds.min_y) as usize;
 
@@ -279,12 +304,6 @@ fn render_tile(
     let mut depthbuffer = DepthBuffer::new(width, height);
 
     for tile_triangle in tile.triangles {
-        let uniforms = FragmentUniforms {
-            camera,
-            lights,
-            material: tile_triangle.material.as_ref(),
-        };
-
         tile_triangle
             .triangle
             .rasterise_segment(tile.bounds, |mut fragment| {
@@ -292,12 +311,12 @@ fn render_tile(
                 fragment.position.x -= tile.bounds.min_x as f32;
                 fragment.position.y -= tile.bounds.min_y as f32;
 
-                if let Some(fragment) = fragment_shader.shade(fragment, &uniforms) {
-                    if fragment.depth < depthbuffer.get(fragment.position) {
-                        framebuffer.set_pixel(fragment.position, fragment.colour);
+                let frag_colour =
+                    fragment_shader.shade(fragment.varyings, fragment_uniforms.as_ref());
 
-                        depthbuffer.set_depth(fragment.position, fragment.depth);
-                    }
+                if fragment.depth < depthbuffer.get(fragment.position) {
+                    framebuffer.set_pixel(fragment.position, frag_colour);
+                    depthbuffer.set_depth(fragment.position, fragment.depth);
                 }
             });
     }
@@ -316,13 +335,17 @@ pub enum CullingMode {
     BackFace,
 }
 
-pub struct DrawCall<'a> {
-    pub mesh: &'a Mesh,
+pub struct DrawCall<'a, V: Clone> {
+    pub mesh: &'a Mesh<V>,
     pub material: Option<&'a Material>,
     pub model_matrix: Mat4,
 }
-impl<'a> DrawCall<'a> {
-    pub fn new(mesh: &'a Mesh, material: Option<&'a Material>, model_matrix: Mat4) -> DrawCall<'a> {
+impl<'a, V: Clone> DrawCall<'a, V> {
+    pub fn new(
+        mesh: &'a Mesh<V>,
+        material: Option<&'a Material>,
+        model_matrix: Mat4,
+    ) -> DrawCall<'a, V> {
         DrawCall {
             mesh,
             material,
@@ -336,15 +359,21 @@ struct TileResult {
     framebuffer: FrameBuffer,
 }
 
-#[derive(Debug, Clone)]
-struct Tile {
+#[derive(Clone)]
+struct Tile<V>
+where
+    V: Interpolate,
+{
     pub bounds: Rect,
-    pub triangles: Vec<TileTriangle>,
+    pub triangles: Vec<TileTriangle<V>>,
 }
 
-#[derive(Debug, Clone)]
-struct TileTriangle {
-    triangle: Triangle2D,
+#[derive(Clone)]
+struct TileTriangle<V>
+where
+    V: Interpolate,
+{
+    triangle: Triangle2D<V>,
     material: Option<Material>,
 }
 

@@ -3,14 +3,17 @@ use crate::prelude::*;
 use crate::graphics::fragment::Fragment;
 use crate::renderer::Renderer;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Triangle2D {
-    pub a: RasterVertex,
-    pub b: RasterVertex,
-    pub c: RasterVertex,
+#[derive(Clone)]
+pub struct Triangle2D<V>
+where
+    V: Interpolate,
+{
+    pub a: RasterVertex<V>,
+    pub b: RasterVertex<V>,
+    pub c: RasterVertex<V>,
 }
-impl Triangle2D {
-    pub fn new(a: RasterVertex, b: RasterVertex, c: RasterVertex) -> Self {
+impl<V: Interpolate> Triangle2D<V> {
+    pub fn new(a: RasterVertex<V>, b: RasterVertex<V>, c: RasterVertex<V>) -> Self {
         Self { a, b, c }
     }
 
@@ -56,108 +59,24 @@ impl Triangle2D {
             || triangle_min_y > rect.max_y)
     }
 
-    pub fn draw(&self, renderer: &mut Renderer) {
-        draw_line(renderer, self.a, self.b);
-        draw_line(renderer, self.b, self.c);
-        draw_line(renderer, self.c, self.a);
-    }
+    // pub fn wireframe(&self, renderer: &mut Renderer) {
+    //     draw_line(renderer, self.a, self.b);
+    //     draw_line(renderer, self.b, self.c);
+    //     draw_line(renderer, self.c, self.a);
+    // }
 
-    // TODO: multithreaded rasterisation
     /// Uses a scanline algorithm to fill the triangle and interpolate vertex attributes.
-    pub fn rasterise<F>(&self, mut callback: F)
-    where
-        F: FnMut(Fragment),
-    {
-        let mut vertices = [self.a, self.b, self.c];
-
-        vertices.sort_by(|a, b| a.position.y.partial_cmp(&b.position.y).unwrap());
-
-        let v0 = vertices[0];
-        let v1 = vertices[1];
-        let v2 = vertices[2];
-
-        // Skip drawing if the triangle has zero height
-        if (v0.position.y - v2.position.y).abs() < f32::EPSILON {
-            return;
-        }
-
-        let y_start = (v0.position.y - 0.5).ceil() as i32;
-        let y_end = (v2.position.y - 0.5).ceil() as i32;
-
-        let mut left;
-        let mut right;
-
-        let mut edge_long = Edge::new(v0, v2, y_start as f32 + 0.5);
-
-        let mut edge_short = Edge::new(v0, v1, y_start as f32 + 0.5);
-
-        for y in y_start..y_end {
-            // // If the scanline is in the second half of the triangle, use the edge from v1 to v2 instead of v0 to v1.
-            let second_half = y as f32 + 0.5 > v1.position.y;
-
-            if second_half {
-                edge_short = Edge::new(v1, v2, y as f32 + 0.5);
-            }
-
-            // Determine which edge is on the left and which is on the right for the current scanline.
-            if edge_long.x < edge_short.x {
-                left = edge_long;
-                right = edge_short;
-            } else {
-                left = edge_short;
-                right = edge_long;
-            }
-
-            let x_start = (left.x - 0.5).ceil() as i32;
-            let x_end = (right.x - 0.5).ceil() as i32;
-
-            let width = right.x - left.x;
-
-            let x_step = if width.abs() < f32::EPSILON {
-                0.0
-            } else {
-                1.0 / width
-            };
-
-            let t = (x_start as f32 + 0.5 - left.x) * x_step;
-
-            let mut varyings = left.varyings + (right.varyings - left.varyings) * t;
-            let varyings_step = (right.varyings - left.varyings) * x_step;
-
-            for x in x_start..x_end {
-                let perspective = if varyings.inv_w.abs() < f32::EPSILON {
-                    0.0
-                } else {
-                    1.0 / varyings.inv_w
-                };
-
-                callback(Fragment::new(
-                    (x, y).into(),
-                    varyings.world_position * perspective,
-                    (varyings.colour * perspective).into(),
-                    (varyings.normal * perspective).normalise(),
-                    varyings.depth,
-                ));
-
-                varyings = varyings + varyings_step;
-            }
-
-            edge_long.step();
-            edge_short.step();
-        }
-    }
-
     pub fn rasterise_segment<F>(&self, bounds: crate::renderer::Rect, mut callback: F)
     where
-        F: FnMut(Fragment),
+        F: FnMut(Fragment<V>),
     {
-        let mut vertices = [self.a, self.b, self.c];
+        let mut vertices = [self.a.clone(), self.b.clone(), self.c.clone()];
 
         vertices.sort_by(|a, b| a.position.y.partial_cmp(&b.position.y).unwrap());
 
-        let v0 = vertices[0];
-        let v1 = vertices[1];
-        let v2 = vertices[2];
+        let v0 = vertices[0].clone();
+        let v1 = vertices[1].clone();
+        let v2 = vertices[2].clone();
 
         // Skip drawing if the triangle has zero height
         if (v0.position.y - v2.position.y).abs() < f32::EPSILON {
@@ -167,29 +86,24 @@ impl Triangle2D {
         let y_start = ((v0.position.y - 0.5).ceil() as i32).max(bounds.min_y);
         let y_end = ((v2.position.y - 0.5).ceil() as i32).min(bounds.max_y);
 
-        let mut left;
-        let mut right;
+        let mut edge_long = Edge::new(v0.clone(), v2.clone(), y_start as f32 + 0.5);
 
-        let mut edge_long = Edge::new(v0, v2, y_start as f32 + 0.5);
-
-        let mut edge_short = Edge::new(v0, v1, y_start as f32 + 0.5);
+        let mut edge_short = Edge::new(v0.clone(), v1.clone(), y_start as f32 + 0.5);
 
         for y in y_start..y_end {
             // // If the scanline is in the second half of the triangle, use the edge from v1 to v2 instead of v0 to v1.
             let second_half = y as f32 + 0.5 > v1.position.y;
 
             if second_half {
-                edge_short = Edge::new(v1, v2, y as f32 + 0.5);
+                edge_short = Edge::new(v1.clone(), v2.clone(), y as f32 + 0.5);
             }
 
             // Determine which edge is on the left and which is on the right for the current scanline.
-            if edge_long.x < edge_short.x {
-                left = edge_long;
-                right = edge_short;
+            let (left, right) = if edge_long.x < edge_short.x {
+                (&edge_long, &edge_short)
             } else {
-                left = edge_short;
-                right = edge_long;
-            }
+                (&edge_short, &edge_long)
+            };
 
             let x_start = ((left.x - 0.5).ceil() as i32).max(bounds.min_x);
             let x_end = ((right.x - 0.5).ceil() as i32).min(bounds.max_x);
@@ -204,25 +118,31 @@ impl Triangle2D {
 
             let t = (x_start as f32 + 0.5 - left.x) * x_step;
 
-            let mut varyings = left.varyings + (right.varyings - left.varyings) * t;
-            let varyings_step = (right.varyings - left.varyings) * x_step;
+            let mut depth = left.depth + (right.depth - left.depth) * t;
+            let depth_step = (right.depth - left.depth) * x_step;
+
+            let mut inv_w = left.inv_w + (right.inv_w - left.inv_w) * t;
+            let inv_w_step = (right.inv_w - left.inv_w) * x_step;
+
+            let mut varyings = left.varyings.interpolate(&right.varyings, t);
+            let varyings_step = right.varyings.difference(&left.varyings).scale(x_step);
 
             for x in x_start..x_end {
-                let perspective = if varyings.inv_w.abs() < f32::EPSILON {
+                let perspective = if inv_w.abs() < f32::EPSILON {
                     0.0
                 } else {
-                    1.0 / varyings.inv_w
+                    1.0 / inv_w
                 };
 
                 callback(Fragment::new(
                     (x, y).into(),
-                    varyings.world_position * perspective,
-                    (varyings.colour * perspective).into(),
-                    (varyings.normal * perspective).normalise(),
-                    varyings.depth,
+                    depth,
+                    varyings.scale(perspective),
                 ));
 
-                varyings = varyings + varyings_step;
+                depth += depth_step;
+                inv_w += inv_w_step;
+                varyings = varyings.add_scaled(&varyings_step, 1.0);
             }
 
             edge_long.step();
@@ -232,17 +152,26 @@ impl Triangle2D {
 }
 
 /// Represents an edge of a triangle in 2D space, used for scanline rasterization.
-#[derive(Clone, Copy)]
-struct Edge {
+#[derive(Clone)]
+struct Edge<V>
+where
+    V: Interpolate,
+{
     x: f32,
     x_step: f32,
 
-    varyings: RasterVaryings,
-    varyings_step: RasterVaryings,
+    depth: f32,
+    depth_step: f32,
+
+    inv_w: f32,
+    inv_w_step: f32,
+
+    varyings: V,
+    varyings_step: V,
 }
 
-impl Edge {
-    fn new(a: RasterVertex, b: RasterVertex, y_start: f32) -> Self {
+impl<V: Interpolate> Edge<V> {
+    fn new(a: RasterVertex<V>, b: RasterVertex<V>, y_start: f32) -> Self {
         let dy = b.position.y - a.position.y;
 
         let t = if dy.abs() < f32::EPSILON {
@@ -261,40 +190,52 @@ impl Edge {
             x: a.position.x + (b.position.x - a.position.x) * t,
             x_step: (b.position.x - a.position.x) * height,
 
-            varyings: a.varyings + (b.varyings - a.varyings) * t,
-            varyings_step: (b.varyings - a.varyings) * height,
+            depth: a.depth + (b.depth - a.depth) * t,
+            depth_step: (b.depth - a.depth) * height,
+
+            inv_w: a.inv_w + (b.inv_w - a.inv_w) * t,
+            inv_w_step: (b.inv_w - a.inv_w) * height,
+
+            varyings: a.varyings.interpolate(&b.varyings, t),
+            varyings_step: b.varyings.difference(&a.varyings).scale(height),
         }
     }
 
     fn step(&mut self) {
         self.x += self.x_step;
-        self.varyings = self.varyings + self.varyings_step;
+        self.depth += self.depth_step;
+        self.inv_w += self.inv_w_step;
+        self.varyings = self.varyings.add_scaled(&self.varyings_step, 1.0);
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TriangleClip {
-    pub a: ClipVertex,
-    pub b: ClipVertex,
-    pub c: ClipVertex,
+#[derive(Clone)]
+pub struct TriangleClip<V>
+where
+    V: Interpolate,
+{
+    pub a: ClipVertex<V>,
+    pub b: ClipVertex<V>,
+    pub c: ClipVertex<V>,
 }
-impl TriangleClip {
-    pub fn new(a: ClipVertex, b: ClipVertex, c: ClipVertex) -> Self {
+impl<V: Interpolate> TriangleClip<V> {
+    pub fn new(a: ClipVertex<V>, b: ClipVertex<V>, c: ClipVertex<V>) -> Self {
         Self { a, b, c }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Triangle3D {
-    pub a: Vertex3D,
-    pub b: Vertex3D,
-    pub c: Vertex3D,
+#[derive(Clone)]
+pub struct Triangle3D<V: Clone> {
+    pub a: V,
+    pub b: V,
+    pub c: V,
 }
-impl Triangle3D {
-    pub fn new(a: Vertex3D, b: Vertex3D, c: Vertex3D) -> Self {
+impl<V: Clone> Triangle3D<V> {
+    pub fn new(a: V, b: V, c: V) -> Self {
         Self { a, b, c }
     }
-
+}
+impl Triangle3D<ObjVertex> {
     pub fn normal(&self) -> Vec3 {
         let ab = self.b.position - self.a.position;
         let ac = self.c.position - self.a.position;

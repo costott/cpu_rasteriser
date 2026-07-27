@@ -1,15 +1,15 @@
 use crate::prelude::*;
 
 #[derive(Debug)]
-pub struct Model {
-    pub meshes: Vec<Mesh>,
+pub struct Model<V: Clone> {
+    pub meshes: Vec<Mesh<V>>,
     pub materials: Vec<Material>,
     pub transform: ModelTransform,
 }
-impl Model {
+impl<V: Clone> Model<V> {
     /// Creates a new model with the given meshes, materials, and transform.
     pub fn new(
-        meshes: Vec<Mesh>,
+        meshes: Vec<Mesh<V>>,
         materials: Vec<Material>,
         transform: ModelTransform,
     ) -> Result<Self, ModelError> {
@@ -33,11 +33,11 @@ impl Model {
         Ok(())
     }
 
-    pub fn calculate_vertex_normals(&mut self) {
-        for mesh in &mut self.meshes {
-            mesh.calculate_vertex_normals();
-        }
-    }
+    // pub fn calculate_vertex_normals(&mut self) {
+    //     for mesh in &mut self.meshes {
+    //         mesh.calculate_vertex_normals();
+    //     }
+    // }
 }
 
 #[derive(Debug)]
