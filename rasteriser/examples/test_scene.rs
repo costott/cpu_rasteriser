@@ -206,14 +206,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut loaded_cube = load_obj(std::path::Path::new("assets/cube/cube.obj"))?;
     loaded_cube.transform.scale = Vec3::ONE * 0.5;
 
-    let mut scene = Scene::new(camera);
-    scene.add_light(DirectionalLight::new(
+    // let mut scene = Scene::new(camera);
+    // scene.add_light(DirectionalLight::new(
+    //     Vec3::new(0.0, -1.0, -1.0),
+    //     Colour::from_u32(0xfffde8),
+    // ));
+    // scene.add_model(floor_model);
+    // scene.add_model(cube1);
+    // scene.add_model(cube2);
+    let mut lights = vec![DirectionalLight::new(
         Vec3::new(0.0, -1.0, -1.0),
         Colour::from_u32(0xfffde8),
-    ));
-    scene.add_model(floor_model);
-    scene.add_model(cube1);
-    scene.add_model(cube2);
+    )];
 
     let mut t: f32 = 0.0;
     let mut angle: f32 = 0.0;
@@ -233,7 +237,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // cube_model.transform.rotation.y = angle;
         // cube_model.transform.rotation.x = 1.1 * angle;
 
-        controls.update(&mut scene.camera, &window, dt);
+        controls.update(&mut camera, &window, dt);
 
         // renderer.begin_frame(&viewport);
         // renderer.draw_model(&floor_model, &scene, &viewport);
@@ -243,18 +247,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         renderer.begin_frame();
 
         let floor_vertex_uniforms = VertexUniforms {
-            model_matrix: scene.models()[0].transform.model_matrix(),
-            view_matrix: scene.camera.view_matrix(),
-            projection_matrix: scene.camera.projection_matrix(),
+            model_matrix: floor_model.transform.model_matrix(),
+            view_matrix: camera.view_matrix(),
+            projection_matrix: camera.projection_matrix(),
         };
         let floor_fragment_uniforms = FragmentUniforms {
-            camera: scene.camera.clone(),
-            lights: scene.lights().to_vec(),
-            material: scene.models()[0].materials().get(0).cloned(),
+            camera: camera.clone(),
+            lights: lights.to_vec(),
+            material: floor_model.materials.get(0).cloned(),
         };
-        renderer.draw_model(&scene.models()[0], &floor_vertex_uniforms, &viewport);
+        renderer.draw_model(
+            &floor_model,
+            &floor_vertex_uniforms,
+            Arc::new(floor_fragment_uniforms),
+            &viewport,
+        );
 
-        // TODO: unique uniforms for models
+        let cube1_vertex_uniforms = VertexUniforms {
+            model_matrix: cube1.transform.model_matrix(),
+            view_matrix: camera.view_matrix(),
+            projection_matrix: camera.projection_matrix(),
+        };
+        let cube1_fragment_uniforms = FragmentUniforms {
+            camera: camera.clone(),
+            lights: lights.to_vec(),
+            material: cube1.materials.get(0).cloned(),
+        };
+        renderer.draw_model(
+            &cube1,
+            &cube1_vertex_uniforms,
+            Arc::new(cube1_fragment_uniforms),
+            &viewport,
+        );
+
+        let cube2_vertex_uniforms = VertexUniforms {
+            model_matrix: cube2.transform.model_matrix(),
+            view_matrix: camera.view_matrix(),
+            projection_matrix: camera.projection_matrix(),
+        };
+        let cube2_fragment_uniforms = FragmentUniforms {
+            camera: camera.clone(),
+            lights: lights.to_vec(),
+            material: cube2.materials.get(0).cloned(),
+        };
+        renderer.draw_model(
+            &cube2,
+            &cube2_vertex_uniforms,
+            Arc::new(cube2_fragment_uniforms),
+            &viewport,
+        );
+
+        renderer.submit_frame();
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)

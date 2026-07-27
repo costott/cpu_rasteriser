@@ -32,12 +32,13 @@ impl<V: Clone> Model<V> {
         }
         Ok(())
     }
-
-    // pub fn calculate_vertex_normals(&mut self) {
-    //     for mesh in &mut self.meshes {
-    //         mesh.calculate_vertex_normals();
-    //     }
-    // }
+}
+impl Model<ObjVertex> {
+    pub fn calculate_vertex_normals(&mut self) {
+        for mesh in &mut self.meshes {
+            mesh.calculate_vertex_normals();
+        }
+    }
 }
 
 #[derive(Debug)]
