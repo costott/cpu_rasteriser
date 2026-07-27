@@ -19,7 +19,7 @@ const PLANES: [ClipPlane; 6] = [
     ClipPlane::Far,
 ];
 
-fn signed_distance(v: ClipVertex, plane: ClipPlane) -> f32 {
+fn signed_distance<V: Interpolate>(v: &ClipVertex<V>, plane: ClipPlane) -> f32 {
     match plane {
         ClipPlane::Left => v.position.x + v.position.w,
         ClipPlane::Right => -v.position.x + v.position.w,
@@ -30,26 +30,33 @@ fn signed_distance(v: ClipVertex, plane: ClipPlane) -> f32 {
     }
 }
 
-fn intersection(a: ClipVertex, b: ClipVertex, plane: ClipPlane) -> ClipVertex {
-    let da = signed_distance(a, plane);
-    let db = signed_distance(b, plane);
+fn intersection<V: Interpolate>(
+    a: ClipVertex<V>,
+    b: ClipVertex<V>,
+    plane: ClipPlane,
+) -> ClipVertex<V> {
+    let da = signed_distance(&a, plane);
+    let db = signed_distance(&b, plane);
 
     let t = da / (da - db);
 
-    a.lerp(&b, t)
+    a.interpolate(&b, t)
 }
 
-fn clip_triangle_against_plane(triangle: TriangleClip, plane: ClipPlane) -> Vec<TriangleClip> {
+fn clip_triangle_against_plane<V: Interpolate>(
+    triangle: TriangleClip<V>,
+    plane: ClipPlane,
+) -> Vec<TriangleClip<V>> {
     let vertices = [triangle.a, triangle.b, triangle.c];
 
     let mut output = Vec::new();
 
     for i in 0..3 {
-        let current = vertices[i];
-        let next = vertices[(i + 1) % 3];
+        let current = vertices[i].clone();
+        let next = vertices[(i + 1) % 3].clone();
 
-        let current_inside = signed_distance(current, plane) >= 0.0;
-        let next_inside = signed_distance(next, plane) >= 0.0;
+        let current_inside = signed_distance(&current, plane) >= 0.0;
+        let next_inside = signed_distance(&next, plane) >= 0.0;
 
         match (current_inside, next_inside) {
             // Inside -> Inside
@@ -64,7 +71,7 @@ fn clip_triangle_against_plane(triangle: TriangleClip, plane: ClipPlane) -> Vec<
 
             // Outside -> Inside
             (false, true) => {
-                output.push(intersection(current, next, plane));
+                output.push(intersection(current, next.clone(), plane));
                 output.push(next);
             }
 
@@ -77,7 +84,7 @@ fn clip_triangle_against_plane(triangle: TriangleClip, plane: ClipPlane) -> Vec<
 }
 
 /// Sutherland-Hodgman polygon clipping algorithm for triangles against the view frustum defined by the clip planes.
-pub fn clip_triangle(triangle: TriangleClip) -> Vec<TriangleClip> {
+pub fn clip_triangle<V: Interpolate>(triangle: TriangleClip<V>) -> Vec<TriangleClip<V>> {
     let mut triangles = vec![triangle];
 
     for plane in PLANES.iter() {
@@ -90,70 +97,27 @@ pub fn clip_triangle(triangle: TriangleClip) -> Vec<TriangleClip> {
     triangles
 }
 
-// /// Returns true if the vertex is inside the near plane (z + w >= 0)
-// fn inside_near(vertex: ClipVertex) -> bool {
-//     vertex.position.z + vertex.position.w >= 0.0
-// }
-
-// /// Returns the intersection point of the line segment between two vertices and the near plane.
-// /// Calculated as the point where the line segment intersects the plane defined by z + w = 0.
-// fn intersection_near(a: ClipVertex, b: ClipVertex) -> ClipVertex {
-//     let da = a.position.z + a.position.w;
-//     let db = b.position.z + b.position.w;
-
-//     let t = da / (da - db);
-
-//     a.lerp(&b, t)
-// }
-
-// /// Clips a triangle against the near plane and returns a list of resulting triangles.
-// /// Uses the Sutherland-Hodgman algorithm to clip the triangle against the near plane.
-// pub fn clip_triangle_near(triangle: TriangleClip) -> Vec<TriangleClip> {
-//     let vertices = [triangle.a, triangle.b, triangle.c];
-
-//     let mut output = Vec::new();
-
-//     for i in 0..3 {
-//         let current = vertices[i];
-//         let next = vertices[(i + 1) % 3];
-
-//         let current_inside = inside_near(current);
-//         let next_inside = inside_near(next);
-
-//         match (current_inside, next_inside) {
-//             // Inside -> Inside
-//             (true, true) => {
-//                 output.push(next);
-//             }
-
-//             // Inside -> Outside
-//             (true, false) => {
-//                 output.push(intersection_near(current, next));
-//             }
-
-//             // Outside -> Inside
-//             (false, true) => {
-//                 output.push(intersection_near(current, next));
-//                 output.push(next);
-//             }
-
-//             // Outside -> Outside
-//             (false, false) => {}
-//         }
-//     }
-
-//     triangulate(output)
-// }
-
 /// Triangulates a polygon represented by a list of vertices into triangles.
 /// Clip result for a triangle can have either 0, 3, or 4 vertices. If it has 4 vertices, it will be split into 2 triangles.
-fn triangulate(vertices: Vec<ClipVertex>) -> Vec<TriangleClip> {
+fn triangulate<V: Interpolate>(vertices: Vec<ClipVertex<V>>) -> Vec<TriangleClip<V>> {
     match vertices.len() {
-        3 => vec![TriangleClip::new(vertices[0], vertices[1], vertices[2])],
+        3 => vec![TriangleClip::new(
+            vertices[0].clone(),
+            vertices[1].clone(),
+            vertices[2].clone(),
+        )],
 
         4 => vec![
-            TriangleClip::new(vertices[0], vertices[1], vertices[2]),
-            TriangleClip::new(vertices[0], vertices[2], vertices[3]),
+            TriangleClip::new(
+                vertices[0].clone(),
+                vertices[1].clone(),
+                vertices[2].clone(),
+            ),
+            TriangleClip::new(
+                vertices[0].clone(),
+                vertices[2].clone(),
+                vertices[3].clone(),
+            ),
         ],
 
         _ => vec![],

@@ -1,6 +1,7 @@
-use std::ops::{Add, Mul};
+use crate::prelude::*;
+use std::ops::{Add, Mul, Sub};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Copy, PartialEq, Interpolate)]
 pub struct Vec2 {
     pub x: f32,
     pub y: f32,
@@ -17,6 +18,10 @@ impl Vec2 {
     pub fn lerp(&self, other: &Self, t: f32) -> Self {
         *self * (1.0 - t) + *other * t
     }
+
+    pub fn cross(&self, other: &Self) -> f32 {
+        self.x * other.y - self.y * other.x
+    }
 }
 impl Add for Vec2 {
     type Output = Self;
@@ -25,6 +30,16 @@ impl Add for Vec2 {
         Self {
             x: self.x + other.x,
             y: self.y + other.y,
+        }
+    }
+}
+impl Sub for Vec2 {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self::Output {
+        Self {
+            x: self.x - other.x,
+            y: self.y - other.y,
         }
     }
 }
