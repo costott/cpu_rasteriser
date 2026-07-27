@@ -10,3 +10,5 @@ pub use crate::graphics::triangle::*;
 pub use crate::graphics::vertex::*;
 pub use crate::maths::*;
 pub use crate::viewport::*;
+
+pub use rasteriser_macros::Interpolate;

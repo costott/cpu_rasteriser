@@ -1,42 +1,59 @@
 use crate::prelude::*;
 
-use crate::graphics::lighting::DirectionalLight;
-
-pub trait VertexShader {
-    type Vertex;
-    type Uniforms;
-    type Varying: Interpolate;
+/// A trait for vertex shaders, which process vertices before rasterisation.
+///
+/// # Example
+/// ```
+/// #[derive(Clone)]
+/// struct Vertex {
+///     position: Vec3,
+///     colour: Colour,
+///     normal: Vec3,
+/// }
+///
+/// struct Uniforms {
+///    pub model_matrix: Mat4,
+///    pub view_matrix: Mat4,
+///    pub projection_matrix: Mat4,
+/// }
+///
+/// #[derive(Interpolate)]
+/// struct Varyings {
+///     pub world_position: Vec3,
+///     pub colour: Colour,
+///     pub normal: Vec3,
+/// }
+///     
+/// struct BasicVertexShader;
+/// impl VertexShader for BasicVertexShader {
+///     type Vertex = Vertex;
+///     type Uniforms = Uniforms;
+///     type Varyings = Varyings;
+///
+///     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
+///         let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
+///         let normal_matrix = uniforms.model_matrix.inverse().transpose();
+///
+///         let view_position = uniforms.view_matrix * world_position;
+///         let clip_position = uniforms.projection_matrix * view_position;
+///
+///         let varyings = Varyings {
+///             world_position: world_position.homogenize_to_vec3(),
+///             colour: vertex.colour,
+///             normal: (normal_matrix * vertex.normal.to_homogenous())
+///                 .homogenize_to_vec3()
+///                 .normalise(),
+///         };
+///
+///         (clip_position, varyings)
+///     }
+/// }
+/// ```
+pub trait VertexShader: Send + Sync + 'static {
+    type Vertex: Clone;
+    type Uniforms: Send + Sync + 'static;
+    type Varyings: Interpolate + 'static;
 
     /// Processes a world-space vertex, before projection and clipping.
-    fn shade(&self, vertex: Vertex3D, uniforms: &VertexUniforms) -> Vertex3D;
-}
-
-pub struct VertexUniforms<'a> {
-    pub lights: &'a [DirectionalLight],
-}
-
-pub struct BasicVertexShader;
-impl VertexShader for BasicVertexShader {
-    fn shade(&self, vertex: Vertex3D, _uniforms: &VertexUniforms) -> Vertex3D {
-        vertex
-    }
-}
-
-pub struct GouraudVertexShader;
-impl VertexShader for GouraudVertexShader {
-    fn shade(&self, mut vertex: Vertex3D, uniforms: &VertexUniforms) -> Vertex3D {
-        let normal = vertex.normal.normalise();
-        let mut colour = vertex.colour;
-
-        for light in uniforms.lights {
-            let light_dir = light.direction.normalise();
-            let diffuse_intensity = normal.dot(&-light_dir).max(0.0);
-            let diffuse_colour = light.colour * diffuse_intensity;
-
-            colour = colour * diffuse_colour;
-        }
-
-        vertex.colour = colour;
-        vertex
-    }
+    fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings);
 }

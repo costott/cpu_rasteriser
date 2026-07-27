@@ -3,9 +3,9 @@ use cpu_rasteriser::prelude::*;
 use cpu_rasteriser::{
     graphics::{
         camera::{Camera, Projection},
-        fragment_shader::BasicFragmentShader,
+        fragment_shader::FragmentShader,
         lighting::DirectionalLight,
-        vertex_shader::GouraudVertexShader,
+        vertex_shader::VertexShader,
     },
     loaders::obj::load_obj,
     renderer::{CullingMode, Renderer},
@@ -19,6 +19,55 @@ use std::sync::Arc;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
+
+struct VertexUniforms {
+    pub model_matrix: Mat4,
+    pub view_matrix: Mat4,
+    pub projection_matrix: Mat4,
+}
+
+#[derive(Interpolate)]
+struct Varyings {
+    pub world_position: Vec3,
+    pub colour: Colour,
+    pub normal: Vec3,
+}
+
+struct BasicVertexShader;
+impl VertexShader for BasicVertexShader {
+    type Vertex = ObjVertex;
+    type Uniforms = VertexUniforms;
+    type Varyings = Varyings;
+
+    fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
+        let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
+        let normal_matrix = uniforms.model_matrix.inverse().transpose();
+
+        let view_position = uniforms.view_matrix * world_position;
+        let clip_position = uniforms.projection_matrix * view_position;
+
+        let varyings = Varyings {
+            world_position: world_position.homogenize_to_vec3(),
+            colour: vertex.colour,
+            normal: (normal_matrix * vertex.normal.to_homogenous())
+                .homogenize_to_vec3()
+                .normalise(),
+        };
+
+        (clip_position, varyings)
+    }
+}
+
+struct FragmentUniforms;
+
+struct BasicFragmentShader;
+impl FragmentShader<Varyings> for BasicFragmentShader {
+    type Uniforms = FragmentUniforms;
+
+    fn shade(&self, varyings: Varyings, _uniforms: &Self::Uniforms) -> Colour {
+        varyings.colour
+    }
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut window = Window::new(
@@ -34,11 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let viewport = Viewport::new(WIDTH, HEIGHT);
 
-    let mut renderer = Renderer::new(
-        &viewport,
-        Box::new(GouraudVertexShader),
-        Arc::new(BasicFragmentShader),
-    )?;
+    let mut renderer = Renderer::new(&viewport, BasicVertexShader, BasicFragmentShader)?;
     renderer.set_culling_mode(CullingMode::None);
 
     let mut camera = Camera::new(
@@ -77,7 +122,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         controls.update(&mut scene.camera, &window, dt);
 
-        renderer.draw_scene(&scene, &viewport);
+        let vertex_uniforms = VertexUniforms {
+            model_matrix: scene.models()[0].transform.model_matrix(),
+            view_matrix: scene.camera.view_matrix(),
+            projection_matrix: scene.camera.projection_matrix(),
+        };
+
+        renderer.draw_scene(
+            &scene,
+            &vertex_uniforms,
+            Arc::new(FragmentUniforms),
+            &viewport,
+        );
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)

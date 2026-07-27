@@ -1,28 +1,16 @@
 use crate::prelude::*;
 
-pub struct Fragment {
+pub struct Fragment<V> {
     pub position: Vec2,
-    pub world_position: Vec3,
-
     pub depth: f32,
-
-    pub colour: Colour,
-    pub normal: Vec3,
+    pub varyings: V,
 }
-impl Fragment {
-    pub fn new(
-        position: Vec2,
-        world_position: Vec3,
-        colour: Colour,
-        normal: Vec3,
-        depth: f32,
-    ) -> Self {
+impl<V> Fragment<V> {
+    pub fn new(position: Vec2, depth: f32, varyings: V) -> Self {
         Self {
             position,
-            world_position,
-            colour,
-            normal,
             depth,
+            varyings,
         }
     }
 }

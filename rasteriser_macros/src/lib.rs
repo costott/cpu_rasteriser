@@ -11,32 +11,78 @@ pub fn derive_interpolate(input: TokenStream) -> TokenStream {
     let fields = match input.data {
         Data::Struct(data) => match data.fields {
             Fields::Named(fields) => fields.named,
-            _ => panic!("Interpolate only supports named structs"),
+            Fields::Unnamed(_) => {
+                return syn::Error::new_spanned(name, "Interpolate only supports named fields")
+                    .to_compile_error()
+                    .into();
+            }
+            Fields::Unit => {
+                return syn::Error::new_spanned(
+                    name,
+                    "Interpolate cannot be derived for unit structs",
+                )
+                .to_compile_error()
+                .into();
+            }
         },
-        _ => panic!("Interpolate only supports structs"),
+
+        _ => {
+            return syn::Error::new_spanned(name, "Interpolate can only be derived for structs")
+                .to_compile_error()
+                .into();
+        }
     };
 
-    let interpolate_fields = fields.iter().map(|field| {
-        let name = field.ident.as_ref().unwrap();
-
-        quote! {
-            #name: self.#name.interpolate(&other.#name, t)
-        }
-    });
+    let field_names: Vec<_> = fields
+        .iter()
+        .map(|field| field.ident.as_ref().unwrap())
+        .collect();
 
     let expanded = quote! {
         impl Interpolate for #name {
-            fn interpolate(
-                &self,
-                other: &Self,
-                t: f32,
-            ) -> Self {
+            fn interpolate(&self, other: &Self, t: f32) -> Self {
                 Self {
-                    #(#interpolate_fields),*
+                    #(
+                        #field_names: self.#field_names.interpolate(&other.#field_names, t),
+                    )*
+                }
+            }
+
+            fn difference(&self, other: &Self) -> Self {
+                Self {
+                    #(
+                        #field_names: self.#field_names.difference(&other.#field_names),
+                    )*
+                }
+            }
+
+            fn scale(&self, factor: f32) -> Self {
+                Self {
+                    #(
+                        #field_names: self.#field_names.scale(factor),
+                    )*
+                }
+            }
+
+            fn add_scaled(&self, other: &Self, factor: f32) -> Self {
+                Self {
+                    #(
+                        #field_names: self.#field_names.add_scaled(&other.#field_names, factor),
+                    )*
+                }
+            }
+        }
+
+        impl Clone for #name {
+            fn clone(&self) -> Self {
+                Self {
+                    #(
+                        #field_names: self.#field_names.clone(),
+                    )*
                 }
             }
         }
     };
 
-    TokenStream::from(expanded)
+    expanded.into()
 }
