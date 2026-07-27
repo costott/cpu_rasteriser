@@ -1,141 +1,110 @@
 use crate::prelude::*;
 
-use crate::graphics::camera::Camera;
 use crate::graphics::clipping::*;
 use crate::graphics::vertex_shader::*;
 use crate::renderer::CullingMode;
 
 pub struct GeometryProcessor;
 impl GeometryProcessor {
-    /// Transforms a 3D vertex into a world space vertex using the model matrix.
-    fn model_to_world(vertex: Vertex3D, model_matrix: Mat4) -> Vertex3D {
-        let world_pos = model_matrix * vertex.position.to_homogenous();
+    pub fn process_triangle<VS>(
+        triangle: Triangle3D<VS::Vertex>,
+        shader: &VS,
+        uniforms: &VS::Uniforms,
+        viewport: &Viewport,
+        culling_mode: CullingMode,
+    ) -> Vec<Triangle2D<VS::Varyings>>
+    where
+        VS: VertexShader,
+    {
+        let triangle_clip = Self::vertex_stage(triangle, shader, uniforms);
 
-        let normal_matrix = model_matrix.inverse().transpose();
+        // Back-face culling
+        if matches!(culling_mode, CullingMode::BackFace) && Self::is_back_facing(&triangle_clip) {
+            return vec![];
+        }
 
-        Vertex3D {
-            position: world_pos.homogenize_to_vec3(),
-            colour: vertex.colour,
-            normal: (normal_matrix * vertex.normal.to_homogenous())
-                .homogenize_to_vec3()
-                .normalise(),
+        // clipping
+        clip_triangle(triangle_clip)
+            .into_iter()
+            .map(|triangle| Self::triangle_clip_to_screen(triangle, viewport))
+            .collect()
+    }
+
+    /// Process a triangle through the vertex shader
+    fn vertex_stage<VS>(
+        triangle: Triangle3D<VS::Vertex>,
+        shader: &VS,
+        uniforms: &VS::Uniforms,
+    ) -> TriangleClip<VS::Varyings>
+    where
+        VS: VertexShader,
+    {
+        let (a_pos, a_var) = shader.shade(triangle.a, uniforms);
+
+        let (b_pos, b_var) = shader.shade(triangle.b, uniforms);
+
+        let (c_pos, c_var) = shader.shade(triangle.c, uniforms);
+
+        TriangleClip {
+            a: ClipVertex {
+                position: a_pos,
+                varyings: a_var,
+            },
+            b: ClipVertex {
+                position: b_pos,
+                varyings: b_var,
+            },
+            c: ClipVertex {
+                position: c_pos,
+                varyings: c_var,
+            },
         }
     }
 
-    /// Transforms a 3D vertex into a clip space vertex using the model matrix and camera.
-    fn world_to_clip(vertex: Vertex3D, camera: &Camera) -> ClipVertex {
-        // World to View
-        let view = camera.view_matrix() * vertex.position.to_homogenous();
+    fn is_back_facing<V>(triangle: &TriangleClip<V>) -> bool
+    where
+        V: Interpolate,
+    {
+        let a = triangle.a.position;
+        let b = triangle.b.position;
+        let c = triangle.c.position;
 
-        // Projection from 3D to 2D coordinates
-        let clip = camera.projection_matrix() * view;
+        let ab = b.xy() - a.xy();
+        let ac = c.xy() - a.xy();
 
-        ClipVertex {
-            position: clip,
-            world_position: vertex.position,
-            colour: vertex.colour,
-            normal: vertex.normal,
+        ab.cross(&ac) < 0.0
+    }
+
+    fn triangle_clip_to_screen<V>(triangle: TriangleClip<V>, viewport: &Viewport) -> Triangle2D<V>
+    where
+        V: Interpolate,
+    {
+        Triangle2D {
+            a: Self::clip_to_screen(triangle.a, viewport),
+            b: Self::clip_to_screen(triangle.b, viewport),
+            c: Self::clip_to_screen(triangle.c, viewport),
         }
     }
 
-    /// Transforms a 3D triangle into world space using the model matrix.
-    fn triangle_model_to_world(triangle: Triangle3D, model_matrix: Mat4) -> Triangle3D {
-        Triangle3D {
-            a: Self::model_to_world(triangle.a, model_matrix),
-            b: Self::model_to_world(triangle.b, model_matrix),
-            c: Self::model_to_world(triangle.c, model_matrix),
-        }
-    }
-
-    /// Returns true when the triangle faces away from the camera in view space.
-    fn is_back_facing(triangle: &Triangle3D, camera: &Camera) -> bool {
-        let view = camera.view_matrix();
-
-        let a = (view * triangle.a.position.to_homogenous()).homogenize_to_vec3();
-        let b = (view * triangle.b.position.to_homogenous()).homogenize_to_vec3();
-        let c = (view * triangle.c.position.to_homogenous()).homogenize_to_vec3();
-
-        let normal = (b - a).cross(&(c - a));
-        let centroid = (a + b + c) / 3.0;
-
-        normal.dot(&centroid) >= 0.0
-    }
-
-    /// Transforms a triangle of 3D vertices into a triangle of clip space vertices using the model matrix and camera.
-    fn triangle_world_to_clip(
-        triangle: Triangle3D,
-        shader: &dyn VertexShader,
-        vertex_uniforms: &VertexUniforms,
-        camera: &Camera,
-    ) -> TriangleClip {
-        let a = Self::world_to_clip(shader.shade(triangle.a, vertex_uniforms), camera);
-        let b = Self::world_to_clip(shader.shade(triangle.b, vertex_uniforms), camera);
-        let c = Self::world_to_clip(shader.shade(triangle.c, vertex_uniforms), camera);
-
-        TriangleClip { a, b, c }
-    }
-
-    /// Projects a clip space vertex into 2D screen space using the viewport dimensions.
-    fn clip_to_screen(vertex: ClipVertex, viewport: &Viewport) -> RasterVertex {
+    fn clip_to_screen<V>(vertex: ClipVertex<V>, viewport: &Viewport) -> RasterVertex<V>
+    where
+        V: Interpolate,
+    {
         let inv_w = 1.0 / vertex.position.w;
 
-        // 2D coordiantes to normalised device coordinates
         let ndc = vertex.position * inv_w;
 
-        // Normalised device coordinates to screen coordinates
         let screen = Vec2::new(
             (ndc.x + 1.0) * 0.5 * viewport.width as f32,
             (1.0 - ndc.y) * 0.5 * viewport.height as f32,
         );
 
-        RasterVertex::new(
-            screen,
-            RasterVaryings::new(
-                vertex.world_position * inv_w,
-                (vertex.colour * inv_w).into(),
-                vertex.normal * inv_w,
-                ndc.z,
-                inv_w,
-            ),
-        )
-    }
-
-    /// Projects a triangle of clip space vertices into a triangle of 2D screen space vertices using the viewport dimensions.
-    fn triangle_clip_to_screen(triangle: TriangleClip, viewport: &Viewport) -> Triangle2D {
-        let a = Self::clip_to_screen(triangle.a, viewport);
-        let b = Self::clip_to_screen(triangle.b, viewport);
-        let c = Self::clip_to_screen(triangle.c, viewport);
-
-        Triangle2D { a, b, c }
-    }
-
-    /// Processes a triangle through the entire graphics pipeline, returning a list of 2D triangles ready for rasterisation.
-    pub fn process_triangle(
-        triangle: Triangle3D,
-        shader: &dyn VertexShader,
-        vertex_uniforms: &VertexUniforms,
-        model_matrix: Mat4,
-        camera: &Camera,
-        viewport: &Viewport,
-        culling_mode: CullingMode,
-    ) -> Vec<Triangle2D> {
-        let world_triangle = Self::triangle_model_to_world(triangle, model_matrix);
-
-        if matches!(culling_mode, CullingMode::BackFace)
-            && Self::is_back_facing(&world_triangle, camera)
-        {
-            return vec![];
+        RasterVertex {
+            position: screen,
+            depth: ndc.z,
+            inv_w,
+            varyings: vertex.varyings.scale(inv_w),
         }
-
-        let triangle_clip =
-            Self::triangle_world_to_clip(world_triangle, shader, vertex_uniforms, camera);
-
-        let clipped = clip_triangle(triangle_clip);
-
-        clipped
-            .iter()
-            .map(|t| Self::triangle_clip_to_screen(*t, viewport))
-            .collect()
     }
 }
 
@@ -143,7 +112,6 @@ impl GeometryProcessor {
 mod tests {
     use super::*;
     use crate::graphics::camera::{OrthographicProjection, Projection};
-    use crate::graphics::vertex_shader::BasicVertexShader;
 
     fn test_camera() -> Camera {
         Camera::new(

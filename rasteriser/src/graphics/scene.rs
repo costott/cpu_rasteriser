@@ -3,12 +3,12 @@ use crate::prelude::*;
 use crate::graphics::camera::Camera;
 use crate::graphics::lighting::DirectionalLight;
 
-pub struct Scene {
+pub struct Scene<V: Clone> {
     pub camera: Camera,
-    models: Vec<Model>,
+    models: Vec<Model<V>>,
     lights: Vec<DirectionalLight>,
 }
-impl Scene {
+impl<V: Clone> Scene<V> {
     pub fn new(camera: Camera) -> Self {
         Self {
             camera,
@@ -21,15 +21,15 @@ impl Scene {
         &self.camera
     }
 
-    pub fn add_model(&mut self, model: Model) {
+    pub fn add_model(&mut self, model: Model<V>) {
         self.models.push(model);
     }
 
-    pub fn models(&self) -> &[Model] {
+    pub fn models(&self) -> &[Model<V>] {
         &self.models
     }
 
-    pub fn models_mut(&mut self) -> &mut [Model] {
+    pub fn models_mut(&mut self) -> &mut [Model<V>] {
         &mut self.models
     }
 
