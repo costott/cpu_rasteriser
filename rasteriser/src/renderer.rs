@@ -27,7 +27,7 @@ where
     culling_mode: CullingMode,
 
     thread_pool: ThreadPool,
-    tile_binner: TileBinner<VS::Varyings>,
+    tile_binner: TileBinner<VS::Varyings, FS::Uniforms>,
 }
 impl<VS, FS> Renderer<VS, FS>
 where
@@ -89,31 +89,32 @@ where
         self.framebuffer.pixels()
     }
 
-    /// Renders an entire scene.
-    ///
-    /// This performs a complete frame:
-    /// - clears the frame and depth buffers
-    /// - transforms and clips geometry
-    /// - bins triangles into tiles
-    /// - rasterises all tiles
-    /// - writes the final image to the framebuffer
-    ///
-    /// This is the recommended entry point for rendering.
-    pub fn draw_scene(
-        &mut self,
-        scene: &Scene<VS::Vertex>,
-        vertex_uniforms: &VS::Uniforms,
-        fragment_uniforms: Arc<FS::Uniforms>,
-        viewport: &Viewport,
-    ) {
-        self.begin_frame();
+    // /// Renders an entire scene.
+    // ///
+    // /// This performs a complete frame:
+    // /// - clears the frame and depth buffers
+    // /// - transforms and clips geometry
+    // /// - bins triangles into tiles
+    // /// - rasterises all tiles
+    // /// - writes the final image to the framebuffer
+    // ///
+    // /// This is the recommended entry point for rendering.
+    // pub fn draw_scene(
+    //     &mut self,
+    //     scene: &Scene<VS::Vertex>,
+    //     vertex_uniforms: &VS::Uniforms,
+    //     fragment_uniforms: Arc<FS::Uniforms>,
+    //     viewport: &Viewport,
+    // ) {
+    //     self.begin_frame();
 
-        for model in scene.models() {
-            self.draw_model(model, vertex_uniforms, viewport);
-        }
+    //     for model in scene.models() {
+    //         self.draw_model(model, vertex_uniforms, fragment_uniforms.clone(), viewport);
+    //     }
 
-        self.submit_frame(fragment_uniforms);
-    }
+    //     self.submit_frame();
+    // }
+    // TODO: scene uniforms so draw_scene can be implemented, maybe scene owns a set of draw calls?
 
     /// Begins a new frame.
     ///
@@ -137,11 +138,11 @@ where
         &mut self,
         model: &Model<VS::Vertex>,
         vertex_uniforms: &VS::Uniforms,
+        fragment_uniforms: Arc<FS::Uniforms>,
         viewport: &Viewport,
     ) {
         for mesh in &model.meshes {
-            let material = mesh.material_index.map(|index| &model.materials[index]);
-            let draw_call = DrawCall::new(mesh, material, model.transform.model_matrix());
+            let draw_call = DrawCall::new(mesh, fragment_uniforms.clone());
             self.draw_mesh(&draw_call, vertex_uniforms, viewport);
         }
     }
@@ -154,7 +155,7 @@ where
     /// Requires `begin_frame` to have been called.
     pub fn draw_mesh(
         &mut self,
-        draw_call: &DrawCall<VS::Vertex>,
+        draw_call: &DrawCall<VS::Vertex, FS::Uniforms>,
         vertex_uniforms: &VS::Uniforms,
         viewport: &Viewport,
     ) {
@@ -167,7 +168,7 @@ where
                 self.culling_mode(),
             ) {
                 self.tile_binner
-                    .bin_triangle(triangle_2d, draw_call.material);
+                    .bin_triangle(triangle_2d, draw_call.fragment_uniforms.clone());
             }
         }
     }
@@ -178,17 +179,16 @@ where
     /// framebuffer.
     ///
     /// Must be called after all draw calls have completed.
-    pub fn submit_frame(&mut self, fragment_uniforms: Arc<FS::Uniforms>) {
+    pub fn submit_frame(&mut self) {
         let (tx, rx) = std::sync::mpsc::channel();
 
         for tile in self.tile_binner.tiles.iter().cloned() {
             let tx = tx.clone();
 
             let fragment_shader = self.fragment_shader.clone();
-            let fragment_uniforms = fragment_uniforms.clone();
 
             self.thread_pool.execute(move || {
-                let result = render_tile(tile, fragment_shader, fragment_uniforms);
+                let result = render_tile(tile, fragment_shader);
                 tx.send(result).unwrap();
             });
         }
@@ -220,15 +220,15 @@ where
     }
 }
 
-struct TileBinner<V>
+struct TileBinner<V, U>
 where
     V: Interpolate,
 {
-    tiles: Vec<Tile<V>>,
+    tiles: Vec<Tile<V, U>>,
     tiles_x: usize,
     tiles_y: usize,
 }
-impl<V: Interpolate> TileBinner<V> {
+impl<V: Interpolate, U> TileBinner<V, U> {
     const TILE_SIZE: i32 = 64;
 
     fn new(viewport: &Viewport) -> Self {
@@ -263,7 +263,7 @@ impl<V: Interpolate> TileBinner<V> {
         }
     }
 
-    fn bin_triangle(&mut self, triangle: Triangle2D<V>, material: Option<&Material>) {
+    fn bin_triangle(&mut self, triangle: Triangle2D<V>, fragment_uniforms: Arc<U>) {
         // Determine which tiles the triangle overlaps and add it to those
         let (mins, maxs) = triangle.bounding_box();
 
@@ -279,7 +279,7 @@ impl<V: Interpolate> TileBinner<V> {
                 if triangle.intersects_rect(self.tiles[index].bounds) {
                     self.tiles[index].triangles.push(TileTriangle {
                         triangle: triangle.clone(),
-                        material: material.cloned(),
+                        fragment_uniforms: fragment_uniforms.clone(),
                     });
                 }
             }
@@ -287,11 +287,7 @@ impl<V: Interpolate> TileBinner<V> {
     }
 }
 
-fn render_tile<V, FS>(
-    tile: Tile<V>,
-    fragment_shader: Arc<FS>,
-    fragment_uniforms: Arc<FS::Uniforms>,
-) -> TileResult
+fn render_tile<V, FS>(tile: Tile<V, FS::Uniforms>, fragment_shader: Arc<FS>) -> TileResult
 where
     V: Interpolate + Send + Sync + 'static,
     FS: FragmentShader<V> + Send + Sync + 'static,
@@ -311,8 +307,8 @@ where
                 fragment.position.x -= tile.bounds.min_x as f32;
                 fragment.position.y -= tile.bounds.min_y as f32;
 
-                let frag_colour =
-                    fragment_shader.shade(fragment.varyings, fragment_uniforms.as_ref());
+                let frag_colour = fragment_shader
+                    .shade(fragment.varyings, tile_triangle.fragment_uniforms.as_ref());
 
                 if fragment.depth < depthbuffer.get(fragment.position) {
                     framebuffer.set_pixel(fragment.position, frag_colour);
@@ -335,21 +331,15 @@ pub enum CullingMode {
     BackFace,
 }
 
-pub struct DrawCall<'a, V: Clone> {
+pub struct DrawCall<'a, V: Clone, U> {
     pub mesh: &'a Mesh<V>,
-    pub material: Option<&'a Material>,
-    pub model_matrix: Mat4,
+    pub fragment_uniforms: Arc<U>,
 }
-impl<'a, V: Clone> DrawCall<'a, V> {
-    pub fn new(
-        mesh: &'a Mesh<V>,
-        material: Option<&'a Material>,
-        model_matrix: Mat4,
-    ) -> DrawCall<'a, V> {
+impl<'a, V: Clone, U> DrawCall<'a, V, U> {
+    pub fn new(mesh: &'a Mesh<V>, fragment_uniforms: Arc<U>) -> DrawCall<'a, V, U> {
         DrawCall {
             mesh,
-            material,
-            model_matrix,
+            fragment_uniforms,
         }
     }
 }
@@ -359,22 +349,42 @@ struct TileResult {
     framebuffer: FrameBuffer,
 }
 
-#[derive(Clone)]
-struct Tile<V>
+struct Tile<V, U>
 where
     V: Interpolate,
 {
     pub bounds: Rect,
-    pub triangles: Vec<TileTriangle<V>>,
+    pub triangles: Vec<TileTriangle<V, U>>,
+}
+impl<V, U> Clone for Tile<V, U>
+where
+    V: Interpolate,
+{
+    fn clone(&self) -> Self {
+        Self {
+            bounds: self.bounds,
+            triangles: self.triangles.clone(),
+        }
+    }
 }
 
-#[derive(Clone)]
-struct TileTriangle<V>
+struct TileTriangle<V, U>
 where
     V: Interpolate,
 {
     triangle: Triangle2D<V>,
-    material: Option<Material>,
+    fragment_uniforms: Arc<U>,
+}
+impl<V, U> Clone for TileTriangle<V, U>
+where
+    V: Interpolate,
+{
+    fn clone(&self) -> Self {
+        Self {
+            triangle: self.triangle.clone(),
+            fragment_uniforms: Arc::clone(&self.fragment_uniforms),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

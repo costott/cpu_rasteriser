@@ -28,9 +28,7 @@ struct VertexUniforms {
 
 #[derive(Interpolate)]
 struct Varyings {
-    pub world_position: Vec3,
     pub colour: Colour,
-    pub normal: Vec3,
 }
 
 struct BasicVertexShader;
@@ -41,17 +39,12 @@ impl VertexShader for BasicVertexShader {
 
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
         let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
-        let normal_matrix = uniforms.model_matrix.inverse().transpose();
 
         let view_position = uniforms.view_matrix * world_position;
         let clip_position = uniforms.projection_matrix * view_position;
 
         let varyings = Varyings {
-            world_position: world_position.homogenize_to_vec3(),
             colour: vertex.colour,
-            normal: (normal_matrix * vertex.normal.to_homogenous())
-                .homogenize_to_vec3()
-                .normalise(),
         };
 
         (clip_position, varyings)
@@ -105,12 +98,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     teapot.transform.scale = Vec3::ONE * 0.3;
     teapot.transform.rotation.y = 90_f32.to_radians();
 
-    let mut scene = Scene::new(camera);
-    scene.add_light(DirectionalLight::new(
-        Vec3::new(0.0, -1.0, -1.0),
-        Colour::from_u32(0xfffde8),
-    ));
-    scene.add_model(teapot);
+    // let mut scene = Scene::new(camera);
+    // scene.add_light(DirectionalLight::new(
+    //     Vec3::new(0.0, -1.0, -1.0),
+    //     Colour::from_u32(0xfffde8),
+    // ));
+    // scene.add_model(teapot);
 
     let mut previous_time = std::time::Instant::now();
 
@@ -120,20 +113,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .as_secs_f32();
         previous_time = std::time::Instant::now();
 
-        controls.update(&mut scene.camera, &window, dt);
+        controls.update(&mut camera, &window, dt);
 
         let vertex_uniforms = VertexUniforms {
-            model_matrix: scene.models()[0].transform.model_matrix(),
-            view_matrix: scene.camera.view_matrix(),
-            projection_matrix: scene.camera.projection_matrix(),
+            model_matrix: teapot.transform.model_matrix(),
+            view_matrix: camera.view_matrix(),
+            projection_matrix: camera.projection_matrix(),
         };
 
-        renderer.draw_scene(
-            &scene,
+        // renderer.draw_scene(
+        //     &scene,
+        //     &vertex_uniforms,
+        //     Arc::new(FragmentUniforms),
+        //     &viewport,
+        // );
+
+        renderer.begin_frame();
+
+        renderer.draw_model(
+            &teapot,
             &vertex_uniforms,
             Arc::new(FragmentUniforms),
             &viewport,
         );
+
+        renderer.submit_frame();
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
