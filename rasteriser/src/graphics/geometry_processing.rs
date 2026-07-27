@@ -8,25 +8,24 @@ pub struct GeometryProcessor;
 impl GeometryProcessor {
     pub fn process_triangle<VS>(
         triangle: Triangle3D<VS::Vertex>,
-        shader: &VS,
-        uniforms: &VS::Uniforms,
+        vertex_shader: &VS,
+        vertex_uniforms: &VS::Uniforms,
         viewport: &Viewport,
         culling_mode: CullingMode,
     ) -> Vec<Triangle2D<VS::Varyings>>
     where
         VS: VertexShader,
     {
-        let triangle_clip = Self::vertex_stage(triangle, shader, uniforms);
+        let triangle_clip = Self::vertex_stage(triangle, vertex_shader, vertex_uniforms);
 
-        // Back-face culling
-        if matches!(culling_mode, CullingMode::BackFace) && Self::is_back_facing(&triangle_clip) {
-            return vec![];
-        }
-
-        // clipping
+        // Clipping and backface culling
         clip_triangle(triangle_clip)
             .into_iter()
             .map(|triangle| Self::triangle_clip_to_screen(triangle, viewport))
+            .filter(|triangle| {
+                !matches!(culling_mode, CullingMode::BackFace)
+                    || !Self::is_back_facing_screen(triangle)
+            })
             .collect()
     }
 
@@ -61,18 +60,14 @@ impl GeometryProcessor {
         }
     }
 
-    fn is_back_facing<V>(triangle: &TriangleClip<V>) -> bool
+    fn is_back_facing_screen<V>(triangle: &Triangle2D<V>) -> bool
     where
         V: Interpolate,
     {
-        let a = triangle.a.position;
-        let b = triangle.b.position;
-        let c = triangle.c.position;
+        let ab = triangle.b.position - triangle.a.position;
+        let ac = triangle.c.position - triangle.a.position;
 
-        let ab = b.xy() - a.xy();
-        let ac = c.xy() - a.xy();
-
-        ab.cross(&ac) < 0.0
+        ab.cross(&ac) >= 0.0
     }
 
     fn triangle_clip_to_screen<V>(triangle: TriangleClip<V>, viewport: &Viewport) -> Triangle2D<V>
