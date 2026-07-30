@@ -11,7 +11,7 @@ use crate::graphics::lighting::DirectionalLight;
 /// A trait for fragment shaders, which process fragments after rasterisation.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// #[derive(Interpolate)]
 /// struct Varyings {
 ///     pub world_position: Vec3,

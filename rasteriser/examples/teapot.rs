@@ -4,7 +4,6 @@ use cpu_rasteriser::{
     graphics::{
         camera::{Camera, Projection},
         fragment_shader::FragmentShader,
-        lighting::DirectionalLight,
         vertex_shader::VertexShader,
     },
     loaders::obj::load_obj,
@@ -15,7 +14,6 @@ mod common;
 use common::camera_controller::OrbitControls;
 
 use minifb::{Key, Window, WindowOptions};
-use std::sync::Arc;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
@@ -130,12 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         renderer.begin_frame();
 
-        renderer.draw_model(
-            &teapot,
-            &vertex_uniforms,
-            Arc::new(FragmentUniforms),
-            &viewport,
-        );
+        renderer.draw_model(&teapot, &vertex_uniforms, FragmentUniforms, &viewport);
 
         renderer.submit_frame();
 
