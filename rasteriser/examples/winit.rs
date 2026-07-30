@@ -3,12 +3,11 @@ use cpu_rasteriser::prelude::*;
 use cpu_rasteriser::{
     graphics::{
         camera::{Camera, Projection},
-        fragment_shader::BasicFragmentShader,
-        lighting::DirectionalLight,
-        vertex_shader::GouraudVertexShader,
+        fragment_shader::FragmentShader,
+        vertex_shader::VertexShader,
     },
     loaders::obj::load_obj,
-    renderer::{CullingMode, Renderer},
+    renderer::Renderer,
 };
 
 use std::num::NonZeroU32;
@@ -20,12 +19,54 @@ use common::timer::Timer;
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
 
+struct VertexUniforms {
+    pub model_matrix: Mat4,
+    pub view_matrix: Mat4,
+    pub projection_matrix: Mat4,
+}
+
+#[derive(Interpolate)]
+struct Varyings {
+    pub colour: Colour,
+}
+
+struct BasicVertexShader;
+impl VertexShader for BasicVertexShader {
+    type Vertex = ObjVertex;
+    type Uniforms = VertexUniforms;
+    type Varyings = Varyings;
+
+    fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
+        let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
+
+        let view_position = uniforms.view_matrix * world_position;
+        let clip_position = uniforms.projection_matrix * view_position;
+
+        let varyings = Varyings {
+            colour: vertex.colour,
+        };
+
+        (clip_position, varyings)
+    }
+}
+
+struct FragmentUniforms;
+
+struct BasicFragmentShader;
+impl FragmentShader<Varyings> for BasicFragmentShader {
+    type Uniforms = FragmentUniforms;
+
+    fn shade(&self, varyings: Varyings, _uniforms: &Self::Uniforms) -> Colour {
+        varyings.colour
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialise winit event loop and window
     let event_loop = winit::event_loop::EventLoop::new()?;
     let context = softbuffer::Context::new(event_loop.owned_display_handle())?;
 
-    let mut camera = Camera::new(
+    let camera = Camera::new(
         Vec3::new(0.0, 0.75, 1.25),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
@@ -43,23 +84,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     teapot.transform.scale = Vec3::ONE * 0.3;
     teapot.transform.rotation.y = 0_f32.to_radians();
 
-    let mut scene = Scene::new(camera);
-    scene.add_light(DirectionalLight::new(
-        Vec3::new(0.0, -1.0, -1.0),
-        Colour::from_u32(0xfffde8),
-    ));
-    scene.add_model(teapot);
-
     let mut app = App {
         context,
         state: AppState::Initial,
         viewport: Viewport::new(WIDTH, HEIGHT),
         renderer: Renderer::new(
             &Viewport::new(WIDTH, HEIGHT),
-            Box::new(GouraudVertexShader),
-            std::sync::Arc::new(BasicFragmentShader),
+            BasicVertexShader,
+            BasicFragmentShader,
         )?,
-        scene,
+        teapot,
+        camera,
         timer: Timer::new(),
     };
     event_loop.run_app(&mut app)?;
@@ -71,8 +106,9 @@ struct App {
     context: softbuffer::Context<winit::event_loop::OwnedDisplayHandle>,
     state: AppState,
     viewport: Viewport,
-    renderer: Renderer,
-    scene: Scene,
+    renderer: Renderer<BasicVertexShader, BasicFragmentShader>,
+    teapot: Model<ObjVertex>,
+    camera: Camera,
     timer: Timer,
 }
 
@@ -163,10 +199,27 @@ impl winit::application::ApplicationHandler for App {
                 }
             }
             winit::event::WindowEvent::RedrawRequested => {
-                let dt = self.timer.delta();
-                self.scene.models_mut()[0].transform.rotation.y += 0.5 * dt.as_secs_f32();
+                self.renderer.begin_frame();
 
-                self.renderer.draw_scene(&self.scene, &self.viewport);
+                let dt = self.timer.delta();
+                self.teapot.transform.rotation.y += 0.5 * dt.as_secs_f32();
+
+                let teapot_vertex_uniforms = VertexUniforms {
+                    model_matrix: self.teapot.transform.model_matrix(),
+                    view_matrix: self.camera.view_matrix(),
+                    projection_matrix: self.camera.projection_matrix(),
+                };
+
+                let teapot_fragment_uniforms = FragmentUniforms;
+
+                self.renderer.draw_model(
+                    &self.teapot,
+                    &teapot_vertex_uniforms,
+                    teapot_fragment_uniforms,
+                    &self.viewport,
+                );
+
+                self.renderer.submit_frame();
 
                 // Get the next buffer.
                 let mut buffer = surface.buffer_mut().unwrap();
@@ -184,7 +237,7 @@ impl winit::application::ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
         if let AppState::Running { surface } = &mut self.state {
             surface.window().request_redraw();
         }

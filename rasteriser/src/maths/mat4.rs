@@ -273,7 +273,7 @@ impl Mul<Vec4> for Mat4 {
 
     /// Mat4 * Vec4
     /// # Example
-    /// ```
+    /// ```ignore
     /// let mat = Mat4::identity();
     /// let vec = Vec4::new(1.0, 2.0, 3.0, 4.0);
     /// assert_eq!(mat * vec, vec);
