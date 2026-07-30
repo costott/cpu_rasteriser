@@ -119,16 +119,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             projection_matrix: camera.projection_matrix(),
         };
 
-        // renderer.draw_scene(
-        //     &scene,
-        //     &vertex_uniforms,
-        //     Arc::new(FragmentUniforms),
-        //     &viewport,
-        // );
-
         renderer.begin_frame();
 
-        renderer.draw_model(&teapot, &vertex_uniforms, FragmentUniforms, &viewport);
+        for draw_call in teapot.draw_calls(|_| FragmentUniforms) {
+            renderer.submit_draw_call(draw_call, &vertex_uniforms, &viewport);
+        }
 
         renderer.submit_frame();
 

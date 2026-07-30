@@ -1,7 +1,6 @@
 use crate::prelude::*;
 
 use crate::graphics::fragment::Fragment;
-use crate::renderer::Renderer;
 
 #[derive(Clone)]
 pub struct Triangle2D<V>
