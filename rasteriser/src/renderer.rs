@@ -158,10 +158,10 @@ where
         &mut self,
         mesh: &Mesh<VS::Vertex>,
         vertex_uniforms: &VS::Uniforms,
-        fragment_uniforms: Arc<FS::Uniforms>,
+        fragment_uniforms: FS::Uniforms,
         viewport: &Viewport,
     ) {
-        let draw_call = DrawCall::new(mesh, fragment_uniforms);
+        let draw_call = DrawCall::new(mesh, Arc::new(fragment_uniforms));
         self.run_draw_call(&draw_call, vertex_uniforms, viewport);
     }
 

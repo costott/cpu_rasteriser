@@ -58,9 +58,14 @@ impl VertexShader for BasicVertexShader {
     }
 }
 
-struct FragmentUniforms {
+// Uniforms for the scene (don't vary per model/mesh)
+struct SceneUniforms {
     camera: Camera,
     lights: Vec<DirectionalLight>,
+}
+
+struct FragmentUniforms {
+    scene: Arc<SceneUniforms>,
     material: Option<Material>,
 }
 
@@ -73,12 +78,12 @@ impl FragmentShader<Varyings> for PhongFragmentShader {
 
         let mut colour = Colour::BLACK;
 
-        let view_dir = (uniforms.camera.eye - varyings.world_position).normalise();
+        let view_dir = (uniforms.scene.camera.eye - varyings.world_position).normalise();
 
         if let Some(material) = &uniforms.material {
             colour = material.ambient;
 
-            for light in &uniforms.lights {
+            for light in &uniforms.scene.lights {
                 let light_dir = (-light.direction).normalise();
 
                 // Diffuse
@@ -246,14 +251,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // renderer.finish_frame(&scene);
         renderer.begin_frame();
 
+        let scene_uniforms = Arc::new(SceneUniforms {
+            camera: camera.clone(),
+            lights: lights.to_vec(),
+        });
+
         let floor_vertex_uniforms = VertexUniforms {
             model_matrix: floor_model.transform.model_matrix(),
             view_matrix: camera.view_matrix(),
             projection_matrix: camera.projection_matrix(),
         };
         let floor_fragment_uniforms = FragmentUniforms {
-            camera: camera.clone(),
-            lights: lights.to_vec(),
+            scene: scene_uniforms.clone(),
             material: floor_model.materials.get(0).cloned(),
         };
         renderer.draw_model(
@@ -269,8 +278,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             projection_matrix: camera.projection_matrix(),
         };
         let cube1_fragment_uniforms = FragmentUniforms {
-            camera: camera.clone(),
-            lights: lights.to_vec(),
+            scene: scene_uniforms.clone(),
             material: cube1.materials.get(0).cloned(),
         };
         renderer.draw_model(
@@ -286,8 +294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             projection_matrix: camera.projection_matrix(),
         };
         let cube2_fragment_uniforms = FragmentUniforms {
-            camera: camera.clone(),
-            lights: lights.to_vec(),
+            scene: scene_uniforms.clone(),
             material: cube2.materials.get(0).cloned(),
         };
         renderer.draw_model(
@@ -304,8 +311,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         for mesh in &loaded_cube.meshes {
             let loaded_cube_mesh_fragment_uniforms = FragmentUniforms {
-                camera: camera.clone(),
-                lights: lights.to_vec(),
+                scene: scene_uniforms.clone(),
                 material: loaded_cube
                     .materials
                     .get(mesh.material_index.unwrap())
@@ -314,7 +320,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             renderer.draw_mesh(
                 mesh,
                 &loaded_cube_vertex_uniforms,
-                Arc::new(loaded_cube_mesh_fragment_uniforms),
+                loaded_cube_mesh_fragment_uniforms,
                 &viewport,
             );
         }
