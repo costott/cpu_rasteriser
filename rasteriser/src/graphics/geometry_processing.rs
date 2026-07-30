@@ -106,7 +106,6 @@ impl GeometryProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graphics::camera::{Camera, OrthographicProjection, Projection};
 
     #[derive(Clone)]
     struct TestVertex {
@@ -121,7 +120,7 @@ mod tests {
 
     #[derive(Interpolate)]
     struct TestVaryings {
-        pub colour: Colour,
+        pub colour: Vec3,
     }
 
     struct TestUniforms;
@@ -137,7 +136,7 @@ mod tests {
             (
                 vertex.position,
                 TestVaryings {
-                    colour: Colour::WHITE,
+                    colour: Colour::WHITE.into(),
                 },
             )
         }

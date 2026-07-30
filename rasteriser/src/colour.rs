@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use std::ops::{Add, AddAssign, Div, Mul, Sub};
 
-#[derive(Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Interpolate)]
+#[derive(Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Colour {
     pub r: u8,
     pub g: u8,

@@ -27,7 +27,7 @@ struct VertexUniforms {
 
 #[derive(Interpolate)]
 struct Varyings {
-    pub colour: Colour,
+    pub colour: Vec3,
 }
 
 struct BasicVertexShader;
@@ -43,7 +43,7 @@ impl VertexShader for BasicVertexShader {
         let clip_position = uniforms.projection_matrix * view_position;
 
         let varyings = Varyings {
-            colour: vertex.colour,
+            colour: vertex.colour.into(),
         };
 
         (clip_position, varyings)
@@ -57,7 +57,7 @@ impl FragmentShader<Varyings> for BasicFragmentShader {
     type Uniforms = FragmentUniforms;
 
     fn shade(&self, varyings: Varyings, _uniforms: &Self::Uniforms) -> Colour {
-        varyings.colour
+        varyings.colour.into()
     }
 }
 

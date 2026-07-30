@@ -29,7 +29,7 @@ struct VertexUniforms {
 #[derive(Interpolate)]
 struct Varyings {
     pub world_position: Vec3,
-    pub colour: Colour,
+    pub colour: Vec3,
     pub normal: Vec3,
 }
 
@@ -48,7 +48,7 @@ impl VertexShader for BasicVertexShader {
 
         let varyings = Varyings {
             world_position: world_position.homogenize_to_vec3(),
-            colour: vertex.colour,
+            colour: vertex.colour.into(),
             normal: (normal_matrix * vertex.normal.to_homogenous())
                 .homogenize_to_vec3()
                 .normalise(),
