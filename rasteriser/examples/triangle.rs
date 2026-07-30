@@ -11,7 +11,6 @@ use cpu_rasteriser::{
 };
 
 mod common;
-use common::camera_controller::OrbitControls;
 
 use minifb::{Key, Window, WindowOptions};
 
@@ -67,7 +66,7 @@ impl FragmentShader<Varyings> for BasicFragmentShader {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut window = Window::new(
-        "Teapot Demo - ESC to exit",
+        "Triangle Demo - ESC to exit",
         WIDTH,
         HEIGHT,
         WindowOptions::default(),
@@ -82,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = Renderer::new(&viewport, BasicVertexShader, BasicFragmentShader)?;
     renderer.set_culling_mode(CullingMode::None);
 
-    let mut camera = Camera::new(
+    let camera = Camera::new(
         Vec3::new(0.0, 0.0, 1.0),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
@@ -95,34 +94,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         ),
     );
-    let mut controls = OrbitControls::new(&camera);
 
     let triangle = vec![
         Vertex {
-            position: Vec3::new(-1.0, -1.0, -1.0),
+            position: Vec3::new(-1.0, -1.0, 0.0),
             colour: Colour::from_u32(0xff0000).into(),
         },
         Vertex {
-            position: Vec3::new(1.0, -1.0, -1.0),
+            position: Vec3::new(1.0, -1.0, 0.0),
             colour: Colour::from_u32(0x00ff00).into(),
         },
         Vertex {
-            position: Vec3::new(0.0, 1.0, -1.0),
+            position: Vec3::new(0.0, 1.0, 0.0),
             colour: Colour::from_u32(0x0000ff).into(),
         },
     ];
     let triangle_indices = vec![0, 1, 2];
 
-    let mut previous_time = std::time::Instant::now();
-
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let dt = std::time::Instant::now()
-            .duration_since(previous_time)
-            .as_secs_f32();
-        previous_time = std::time::Instant::now();
-
-        controls.update(&mut camera, &window, dt);
-
         let vertex_uniforms = VertexUniforms {
             model_matrix: Mat4::identity(),
             view_matrix: camera.view_matrix(),
