@@ -3,9 +3,9 @@ use crate::prelude::*;
 #[derive(Debug)]
 pub struct Mesh<V: Clone> {
     /// The vertices of the mesh.
-    vertices: Vec<V>,
+    pub vertices: Vec<V>,
     /// The indices of the mesh, which define the triangles.
-    indices: Vec<u32>,
+    pub indices: Vec<u32>,
     /// The index of the material to use for this mesh.
     pub material_index: Option<usize>,
 }

@@ -210,14 +210,13 @@ impl winit::application::ApplicationHandler for App {
                     projection_matrix: self.camera.projection_matrix(),
                 };
 
-                let teapot_fragment_uniforms = FragmentUniforms;
-
-                self.renderer.draw_model(
-                    &self.teapot,
-                    &teapot_vertex_uniforms,
-                    teapot_fragment_uniforms,
-                    &self.viewport,
-                );
+                for draw_call in self.teapot.draw_calls(|_| FragmentUniforms) {
+                    self.renderer.submit_draw_call(
+                        draw_call,
+                        &teapot_vertex_uniforms,
+                        &self.viewport,
+                    );
+                }
 
                 self.renderer.submit_frame();
 
