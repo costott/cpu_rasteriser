@@ -1,12 +1,12 @@
 use cpu_rasteriser::prelude::*;
 
+use cpu_rasteriser::renderer::DrawCall;
 use cpu_rasteriser::{
     graphics::{
         camera::{Camera, Projection},
         fragment_shader::FragmentShader,
         vertex_shader::VertexShader,
     },
-    loaders::obj::load_obj,
     renderer::{CullingMode, Renderer},
 };
 
@@ -17,6 +17,12 @@ use minifb::{Key, Window, WindowOptions};
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
+
+#[derive(Clone)]
+struct Vertex {
+    pub position: Vec3,
+    pub colour: Vec3,
+}
 
 struct VertexUniforms {
     pub model_matrix: Mat4,
@@ -31,18 +37,17 @@ struct Varyings {
 
 struct BasicVertexShader;
 impl VertexShader for BasicVertexShader {
-    type Vertex = ObjVertex;
+    type Vertex = Vertex;
     type Uniforms = VertexUniforms;
     type Varyings = Varyings;
 
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
         let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
-
         let view_position = uniforms.view_matrix * world_position;
         let clip_position = uniforms.projection_matrix * view_position;
 
         let varyings = Varyings {
-            colour: vertex.colour.into(),
+            colour: vertex.colour,
         };
 
         (clip_position, varyings)
@@ -78,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     renderer.set_culling_mode(CullingMode::None);
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, 0.75, 1.25),
+        Vec3::new(0.0, 0.0, 1.0),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
         Projection::Perspective(
@@ -92,16 +97,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let mut controls = OrbitControls::new(&camera);
 
-    let mut teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
-    teapot.transform.scale = Vec3::ONE * 0.3;
-    teapot.transform.rotation.y = 90_f32.to_radians();
-
-    // let mut scene = Scene::new(camera);
-    // scene.add_light(DirectionalLight::new(
-    //     Vec3::new(0.0, -1.0, -1.0),
-    //     Colour::from_u32(0xfffde8),
-    // ));
-    // scene.add_model(teapot);
+    let triangle = vec![
+        Vertex {
+            position: Vec3::new(-1.0, -1.0, -1.0),
+            colour: Colour::from_u32(0xff0000).into(),
+        },
+        Vertex {
+            position: Vec3::new(1.0, -1.0, -1.0),
+            colour: Colour::from_u32(0x00ff00).into(),
+        },
+        Vertex {
+            position: Vec3::new(0.0, 1.0, -1.0),
+            colour: Colour::from_u32(0x0000ff).into(),
+        },
+    ];
+    let triangle_indices = vec![0, 1, 2];
 
     let mut previous_time = std::time::Instant::now();
 
@@ -114,21 +124,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         controls.update(&mut camera, &window, dt);
 
         let vertex_uniforms = VertexUniforms {
-            model_matrix: teapot.transform.model_matrix(),
+            model_matrix: Mat4::identity(),
             view_matrix: camera.view_matrix(),
             projection_matrix: camera.projection_matrix(),
         };
 
-        // renderer.draw_scene(
-        //     &scene,
-        //     &vertex_uniforms,
-        //     Arc::new(FragmentUniforms),
-        //     &viewport,
-        // );
-
         renderer.begin_frame();
 
-        renderer.draw_model(&teapot, &vertex_uniforms, FragmentUniforms, &viewport);
+        renderer.submit_draw_call(
+            DrawCall::new(
+                &triangle,
+                &triangle_indices,
+                cpu_rasteriser::renderer::PrimitiveMode::TRIANGLES,
+                FragmentUniforms,
+            ),
+            &vertex_uniforms,
+            &viewport,
+        );
 
         renderer.submit_frame();
 

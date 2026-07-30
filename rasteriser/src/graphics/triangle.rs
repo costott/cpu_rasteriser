@@ -88,13 +88,18 @@ impl<V: Interpolate> Triangle2D<V> {
 
         let mut edge_long = Edge::new(v0.clone(), v2.clone(), y_start as f32 + 0.5);
 
-        let mut edge_short = Edge::new(v0.clone(), v1.clone(), y_start as f32 + 0.5);
+        let mut using_second_half = y_start as f32 + 0.5 > v1.position.y;
+
+        let mut edge_short = if using_second_half {
+            Edge::new(v1.clone(), v2.clone(), y_start as f32 + 0.5)
+        } else {
+            Edge::new(v0.clone(), v1.clone(), y_start as f32 + 0.5)
+        };
 
         for y in y_start..y_end {
-            // // If the scanline is in the second half of the triangle, use the edge from v1 to v2 instead of v0 to v1.
-            let second_half = y as f32 + 0.5 > v1.position.y;
-
-            if second_half {
+            // If the scanline is in the second half of the triangle, use the edge from v1 to v2 instead of v0 to v1.
+            if !using_second_half && y as f32 + 0.5 > v1.position.y {
+                using_second_half = true;
                 edge_short = Edge::new(v1.clone(), v2.clone(), y as f32 + 0.5);
             }
 
