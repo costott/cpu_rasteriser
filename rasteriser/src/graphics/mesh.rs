@@ -1,16 +1,16 @@
 use crate::prelude::*;
 
 #[derive(Debug)]
-pub struct Mesh {
+pub struct Mesh<V: Clone> {
     /// The vertices of the mesh.
-    vertices: Vec<Vertex3D>,
+    vertices: Vec<V>,
     /// The indices of the mesh, which define the triangles.
     indices: Vec<u32>,
     /// The index of the material to use for this mesh.
     pub material_index: Option<usize>,
 }
-impl Mesh {
-    pub fn new(vertices: Vec<Vertex3D>, indices: Vec<u32>, material_index: Option<usize>) -> Self {
+impl<V: Clone> Mesh<V> {
+    pub fn new(vertices: Vec<V>, indices: Vec<u32>, material_index: Option<usize>) -> Self {
         Self {
             vertices,
             indices,
@@ -18,17 +18,29 @@ impl Mesh {
         }
     }
 
+    /// Returns an iterator over the triangles in the mesh, where each triangle is represented by three vertices.
+    pub fn triangles(&self) -> impl Iterator<Item = Triangle3D<V>> + '_ {
+        self.indices.chunks(3).map(move |chunk| {
+            Triangle3D::new(
+                self.vertices[chunk[0] as usize].clone(),
+                self.vertices[chunk[1] as usize].clone(),
+                self.vertices[chunk[2] as usize].clone(),
+            )
+        })
+    }
+}
+impl Mesh<ObjVertex> {
     /// Creates a white cube mesh with 8 vertices and 12 triangles (36 indices).
     pub fn cube(colour: Colour, material_index: Option<usize>) -> Self {
         let vertices = vec![
-            Vertex3D::new(Vec3::new(-0.5, -0.5, -0.5), colour),
-            Vertex3D::new(Vec3::new(0.5, -0.5, -0.5), colour),
-            Vertex3D::new(Vec3::new(0.5, 0.5, -0.5), colour),
-            Vertex3D::new(Vec3::new(-0.5, 0.5, -0.5), colour),
-            Vertex3D::new(Vec3::new(-0.5, -0.5, 0.5), colour),
-            Vertex3D::new(Vec3::new(0.5, -0.5, 0.5), colour),
-            Vertex3D::new(Vec3::new(0.5, 0.5, 0.5), colour),
-            Vertex3D::new(Vec3::new(-0.5, 0.5, 0.5), colour),
+            ObjVertex::new(Vec3::new(-0.5, -0.5, -0.5), colour),
+            ObjVertex::new(Vec3::new(0.5, -0.5, -0.5), colour),
+            ObjVertex::new(Vec3::new(0.5, 0.5, -0.5), colour),
+            ObjVertex::new(Vec3::new(-0.5, 0.5, -0.5), colour),
+            ObjVertex::new(Vec3::new(-0.5, -0.5, 0.5), colour),
+            ObjVertex::new(Vec3::new(0.5, -0.5, 0.5), colour),
+            ObjVertex::new(Vec3::new(0.5, 0.5, 0.5), colour),
+            ObjVertex::new(Vec3::new(-0.5, 0.5, 0.5), colour),
         ];
 
         let indices = vec![
@@ -83,7 +95,7 @@ impl Mesh {
                 let y = radius * cos_theta;
                 let z = radius * sin_theta * sin_phi;
 
-                vertices.push(Vertex3D::new(Vec3::new(x, y, z), colour));
+                vertices.push(ObjVertex::new(Vec3::new(x, y, z), colour));
             }
         }
 
@@ -109,17 +121,6 @@ impl Mesh {
         }
     }
 
-    /// Returns an iterator over the triangles in the mesh, where each triangle is represented by three vertices.
-    pub fn triangles(&self) -> impl Iterator<Item = Triangle3D> + '_ {
-        self.indices.chunks(3).map(move |chunk| {
-            Triangle3D::new(
-                self.vertices[chunk[0] as usize],
-                self.vertices[chunk[1] as usize],
-                self.vertices[chunk[2] as usize],
-            )
-        })
-    }
-
     pub fn calculate_vertex_normals(&mut self) {
         let mut normals = vec![Vec3::ZERO; self.vertices.len()];
 
@@ -128,7 +129,11 @@ impl Mesh {
             let i1 = triangle[1] as usize;
             let i2 = triangle[2] as usize;
 
-            let face = Triangle3D::new(self.vertices[i0], self.vertices[i1], self.vertices[i2]);
+            let face = Triangle3D::new(
+                self.vertices[i0].clone(),
+                self.vertices[i1].clone(),
+                self.vertices[i2].clone(),
+            );
 
             let n = face.normal();
 

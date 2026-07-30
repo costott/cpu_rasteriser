@@ -1,8 +1,8 @@
-use crate::maths::Vec3;
+use crate::prelude::*;
 use std::ops::{Add, Div, Mul, Sub};
 
 /// Represents a 4D (column) vector
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Copy, PartialEq, Interpolate)]
 pub struct Vec4 {
     pub x: f32,
     pub y: f32,
@@ -53,6 +53,10 @@ impl Vec4 {
         } else {
             Vec3::new(self.x, self.y, self.z)
         }
+    }
+
+    pub fn xy(&self) -> Vec2 {
+        Vec2::new(self.x, self.y)
     }
 }
 
