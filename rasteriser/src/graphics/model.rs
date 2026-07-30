@@ -1,5 +1,7 @@
 use crate::prelude::*;
 
+use crate::renderer::DrawCall;
+
 #[derive(Debug)]
 pub struct Model<V: Clone> {
     pub meshes: Vec<Mesh<V>>,
@@ -31,6 +33,20 @@ impl<V: Clone> Model<V> {
             }
         }
         Ok(())
+    }
+
+    pub fn draw_calls<U, F>(&self, make_uniforms: F) -> impl Iterator<Item = DrawCall<'_, V, U>>
+    where
+        F: Fn(&Mesh<V>) -> U,
+    {
+        self.meshes.iter().map(move |mesh| {
+            DrawCall::new(
+                &mesh.vertices,
+                &mesh.indices,
+                crate::renderer::PrimitiveMode::TRIANGLES,
+                make_uniforms(mesh),
+            )
+        })
     }
 }
 impl Model<ObjVertex> {

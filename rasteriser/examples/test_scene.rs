@@ -261,68 +261,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             view_matrix: camera.view_matrix(),
             projection_matrix: camera.projection_matrix(),
         };
-        let floor_fragment_uniforms = FragmentUniforms {
+        for draw_call in floor_model.draw_calls(|mesh| FragmentUniforms {
             scene: scene_uniforms.clone(),
-            material: floor_model.materials.get(0).cloned(),
-        };
-        renderer.draw_model(
-            &floor_model,
-            &floor_vertex_uniforms,
-            floor_fragment_uniforms,
-            &viewport,
-        );
+            material: floor_model
+                .materials
+                .get(mesh.material_index.unwrap())
+                .cloned(),
+        }) {
+            renderer.submit_draw_call(draw_call, &floor_vertex_uniforms, &viewport);
+        }
 
         let cube1_vertex_uniforms = VertexUniforms {
             model_matrix: cube1.transform.model_matrix(),
             view_matrix: camera.view_matrix(),
             projection_matrix: camera.projection_matrix(),
         };
-        let cube1_fragment_uniforms = FragmentUniforms {
+        for draw_call in cube1.draw_calls(|mesh| FragmentUniforms {
             scene: scene_uniforms.clone(),
-            material: cube1.materials.get(0).cloned(),
-        };
-        renderer.draw_model(
-            &cube1,
-            &cube1_vertex_uniforms,
-            cube1_fragment_uniforms,
-            &viewport,
-        );
+            material: cube1.materials.get(mesh.material_index.unwrap()).cloned(),
+        }) {
+            renderer.submit_draw_call(draw_call, &cube1_vertex_uniforms, &viewport);
+        }
 
         let cube2_vertex_uniforms = VertexUniforms {
             model_matrix: cube2.transform.model_matrix(),
             view_matrix: camera.view_matrix(),
             projection_matrix: camera.projection_matrix(),
         };
-        let cube2_fragment_uniforms = FragmentUniforms {
+        for draw_call in cube2.draw_calls(|mesh| FragmentUniforms {
             scene: scene_uniforms.clone(),
-            material: cube2.materials.get(0).cloned(),
-        };
-        renderer.draw_model(
-            &cube2,
-            &cube2_vertex_uniforms,
-            cube2_fragment_uniforms,
-            &viewport,
-        );
+            material: cube2.materials.get(mesh.material_index.unwrap()).cloned(),
+        }) {
+            renderer.submit_draw_call(draw_call, &cube2_vertex_uniforms, &viewport);
+        }
 
         let loaded_cube_vertex_uniforms = VertexUniforms {
             model_matrix: loaded_cube.transform.model_matrix(),
             view_matrix: camera.view_matrix(),
             projection_matrix: camera.projection_matrix(),
         };
-        for mesh in &loaded_cube.meshes {
-            let loaded_cube_mesh_fragment_uniforms = FragmentUniforms {
-                scene: scene_uniforms.clone(),
-                material: loaded_cube
-                    .materials
-                    .get(mesh.material_index.unwrap())
-                    .cloned(),
-            };
-            renderer.draw_mesh(
-                mesh,
-                &loaded_cube_vertex_uniforms,
-                loaded_cube_mesh_fragment_uniforms,
-                &viewport,
-            );
+        for draw_call in loaded_cube.draw_calls(|mesh| FragmentUniforms {
+            scene: scene_uniforms.clone(),
+            material: loaded_cube
+                .materials
+                .get(mesh.material_index.unwrap())
+                .cloned(),
+        }) {
+            renderer.submit_draw_call(draw_call, &loaded_cube_vertex_uniforms, &viewport);
         }
 
         renderer.submit_frame();

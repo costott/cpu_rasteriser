@@ -5,14 +5,59 @@ use crate::prelude::*;
 
 use crate::depthbuffer::DepthBuffer;
 use crate::framebuffer::FrameBuffer;
-use crate::graphics::camera::Camera;
-use crate::graphics::fragment::{self, Fragment};
 use crate::graphics::fragment_shader::FragmentShader;
 use crate::graphics::geometry_processing::GeometryProcessor;
-use crate::graphics::lighting::DirectionalLight;
 use crate::graphics::vertex_shader::VertexShader;
 use crate::viewport::Viewport;
 
+/// A CPU renderer that executes a programmable graphics pipeline.
+///
+/// `Renderer` is responsible for transforming vertices, rasterising primitives,
+/// executing fragment shaders, and writing the final image to the framebuffer.
+///
+/// Rendering is performed in three stages:
+///
+/// 1. Call [`Renderer::begin_frame`] to clear the framebuffer and prepare a new frame.
+/// 2. Submit one or more [`DrawCall`]s using [`Renderer::submit_draw_call`].
+/// 3. Call [`Renderer::submit_frame`] to rasterise all queued geometry.
+///
+/// Each draw call may provide different fragment shader uniforms, allowing
+/// multiple objects with different materials or rendering parameters to be
+/// rendered in a single frame.
+///
+/// The renderer internally uses tile-based rasterisation and multithreading
+/// to improve CPU cache locality and rendering performance. These implementation
+/// details are entirely transparent to users of the API.
+///
+/// # Type Parameters
+///
+/// - `VS` — The vertex shader used to transform input vertices.
+/// - `FS` — The fragment shader used to shade rasterised fragments.
+///
+/// # Example
+///
+/// ```ignore
+/// # use cpu_rasteriser::prelude::*;
+/// #
+/// let mut renderer = Renderer::new(
+///     &viewport,
+///     vertex_shader,
+///     fragment_shader,
+/// )?;
+///
+/// renderer.begin_frame();
+///
+/// renderer.submit_draw_call(
+///     draw_call,
+///     &vertex_uniforms,
+///     &viewport,
+/// );
+///
+/// renderer.submit_frame();
+///
+/// let pixels = renderer.pixels();
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct Renderer<VS, FS>
 where
     VS: VertexShader,
@@ -89,38 +134,24 @@ where
         self.framebuffer.pixels()
     }
 
-    // /// Renders an entire scene.
-    // ///
-    // /// This performs a complete frame:
-    // /// - clears the frame and depth buffers
-    // /// - transforms and clips geometry
-    // /// - bins triangles into tiles
-    // /// - rasterises all tiles
-    // /// - writes the final image to the framebuffer
-    // ///
-    // /// This is the recommended entry point for rendering.
-    // pub fn draw_scene(
-    //     &mut self,
-    //     scene: &Scene<VS::Vertex>,
-    //     vertex_uniforms: &VS::Uniforms,
-    //     fragment_uniforms: Arc<FS::Uniforms>,
-    //     viewport: &Viewport,
-    // ) {
-    //     self.begin_frame();
-
-    //     for model in scene.models() {
-    //         self.draw_model(model, vertex_uniforms, fragment_uniforms.clone(), viewport);
-    //     }
-
-    //     self.submit_frame();
-    // }
-    // TODO: scene uniforms so draw_scene can be implemented, maybe scene owns a set of draw calls?
-
-    /// Begins a new frame.
+    /// Begins rendering a new frame.
     ///
-    /// This clears the framebuffer, depth buffer, and tile bins.
+    /// This clears the framebuffer, depth buffer, and any previously queued draw
+    /// calls, preparing the renderer for a new frame.
     ///
-    /// Must be called before any draw calls.
+    /// This method must be called before submitting any draw calls.
+    ///
+    /// # Rendering Order
+    ///
+    /// A typical frame is rendered as:
+    ///
+    /// ```text
+    /// begin_frame()
+    /// submit_draw_call(...)
+    /// submit_draw_call(...)
+    /// ...
+    /// submit_frame()
+    /// ```
     pub fn begin_frame(&mut self) {
         self.framebuffer.clear(Colour::BLACK);
         self.depthbuffer.clear();
@@ -128,75 +159,63 @@ where
         self.tile_binner.clear();
     }
 
-    /// Queues a model for rendering.
-    ///
-    /// Geometry is transformed, clipped and binned into tiles.
-    /// Rasterisation does not occur until `submit_frame` is called.
-    ///
-    /// Requires `begin_frame` to have been called.
-    pub fn draw_model(
-        &mut self,
-        model: &Model<VS::Vertex>,
-        vertex_uniforms: &VS::Uniforms,
-        fragment_uniforms: FS::Uniforms,
-        viewport: &Viewport,
-    ) {
-        let fragment_uniforms = Arc::new(fragment_uniforms);
-        for mesh in &model.meshes {
-            let draw_call = DrawCall::new(mesh, fragment_uniforms.clone());
-            self.run_draw_call(&draw_call, vertex_uniforms, viewport);
-        }
-    }
-
-    /// Queues a mesh for rendering.
-    ///
-    /// Geometry is transformed, clipped and binned into tiles.
-    /// Rasterisation does not occur until `submit_frame` is called.
-    ///
-    /// Requires `begin_frame` to have been called.
-    pub fn draw_mesh(
-        &mut self,
-        mesh: &Mesh<VS::Vertex>,
-        vertex_uniforms: &VS::Uniforms,
-        fragment_uniforms: FS::Uniforms,
-        viewport: &Viewport,
-    ) {
-        let draw_call = DrawCall::new(mesh, Arc::new(fragment_uniforms));
-        self.run_draw_call(&draw_call, vertex_uniforms, viewport);
-    }
-
     /// Queues a draw call for rendering.
     ///
-    /// Geometry is transformed, clipped and binned into tiles.
-    /// Rasterisation does not occur until `submit_frame` is called.
+    /// The primitive is transformed by the vertex shader, clipped against the view
+    /// frustum, and binned into screen-space tiles. Rasterisation is deferred until
+    /// [`Renderer::submit_frame`] is called.
     ///
-    /// Requires `begin_frame` to have been called.
-    pub fn run_draw_call(
+    /// Multiple draw calls may be submitted between
+    /// [`Renderer::begin_frame`] and [`Renderer::submit_frame`], allowing a frame
+    /// to contain many independently shaded objects.
+    ///
+    /// Behaviour is unspecified if called before [`Renderer::begin_frame`].
+    pub fn submit_draw_call(
         &mut self,
-        draw_call: &DrawCall<VS::Vertex, FS::Uniforms>,
+        draw_call: DrawCall<VS::Vertex, FS::Uniforms>,
         vertex_uniforms: &VS::Uniforms,
         viewport: &Viewport,
     ) {
-        for triangle in draw_call.mesh.triangles() {
-            for triangle_2d in GeometryProcessor::process_triangle(
-                triangle,
-                &self.vertex_shader,
-                vertex_uniforms,
-                viewport,
-                self.culling_mode(),
-            ) {
-                self.tile_binner
-                    .bin_triangle(triangle_2d, draw_call.fragment_uniforms.clone());
+        match draw_call.primitive_mode() {
+            PrimitiveMode::TRIANGLES => {
+                let fragment_uniforms = Arc::new(draw_call.fragment_uniforms);
+
+                for triangle in draw_call.primitive.triangles() {
+                    for triangle_2d in GeometryProcessor::process_triangle(
+                        triangle,
+                        &self.vertex_shader,
+                        vertex_uniforms,
+                        viewport,
+                        self.culling_mode(),
+                    ) {
+                        self.tile_binner
+                            .bin_triangle(triangle_2d, fragment_uniforms.clone());
+                    }
+                }
             }
         }
     }
 
-    /// Rasterises all queued geometry.
+    /// Rasterises all queued draw calls and produces the final image.
     ///
-    /// This processes every populated tile and merges the results into the
-    /// framebuffer.
+    /// This executes the fragment shader for every visible fragment, performs depth
+    /// testing, and writes the resulting pixels into the framebuffer.
     ///
-    /// Must be called after all draw calls have completed.
+    /// After this method returns, the rendered image can be accessed through
+    /// [`Renderer::pixels`].
+    ///
+    /// This method should be called once after all draw calls for the frame have
+    /// been submitted.
+    ///
+    /// # Rendering Order
+    ///
+    /// ```text
+    /// begin_frame()
+    /// submit_draw_call(...)
+    /// submit_draw_call(...)
+    /// ...
+    /// submit_frame()
+    /// ```
     pub fn submit_frame(&mut self) {
         let (tx, rx) = std::sync::mpsc::channel();
 
@@ -238,6 +257,11 @@ where
     }
 }
 
+/// Tile binning is a technique used to improve cache locality and parallelism in rasterisation.
+///
+/// It works by dividing the screen into a grid of tiles, and then determining which triangles overlap each tile.
+/// Each tile can then be processed independently, allowing for better use of CPU caches and easier parallelisation
+/// across multiple threads.
 struct TileBinner<V, U>
 where
     V: Interpolate,
@@ -305,6 +329,7 @@ impl<V: Interpolate, U> TileBinner<V, U> {
     }
 }
 
+/// Renders a single tile, returning the resulting framebuffer.
 fn render_tile<V, FS>(tile: Tile<V, FS::Uniforms>, fragment_shader: Arc<FS>) -> TileResult
 where
     V: Interpolate + Send + Sync + 'static,
@@ -349,24 +374,82 @@ pub enum CullingMode {
     BackFace,
 }
 
-pub struct DrawCall<'a, V: Clone, U> {
-    pub mesh: &'a Mesh<V>,
-    pub fragment_uniforms: Arc<U>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimitiveMode {
+    TRIANGLES,
+    // TODO: support other primitive modes (LINES, POINTS, etc.)
 }
-impl<'a, V: Clone, U> DrawCall<'a, V, U> {
-    pub fn new(mesh: &'a Mesh<V>, fragment_uniforms: Arc<U>) -> DrawCall<'a, V, U> {
-        DrawCall {
-            mesh,
-            fragment_uniforms,
+
+/// A primitive is a collection of vertices and indices that define a geometric shape.
+pub struct Primitive<'a, V>
+where
+    V: Clone,
+{
+    pub vertices: &'a [V],
+    pub indices: &'a [u32],
+    pub primitive_mode: PrimitiveMode,
+}
+impl<'a, V> Primitive<'a, V>
+where
+    V: Clone,
+{
+    pub fn new(
+        vertices: &'a [V],
+        indices: &'a [u32],
+        primitive_mode: PrimitiveMode,
+    ) -> Primitive<'a, V> {
+        Primitive {
+            vertices,
+            indices,
+            primitive_mode,
         }
+    }
+
+    fn triangles(&self) -> impl Iterator<Item = Triangle3D<V>> {
+        self.indices.chunks_exact(3).map(|indices| Triangle3D {
+            a: self.vertices[indices[0] as usize].clone(),
+            b: self.vertices[indices[1] as usize].clone(),
+            c: self.vertices[indices[2] as usize].clone(),
+        })
     }
 }
 
+/// A draw call is a request to render a primitive with specific uniforms.
+pub struct DrawCall<'a, V, U>
+where
+    V: Clone,
+{
+    pub primitive: Primitive<'a, V>,
+    pub fragment_uniforms: U,
+}
+impl<'a, V, U> DrawCall<'a, V, U>
+where
+    V: Clone,
+{
+    pub fn new(
+        vertices: &'a [V],
+        indices: &'a [u32],
+        primitive_mode: PrimitiveMode,
+        fragment_uniforms: U,
+    ) -> DrawCall<'a, V, U> {
+        DrawCall {
+            primitive: Primitive::new(vertices, indices, primitive_mode),
+            fragment_uniforms,
+        }
+    }
+
+    fn primitive_mode(&self) -> PrimitiveMode {
+        self.primitive.primitive_mode
+    }
+}
+
+/// A tile result is the output of rendering a single tile, used for merging into the main framebuffer.
 struct TileResult {
     bounds: Rect,
     framebuffer: FrameBuffer,
 }
 
+/// A tile is a rectangular region of the screen that contains a list of triangles to be rendered.
 struct Tile<V, U>
 where
     V: Interpolate,
@@ -386,6 +469,7 @@ where
     }
 }
 
+/// A tile triangle is a triangle that has been assigned to a specific tile for rendering.
 struct TileTriangle<V, U>
 where
     V: Interpolate,
