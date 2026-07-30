@@ -1,13 +1,5 @@
 use crate::prelude::*;
 
-use crate::graphics::camera::Camera;
-use crate::graphics::fragment::Fragment;
-use crate::graphics::lighting::DirectionalLight;
-
-// pub trait FragmentShader {
-//     fn shade(&self, fragment: Fragment, uniforms: &FragmentUniforms) -> Option<Fragment>;
-// }
-
 /// A trait for fragment shaders, which process fragments after rasterisation.
 ///
 /// # Example
