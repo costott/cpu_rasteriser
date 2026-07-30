@@ -214,13 +214,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // scene.add_model(floor_model);
     // scene.add_model(cube1);
     // scene.add_model(cube2);
-    let mut lights = vec![DirectionalLight::new(
+    let lights = vec![DirectionalLight::new(
         Vec3::new(0.0, -1.0, -1.0),
         Colour::from_u32(0xfffde8),
     )];
 
-    let mut t: f32 = 0.0;
-    let mut angle: f32 = 0.0;
+    // let mut t: f32 = 0.0;
+    // let mut angle: f32 = 0.0;
 
     let mut previous_time = std::time::Instant::now();
 
@@ -229,9 +229,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .duration_since(previous_time)
             .as_secs_f32();
         previous_time = std::time::Instant::now();
-        t += dt;
+        // t += dt;
 
-        angle += 1.0 * dt;
+        // angle += 1.0 * dt;
         // scene.camera.eye.z = 1.0 + 1.0 * t.sin();
 
         // cube_model.transform.rotation.y = angle;
@@ -259,7 +259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         renderer.draw_model(
             &floor_model,
             &floor_vertex_uniforms,
-            Arc::new(floor_fragment_uniforms),
+            floor_fragment_uniforms,
             &viewport,
         );
 
@@ -276,7 +276,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         renderer.draw_model(
             &cube1,
             &cube1_vertex_uniforms,
-            Arc::new(cube1_fragment_uniforms),
+            cube1_fragment_uniforms,
             &viewport,
         );
 
@@ -293,9 +293,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         renderer.draw_model(
             &cube2,
             &cube2_vertex_uniforms,
-            Arc::new(cube2_fragment_uniforms),
+            cube2_fragment_uniforms,
             &viewport,
         );
+
+        let loaded_cube_vertex_uniforms = VertexUniforms {
+            model_matrix: loaded_cube.transform.model_matrix(),
+            view_matrix: camera.view_matrix(),
+            projection_matrix: camera.projection_matrix(),
+        };
+        for mesh in &loaded_cube.meshes {
+            let loaded_cube_mesh_fragment_uniforms = FragmentUniforms {
+                camera: camera.clone(),
+                lights: lights.to_vec(),
+                material: loaded_cube
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            };
+            renderer.draw_mesh(
+                mesh,
+                &loaded_cube_vertex_uniforms,
+                Arc::new(loaded_cube_mesh_fragment_uniforms),
+                &viewport,
+            );
+        }
 
         renderer.submit_frame();
 

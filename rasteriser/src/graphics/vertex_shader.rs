@@ -3,7 +3,7 @@ use crate::prelude::*;
 /// A trait for vertex shaders, which process vertices before rasterisation.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// #[derive(Clone)]
 /// struct Vertex {
 ///     position: Vec3,

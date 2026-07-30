@@ -6,7 +6,7 @@ use crate::prelude::*;
 use crate::depthbuffer::DepthBuffer;
 use crate::framebuffer::FrameBuffer;
 use crate::graphics::camera::Camera;
-use crate::graphics::fragment::Fragment;
+use crate::graphics::fragment::{self, Fragment};
 use crate::graphics::fragment_shader::FragmentShader;
 use crate::graphics::geometry_processing::GeometryProcessor;
 use crate::graphics::lighting::DirectionalLight;
@@ -138,12 +138,13 @@ where
         &mut self,
         model: &Model<VS::Vertex>,
         vertex_uniforms: &VS::Uniforms,
-        fragment_uniforms: Arc<FS::Uniforms>,
+        fragment_uniforms: FS::Uniforms,
         viewport: &Viewport,
     ) {
+        let fragment_uniforms = Arc::new(fragment_uniforms);
         for mesh in &model.meshes {
             let draw_call = DrawCall::new(mesh, fragment_uniforms.clone());
-            self.draw_mesh(&draw_call, vertex_uniforms, viewport);
+            self.run_draw_call(&draw_call, vertex_uniforms, viewport);
         }
     }
 
@@ -154,6 +155,23 @@ where
     ///
     /// Requires `begin_frame` to have been called.
     pub fn draw_mesh(
+        &mut self,
+        mesh: &Mesh<VS::Vertex>,
+        vertex_uniforms: &VS::Uniforms,
+        fragment_uniforms: Arc<FS::Uniforms>,
+        viewport: &Viewport,
+    ) {
+        let draw_call = DrawCall::new(mesh, fragment_uniforms);
+        self.run_draw_call(&draw_call, vertex_uniforms, viewport);
+    }
+
+    /// Queues a draw call for rendering.
+    ///
+    /// Geometry is transformed, clipped and binned into tiles.
+    /// Rasterisation does not occur until `submit_frame` is called.
+    ///
+    /// Requires `begin_frame` to have been called.
+    pub fn run_draw_call(
         &mut self,
         draw_call: &DrawCall<VS::Vertex, FS::Uniforms>,
         vertex_uniforms: &VS::Uniforms,

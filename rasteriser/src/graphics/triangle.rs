@@ -246,134 +246,191 @@ impl Triangle3D<ObjVertex> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
-    use crate::graphics::{fragment_shader::BasicFragmentShader, vertex_shader::BasicVertexShader};
 
-    #[test]
-    fn draw_filled_uses_pixel_centres_for_coverage() {
-        let viewport = Viewport::new(4, 4);
-        let mut renderer = Renderer::new(
-            &viewport,
-            Box::new(BasicVertexShader),
-            Arc::new(BasicFragmentShader),
-        )
-        .unwrap();
-        renderer.begin_frame();
+    #[derive(Debug, PartialEq, Interpolate)]
+    struct TestVaryings {
+        colour: Vec3,
+    }
 
-        let triangle = Triangle2D::new(
-            RasterVertex::new(
-                Vec2::new(0.1, 0.1),
-                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
-            ),
-            RasterVertex::new(
-                Vec2::new(2.9, 0.1),
-                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
-            ),
-            RasterVertex::new(
-                Vec2::new(0.1, 2.9),
-                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
-            ),
-        );
-
-        triangle.rasterise(|fragment| {
-            renderer.write_fragment(fragment.position, fragment.colour, fragment.depth);
-        });
-
-        let black = Colour::BLACK.to_u32();
-        let covered_pixels = [0, 1, 4, 5];
-
-        for &index in &covered_pixels {
-            assert_ne!(
-                renderer.pixels()[index],
-                black,
-                "expected coverage at index {index}"
-            );
+    fn vertex(x: f32, y: f32, colour: Vec3) -> RasterVertex<TestVaryings> {
+        RasterVertex {
+            position: Vec2::new(x, y),
+            depth: 0.5,
+            inv_w: 1.0,
+            varyings: TestVaryings { colour },
         }
+    }
 
-        for (index, pixel) in renderer.pixels().iter().enumerate() {
-            if covered_pixels.contains(&index) {
-                continue;
-            }
-
-            assert_eq!(*pixel, black, "unexpected filled pixel at index {index}");
+    fn bounds() -> crate::renderer::Rect {
+        crate::renderer::Rect {
+            min_x: 0,
+            min_y: 0,
+            max_x: 4,
+            max_y: 4,
         }
     }
 
     #[test]
-    fn draw_filled_interpolates_colour_across_scanlines() {
-        let viewport = Viewport::new(4, 4);
-        let mut renderer = Renderer::new(
-            &viewport,
-            Box::new(BasicVertexShader),
-            Arc::new(BasicFragmentShader),
-        )
-        .unwrap();
-        renderer.begin_frame();
-
+    fn bounding_box_returns_expected_values() {
         let triangle = Triangle2D::new(
-            RasterVertex::new(
-                Vec2::new(0.5, 0.5),
-                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
-            ),
-            RasterVertex::new(
-                Vec2::new(3.5, 0.5),
-                RasterVaryings::new(Vec3::ZERO, Colour::GREEN.into(), Vec3::ZERO, 0.5, 1.0),
-            ),
-            RasterVertex::new(
-                Vec2::new(0.5, 3.5),
-                RasterVaryings::new(Vec3::ZERO, Colour::RED.into(), Vec3::ZERO, 0.5, 1.0),
-            ),
+            vertex(1.0, 2.0, Vec3::ZERO),
+            vertex(4.0, 0.0, Vec3::ZERO),
+            vertex(2.0, 3.0, Vec3::ZERO),
         );
 
-        triangle.rasterise(|fragment| {
-            renderer.write_fragment(fragment.position, fragment.colour, fragment.depth);
-        });
+        let (min, max) = triangle.bounding_box();
 
-        let pixel = Colour::from_u32(renderer.pixels()[5]);
-
-        assert!(
-            pixel.r < 255,
-            "expected red channel to decrease across the scanline"
-        );
-        assert!(
-            pixel.g > 0,
-            "expected green channel to increase across the scanline"
-        );
+        assert_eq!(min, Vec2::new(1.0, 0.0));
+        assert_eq!(max, Vec2::new(4.0, 3.0));
     }
 
     #[test]
-    fn draw_filled_interpolates_normals_across_scanlines() {
-        let left = RasterVertex::new(
-            Vec2::new(0.0, 0.0),
-            RasterVaryings::new(
-                Vec3::ZERO,
-                Colour::WHITE.into(),
-                Vec3::new(1.0, 0.0, 0.0),
-                0.0,
-                1.0,
-            ),
-        );
-        let right = RasterVertex::new(
-            Vec2::new(0.0, 4.0),
-            RasterVaryings::new(
-                Vec3::ZERO,
-                Colour::WHITE.into(),
-                Vec3::new(0.0, 1.0, 0.0),
-                0.0,
-                1.0,
-            ),
+    fn intersects_rect_returns_true_when_overlapping() {
+        let triangle = Triangle2D::new(
+            vertex(1.0, 1.0, Vec3::ZERO),
+            vertex(3.0, 1.0, Vec3::ZERO),
+            vertex(2.0, 3.0, Vec3::ZERO),
         );
 
-        let edge = Edge::new(left, right, 0.0);
+        let rect = crate::renderer::Rect {
+            min_x: 2,
+            min_y: 2,
+            max_x: 4,
+            max_y: 4,
+        };
 
-        assert_eq!(edge.varyings.normal, Vec3::new(1.0, 0.0, 0.0));
-        assert_eq!(edge.varyings_step.normal, Vec3::new(-0.25, 0.25, 0.0));
+        assert!(triangle.intersects_rect(rect));
+    }
 
-        let mut stepped = edge;
-        stepped.step();
+    #[test]
+    fn intersects_rect_returns_false_when_disjoint() {
+        let triangle = Triangle2D::new(
+            vertex(0.0, 0.0, Vec3::ZERO),
+            vertex(1.0, 0.0, Vec3::ZERO),
+            vertex(0.0, 1.0, Vec3::ZERO),
+        );
 
-        assert_eq!(stepped.varyings.normal, Vec3::new(0.75, 0.25, 0.0));
+        let rect = crate::renderer::Rect {
+            min_x: 5,
+            min_y: 5,
+            max_x: 6,
+            max_y: 6,
+        };
+
+        assert!(!triangle.intersects_rect(rect));
+    }
+
+    #[test]
+    fn rasterise_uses_pixel_centres_for_coverage() {
+        let triangle = Triangle2D::new(
+            vertex(0.1, 0.1, Vec3::ZERO),
+            vertex(2.9, 0.1, Vec3::ZERO),
+            vertex(0.1, 2.9, Vec3::ZERO),
+        );
+
+        let mut pixels = Vec::new();
+
+        triangle.rasterise_segment(bounds(), |fragment| {
+            pixels.push(fragment.position);
+        });
+
+        assert!(pixels.contains(&Vec2::new(0.0, 0.0)));
+        assert!(pixels.contains(&Vec2::new(1.0, 0.0)));
+        assert!(pixels.contains(&Vec2::new(0.0, 1.0)));
+        assert!(pixels.contains(&Vec2::new(1.0, 1.0)));
+
+        assert!(!pixels.contains(&Vec2::new(3.0, 3.0)));
+    }
+
+    #[test]
+    fn rasterise_interpolates_varyings_across_scanlines() {
+        let triangle = Triangle2D::new(
+            vertex(0.5, 0.5, Vec3::new(1.0, 0.0, 0.0)),
+            vertex(3.5, 0.5, Vec3::new(0.0, 1.0, 0.0)),
+            vertex(0.5, 3.5, Vec3::new(1.0, 0.0, 0.0)),
+        );
+
+        let mut fragments = Vec::new();
+
+        triangle.rasterise_segment(bounds(), |fragment| {
+            fragments.push(fragment);
+        });
+
+        let fragment = fragments
+            .iter()
+            .find(|f| f.position == Vec2::new(1.0, 1.0))
+            .unwrap();
+
+        assert!(fragment.varyings.colour.x < 1.0);
+        assert!(fragment.varyings.colour.y > 0.0);
+        assert_eq!(fragment.varyings.colour.z, 0.0);
+    }
+
+    #[test]
+    fn rasterise_respects_bounds() {
+        let triangle = Triangle2D::new(
+            vertex(0.0, 0.0, Vec3::ZERO),
+            vertex(4.0, 0.0, Vec3::ZERO),
+            vertex(0.0, 4.0, Vec3::ZERO),
+        );
+
+        let rect = crate::renderer::Rect {
+            min_x: 1,
+            min_y: 1,
+            max_x: 2,
+            max_y: 2,
+        };
+
+        triangle.rasterise_segment(rect, |fragment| {
+            assert!(fragment.position.x >= 1.0);
+            assert!(fragment.position.x < 2.0);
+            assert!(fragment.position.y >= 1.0);
+            assert!(fragment.position.y < 2.0);
+        });
+    }
+
+    #[test]
+    fn rasterise_zero_height_triangle_emits_no_fragments() {
+        let triangle = Triangle2D::new(
+            vertex(0.0, 1.0, Vec3::ZERO),
+            vertex(2.0, 1.0, Vec3::ZERO),
+            vertex(4.0, 1.0, Vec3::ZERO),
+        );
+
+        let mut fragments = Vec::new();
+
+        triangle.rasterise_segment(bounds(), |fragment| {
+            fragments.push(fragment);
+        });
+
+        assert!(fragments.is_empty());
+    }
+
+    #[test]
+    fn edge_new_interpolates_initial_values() {
+        let edge = Edge::new(
+            vertex(0.0, 0.0, Vec3::new(1.0, 0.0, 0.0)),
+            vertex(4.0, 4.0, Vec3::new(0.0, 1.0, 0.0)),
+            2.0,
+        );
+
+        assert_eq!(edge.x, 2.0);
+        assert_eq!(edge.depth, 0.5);
+        assert_eq!(edge.inv_w, 1.0);
+        assert_eq!(edge.varyings.colour, Vec3::new(0.5, 0.5, 0.0));
+    }
+
+    #[test]
+    fn edge_step_interpolates_attributes() {
+        let mut edge = Edge::new(
+            vertex(0.0, 0.0, Vec3::new(1.0, 0.0, 0.0)),
+            vertex(0.0, 4.0, Vec3::new(0.0, 1.0, 0.0)),
+            0.0,
+        );
+
+        edge.step();
+
+        assert_eq!(edge.varyings.colour, Vec3::new(0.75, 0.25, 0.0));
     }
 }

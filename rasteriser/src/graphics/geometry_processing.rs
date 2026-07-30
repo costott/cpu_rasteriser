@@ -106,35 +106,67 @@ impl GeometryProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graphics::camera::{OrthographicProjection, Projection};
+    use crate::graphics::camera::{Camera, OrthographicProjection, Projection};
 
-    fn test_camera() -> Camera {
-        Camera::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, -1.0),
-            Vec3::new(0.0, 1.0, 0.0),
-            Projection::Orthographic(OrthographicProjection::new(-2.0, 2.0, -2.0, 2.0, 0.1, 10.0)),
+    #[derive(Clone)]
+    struct TestVertex {
+        position: Vec4,
+    }
+
+    fn vertex(x: f32, y: f32, z: f32) -> TestVertex {
+        TestVertex {
+            position: Vec4::new(x, y, z, 1.0),
+        }
+    }
+
+    #[derive(Interpolate)]
+    struct TestVaryings {
+        pub colour: Colour,
+    }
+
+    struct TestUniforms;
+
+    struct TestVertexShader;
+
+    impl VertexShader for TestVertexShader {
+        type Vertex = TestVertex;
+        type Uniforms = TestUniforms;
+        type Varyings = TestVaryings;
+
+        fn shade(&self, vertex: Self::Vertex, _: &Self::Uniforms) -> (Vec4, Self::Varyings) {
+            (
+                vertex.position,
+                TestVaryings {
+                    colour: Colour::WHITE,
+                },
+            )
+        }
+    }
+
+    fn front_facing_triangle() -> Triangle3D<TestVertex> {
+        Triangle3D::new(
+            vertex(-0.5, -0.5, 0.0),
+            vertex(0.5, -0.5, 0.0),
+            vertex(0.0, 0.5, 0.0),
+        )
+    }
+
+    fn back_facing_triangle() -> Triangle3D<TestVertex> {
+        Triangle3D::new(
+            vertex(-0.5, -0.5, 0.0),
+            vertex(0.0, 0.5, 0.0),
+            vertex(0.5, -0.5, 0.0),
         )
     }
 
     #[test]
     fn process_triangle_keeps_front_facing_triangles() {
         let viewport = Viewport::new(8, 8);
-        let camera = test_camera();
-        let shader = BasicVertexShader;
-        let triangle = Triangle3D::new(
-            Vertex3D::new(Vec3::new(-1.0, -1.0, -2.0), Colour::WHITE),
-            Vertex3D::new(Vec3::new(1.0, -1.0, -2.0), Colour::WHITE),
-            Vertex3D::new(Vec3::new(0.0, 1.0, -2.0), Colour::WHITE),
-        );
-        let vertex_uniforms = VertexUniforms { lights: &[] };
 
         let triangles = GeometryProcessor::process_triangle(
-            triangle,
-            &shader,
-            &vertex_uniforms,
-            Mat4::identity(),
-            &camera,
+            front_facing_triangle(),
+            &TestVertexShader,
+            &TestUniforms,
             &viewport,
             CullingMode::BackFace,
         );
@@ -145,21 +177,11 @@ mod tests {
     #[test]
     fn process_triangle_culls_back_facing_triangles() {
         let viewport = Viewport::new(8, 8);
-        let camera = test_camera();
-        let shader = BasicVertexShader;
-        let triangle = Triangle3D::new(
-            Vertex3D::new(Vec3::new(-1.0, -1.0, -2.0), Colour::WHITE),
-            Vertex3D::new(Vec3::new(0.0, 1.0, -2.0), Colour::WHITE),
-            Vertex3D::new(Vec3::new(1.0, -1.0, -2.0), Colour::WHITE),
-        );
-        let vertex_uniforms = VertexUniforms { lights: &[] };
 
         let triangles = GeometryProcessor::process_triangle(
-            triangle,
-            &shader,
-            &vertex_uniforms,
-            Mat4::identity(),
-            &camera,
+            back_facing_triangle(),
+            &TestVertexShader,
+            &TestUniforms,
             &viewport,
             CullingMode::BackFace,
         );
@@ -168,27 +190,96 @@ mod tests {
     }
 
     #[test]
-    fn process_triangle_keeps_back_facing_triangles_when_culling_is_disabled() {
+    fn process_triangle_keeps_back_facing_triangles_when_culling_disabled() {
         let viewport = Viewport::new(8, 8);
-        let camera = test_camera();
-        let shader = BasicVertexShader;
-        let triangle = Triangle3D::new(
-            Vertex3D::new(Vec3::new(-1.0, -1.0, -2.0), Colour::WHITE),
-            Vertex3D::new(Vec3::new(0.0, 1.0, -2.0), Colour::WHITE),
-            Vertex3D::new(Vec3::new(1.0, -1.0, -2.0), Colour::WHITE),
-        );
-        let vertex_uniforms = VertexUniforms { lights: &[] };
 
         let triangles = GeometryProcessor::process_triangle(
-            triangle,
-            &shader,
-            &vertex_uniforms,
-            Mat4::identity(),
-            &camera,
+            back_facing_triangle(),
+            &TestVertexShader,
+            &TestUniforms,
             &viewport,
             CullingMode::None,
         );
 
         assert_eq!(triangles.len(), 1);
+    }
+
+    #[test]
+    fn process_triangle_converts_vertices_to_screen_space() {
+        let viewport = Viewport::new(100, 100);
+
+        let triangles = GeometryProcessor::process_triangle(
+            front_facing_triangle(),
+            &TestVertexShader,
+            &TestUniforms,
+            &viewport,
+            CullingMode::None,
+        );
+
+        let tri = &triangles[0];
+
+        for vertex in [&tri.a, &tri.b, &tri.c] {
+            assert!(vertex.position.x >= 0.0);
+            assert!(vertex.position.x <= 100.0);
+            assert!(vertex.position.y >= 0.0);
+            assert!(vertex.position.y <= 100.0);
+        }
+    }
+
+    #[test]
+    fn process_triangle_preserves_triangle_when_fully_inside_frustum() {
+        let viewport = Viewport::new(100, 100);
+
+        let triangles = GeometryProcessor::process_triangle(
+            front_facing_triangle(),
+            &TestVertexShader,
+            &TestUniforms,
+            &viewport,
+            CullingMode::BackFace,
+        );
+
+        assert_eq!(triangles.len(), 1);
+    }
+
+    #[test]
+    fn process_triangle_clips_triangle_crossing_near_plane() {
+        let viewport = Viewport::new(100, 100);
+
+        let triangle = Triangle3D::new(
+            vertex(-1.0, -1.0, -0.05), // outside near plane
+            vertex(1.0, -1.0, -2.0),
+            vertex(0.0, 1.0, -2.0),
+        );
+
+        let triangles = GeometryProcessor::process_triangle(
+            triangle,
+            &TestVertexShader,
+            &TestUniforms,
+            &viewport,
+            CullingMode::None,
+        );
+
+        assert!(!triangles.is_empty());
+    }
+
+    #[test]
+    fn process_triangle_discards_triangle_outside_frustum() {
+        let viewport = Viewport::new(100, 100);
+
+        let triangle = Triangle3D::new(
+            vertex(100.0, 100.0, -2.0), // outside frustum
+            vertex(101.0, 100.0, -2.0), // outside frustum
+            vertex(100.0, 101.0, -2.0), // outside frustum
+        );
+
+        let triangles = GeometryProcessor::process_triangle(
+            triangle,
+            &TestVertexShader,
+            &TestUniforms,
+            &viewport,
+            CullingMode::None,
+        );
+
+        assert!(triangles.is_empty());
     }
 }
