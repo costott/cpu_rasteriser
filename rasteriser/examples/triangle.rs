@@ -40,7 +40,7 @@ impl VertexShader for BasicVertexShader {
     type Varyings = Varyings;
 
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
-        let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
+        let world_position = uniforms.model_matrix * vertex.position.to_point4();
         let view_position = uniforms.view_matrix * world_position;
         let clip_position = uniforms.projection_matrix * view_position;
 
