@@ -1,13 +1,12 @@
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::renderer::DrawCall;
 use cpu_rasteriser::{
     graphics::{
         camera::{Camera, Projection},
         fragment_shader::FragmentShader,
         vertex_shader::VertexShader,
     },
-    renderer::{CullingMode, Renderer},
+    renderer::{CullingMode, DrawCall, Pipeline, PrimitiveMode, Renderer},
 };
 
 mod common;
@@ -78,8 +77,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let viewport = Viewport::new(WIDTH, HEIGHT);
 
-    let mut renderer = Renderer::new(&viewport, BasicVertexShader, BasicFragmentShader)?;
-    renderer.set_culling_mode(CullingMode::None);
+    let mut renderer = Renderer::new(&viewport)?;
+
+    let simple_pipeline =
+        Pipeline::new(BasicVertexShader, BasicFragmentShader).with_culling_mode(CullingMode::None);
 
     let camera = Camera::new(
         Vec3::new(0.0, 0.0, 1.0),
@@ -118,20 +119,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             projection_matrix: camera.projection_matrix(),
         };
 
-        renderer.begin_frame();
+        let mut frame = renderer.begin_frame(&viewport);
 
-        renderer.submit_draw_call(
+        frame.draw(
+            &simple_pipeline,
             DrawCall::new(
                 &triangle,
                 &triangle_indices,
-                cpu_rasteriser::renderer::PrimitiveMode::TRIANGLES,
+                PrimitiveMode::TRIANGLES,
                 FragmentUniforms,
             ),
             &vertex_uniforms,
-            &viewport,
         );
 
-        renderer.submit_frame();
+        frame.finish();
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
