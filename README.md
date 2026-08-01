@@ -10,7 +10,7 @@
 
 The same Utah teapot rendered using two independent shader pipelines within a single frame.
 
-The left model uses Phong shading (lighting calculated per fragment), while the right model uses Gouraud shading (lighting calculated per vertex). share the same renderer, scene, and geometry; only the pipeline changes.
+The left model uses Phong shading (lighting calculated per fragment), while the right model uses Gouraud shading (lighting calculated per vertex). Both share the same renderer, scene, and geometry; only the pipeline changes.
 
 <p align="center">
     <img src="./assets/phong-vs-gouraud.gif" width="700">
@@ -22,18 +22,7 @@ Rendering with multiple pipelines requires only a few API calls:
 let mut frame = renderer.begin_frame(&viewport);
 
 for draw_call in gouraud_teapot.draw_calls(|_| GouraudFragmentUniforms) {
-    frame.draw(&gouraud_pipeline, draw_call, &gouraud_vertex_uniforms);
-}
-
-for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
-    scene: scene_uniforms.clone(),
-    material: phong_teapot
-        .materials
-        .get(mesh.material_index.unwrap())
-        .cloned(),
-}) {
-    frame.draw(&phong_pipeline, draw_call, &phong_vertex_uniforms);
-}
+    Zz
 
 frame.finish();
 ```
