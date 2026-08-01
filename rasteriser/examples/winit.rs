@@ -7,7 +7,7 @@ use cpu_rasteriser::{
         vertex_shader::VertexShader,
     },
     loaders::obj::load_obj,
-    renderer::Renderer,
+    renderer::{CullingMode, Pipeline, Renderer},
 };
 
 use std::num::NonZeroU32;
@@ -88,11 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         context,
         state: AppState::Initial,
         viewport: Viewport::new(WIDTH, HEIGHT),
-        renderer: Renderer::new(
-            &Viewport::new(WIDTH, HEIGHT),
-            BasicVertexShader,
-            BasicFragmentShader,
-        )?,
+        renderer: Renderer::new(&Viewport::new(WIDTH, HEIGHT))?,
         teapot,
         camera,
         timer: Timer::new(),
@@ -106,7 +102,7 @@ struct App {
     context: softbuffer::Context<winit::event_loop::OwnedDisplayHandle>,
     state: AppState,
     viewport: Viewport,
-    renderer: Renderer<BasicVertexShader, BasicFragmentShader>,
+    renderer: Renderer,
     teapot: Model<ObjVertex>,
     camera: Camera,
     timer: Timer,
@@ -199,7 +195,10 @@ impl winit::application::ApplicationHandler for App {
                 }
             }
             winit::event::WindowEvent::RedrawRequested => {
-                self.renderer.begin_frame();
+                let simple_pipeline = Pipeline::new(BasicVertexShader, BasicFragmentShader)
+                    .with_culling_mode(CullingMode::None);
+
+                let mut frame = self.renderer.begin_frame(&self.viewport);
 
                 let dt = self.timer.delta();
                 self.teapot.transform.rotation.y += 0.5 * dt.as_secs_f32();
@@ -211,14 +210,10 @@ impl winit::application::ApplicationHandler for App {
                 };
 
                 for draw_call in self.teapot.draw_calls(|_| FragmentUniforms) {
-                    self.renderer.submit_draw_call(
-                        draw_call,
-                        &teapot_vertex_uniforms,
-                        &self.viewport,
-                    );
+                    frame.draw(&simple_pipeline, draw_call, &teapot_vertex_uniforms);
                 }
 
-                self.renderer.submit_frame();
+                frame.finish();
 
                 // Get the next buffer.
                 let mut buffer = surface.buffer_mut().unwrap();
