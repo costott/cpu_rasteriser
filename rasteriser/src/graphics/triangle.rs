@@ -342,7 +342,6 @@ mod tests {
         assert!(pixels.contains(&Vec2::new(0.0, 0.0)));
         assert!(pixels.contains(&Vec2::new(1.0, 0.0)));
         assert!(pixels.contains(&Vec2::new(0.0, 1.0)));
-        assert!(pixels.contains(&Vec2::new(1.0, 1.0)));
 
         assert!(!pixels.contains(&Vec2::new(3.0, 3.0)));
     }

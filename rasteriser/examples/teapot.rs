@@ -7,7 +7,7 @@ use cpu_rasteriser::{
         vertex_shader::VertexShader,
     },
     loaders::obj::load_obj,
-    renderer::{CullingMode, Renderer},
+    renderer::{CullingMode, Pipeline, Renderer},
 };
 
 mod common;
@@ -74,8 +74,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let viewport = Viewport::new(WIDTH, HEIGHT);
 
-    let mut renderer = Renderer::new(&viewport, BasicVertexShader, BasicFragmentShader)?;
-    renderer.set_culling_mode(CullingMode::None);
+    let mut renderer = Renderer::new(&viewport)?;
+
+    let simple_pipeline =
+        Pipeline::new(BasicVertexShader, BasicFragmentShader).with_culling_mode(CullingMode::None);
 
     let mut camera = Camera::new(
         Vec3::new(0.0, 0.75, 1.25),
@@ -119,13 +121,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             projection_matrix: camera.projection_matrix(),
         };
 
-        renderer.begin_frame();
+        let mut frame = renderer.begin_frame(&viewport);
 
         for draw_call in teapot.draw_calls(|_| FragmentUniforms) {
-            renderer.submit_draw_call(draw_call, &vertex_uniforms, &viewport);
+            frame.draw(&simple_pipeline, draw_call, &vertex_uniforms);
         }
 
-        renderer.submit_frame();
+        frame.finish();
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)

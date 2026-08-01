@@ -8,7 +8,7 @@ use cpu_rasteriser::{
         vertex_shader::VertexShader,
     },
     loaders::obj::load_obj,
-    renderer::{CullingMode, Renderer},
+    renderer::{CullingMode, Pipeline, Renderer},
 };
 
 mod common;
@@ -127,8 +127,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let viewport = Viewport::new(WIDTH, HEIGHT);
 
-    let mut renderer = Renderer::new(&viewport, BasicVertexShader, PhongFragmentShader)?;
-    renderer.set_culling_mode(CullingMode::BackFace);
+    let mut renderer = Renderer::new(&viewport)?;
+
+    let phong_pipeline = Pipeline::new(BasicVertexShader, PhongFragmentShader)
+        .with_culling_mode(CullingMode::BackFace);
 
     let mut camera = Camera::new(
         Vec3::new(0.0, 0.75, 1.25),
@@ -236,20 +238,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         previous_time = std::time::Instant::now();
         // t += dt;
 
-        // angle += 1.0 * dt;
-        // scene.camera.eye.z = 1.0 + 1.0 * t.sin();
-
-        // cube_model.transform.rotation.y = angle;
-        // cube_model.transform.rotation.x = 1.1 * angle;
-
         controls.update(&mut camera, &window, dt);
 
-        // renderer.begin_frame(&viewport);
-        // renderer.draw_model(&floor_model, &scene, &viewport);
-        // renderer.draw_model(&cube1, &scene, &viewport);
-        // renderer.draw_model(&cube2, &scene, &viewport);
-        // renderer.finish_frame(&scene);
-        renderer.begin_frame();
+        let mut frame = renderer.begin_frame(&viewport);
 
         let scene_uniforms = Arc::new(SceneUniforms {
             camera: camera.clone(),
@@ -268,7 +259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(mesh.material_index.unwrap())
                 .cloned(),
         }) {
-            renderer.submit_draw_call(draw_call, &floor_vertex_uniforms, &viewport);
+            frame.draw(&phong_pipeline, draw_call, &floor_vertex_uniforms);
         }
 
         let cube1_vertex_uniforms = VertexUniforms {
@@ -280,7 +271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scene: scene_uniforms.clone(),
             material: cube1.materials.get(mesh.material_index.unwrap()).cloned(),
         }) {
-            renderer.submit_draw_call(draw_call, &cube1_vertex_uniforms, &viewport);
+            frame.draw(&phong_pipeline, draw_call, &cube1_vertex_uniforms);
         }
 
         let cube2_vertex_uniforms = VertexUniforms {
@@ -292,7 +283,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scene: scene_uniforms.clone(),
             material: cube2.materials.get(mesh.material_index.unwrap()).cloned(),
         }) {
-            renderer.submit_draw_call(draw_call, &cube2_vertex_uniforms, &viewport);
+            frame.draw(&phong_pipeline, draw_call, &cube2_vertex_uniforms);
         }
 
         let loaded_cube_vertex_uniforms = VertexUniforms {
@@ -307,10 +298,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(mesh.material_index.unwrap())
                 .cloned(),
         }) {
-            renderer.submit_draw_call(draw_call, &loaded_cube_vertex_uniforms, &viewport);
+            frame.draw(&phong_pipeline, draw_call, &loaded_cube_vertex_uniforms);
         }
 
-        renderer.submit_frame();
+        frame.finish();
 
         window
             .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
