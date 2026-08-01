@@ -1,6 +1,6 @@
-# Rust Software Rasteriser
+# Rust Software Renderer
 
-> A fully custom 3D software rasteriser written in Rust, implementing a modern graphics pipeline from scratch without relying on OpenGL, Vulkan, or DirectX.
+> A fully custom 3D rendering framework written in Rust, implementing a modern graphics pipeline from scratch without relying on OpenGL, Vulkan, or DirectX, or existing GPU APIs. All geometry processing, rasterisation, interpolation, and shading are implemented from scratch in Rust.
 
 > The project explores the fundamentals of real-time rendering by building the core systems behind a traditional GPU pipeline, including vertex processing, clipping, rasterisation, interpolation, lighting, and materials.
 
@@ -15,17 +15,19 @@ Implemented a full CPU-based rendering pipeline:
 ```
 Model Data
     ↓
+Frame Submission
+    ↓
+Pipeline Selection
+    ↓
 Vertex Processing
-    ↓
-World Transform
-    ↓
-View Transform
-    ↓
-Projection
     ↓
 Clipping
     ↓
-Rasterisation
+Primitive Assembly
+    ↓
+Tile Binning
+    ↓
+Parallel Rasterisation
     ↓
 Fragment Shading
     ↓
@@ -42,23 +44,6 @@ Supported features:
 - Depth buffering
 - Indexed mesh rendering
 - Programmable vertex and fragment shaders
-
----
-
-# Lighting & Materials
-
-The renderer implements a configurable lighting system supporting:
-
-- Gouraud shading
-- Phong shading
-- Directional lights
-- Material properties:
-    - Ambient colour
-    - Diffuse colour
-    - Specular colour
-    - Shininess
-
-Lighting is calculated per-fragment using interpolated surface attributes.
 
 ---
 
@@ -80,27 +65,11 @@ Perspective correction ensures attributes such as normals, colours, and depth va
 
 To improve rendering performance, the rasteriser uses a tile-based rendering pipeline executed across multiple CPU threads.
 
-After vertex processing and clipping, triangles are binned into fixed-size screen-space tiles. Each tile is then rasterised independently by a worker thread using its own framebuffer and depth buffer, eliminating contention during fragment processing.
+After vertex processing and clipping, triangles are converted into rasterisation commands and binned into fixed-size screen-space tiles. Each tile is then rasterised independently by a worker thread.
+
+The tile system is independent of the active shader pipeline, allowing different vertex and fragment shader combinations to contribute rendering work to the same frame.
 
 Once all worker threads have completed, the tile framebuffers are merged into the final image.
-
-Pipeline:
-
-```
-Triangles
-    ↓
-Tile Binning
-    ↓
-+---------+---------+---------+
-| Tile 0  | Tile 1  | Tile 2  |
-+---------+---------+---------+
-      ↓         ↓         ↓
- Worker 0  Worker 1  Worker 2
-      ↓         ↓         ↓
- Per-tile framebuffer + depth buffer
-      ↓
-Framebuffer Merge
-```
 
 This approach provides:
 
@@ -111,31 +80,70 @@ This approach provides:
 
 ---
 
-# Shader System
+# Generic Shader Pipeline Architecture
 
-The renderer uses a programmable shader architecture inspired by modern graphics APIs.
+The renderer uses a strongly typed, generic shader pipeline inspired by modern graphics APIs and projects such as [black](https://github.com/sinclairzx81/black).
 
-## Vertex Shader
-
-Responsible for processing world-space vertices before projection and clipping.
+Rather than hard-coding specific rendering techniques, the pipeline is parameterised over user-defined vertex and fragment shader implementations:
 
 ```rust
 trait VertexShader {
-    fn shade(&self, vertex: Vertex3D, uniforms: &VertexUniforms) -> Vertex3D;
+    type Vertex;
+    type Uniforms;
+    type Varyings;
+
+    fn shade(
+        &self,
+        vertex: Self::Vertex,
+        uniforms: &Self::Uniforms,
+    ) -> (Vec4, Self::Varyings);
+}
+
+
+trait FragmentShader<Varyings> {
+    type Uniforms;
+
+    fn shade(
+        &self,
+        varyings: Varyings,
+        uniforms: &Self::Uniforms,
+    ) -> Colour;
 }
 ```
 
-## Fragment Shader
+This allows different rendering techniques to share the same underlying pipeline while maintaining compile-time type safety.
 
-Responsible for calculating the final colour of each pixel.
+The renderer does not need to know the details of a shader implementation. It only executes the generic pipeline stages and processes the resulting geometry and fragments.
+
+---
+
+# Pipeline and Frame Architecture
+
+The renderer uses an explicit pipeline and frame submission model inspired by modern graphics APIs such as Vulkan, Direct3D, and Metal.
+
+Rendering is separated into:
+
+- Pipeline state
+- Frame recording
+- Draw commands
+- Rasterisation
+
+A pipeline contains programmable stages and fixed rendering configuration:
 
 ```rust
-trait FragmentShader {
-    fn shade(&self, fragment: Fragment, uniforms: &FragmentUniforms) -> Option<Fragment>;
-}
+Pipeline<VertexShader, FragmentShader>
 ```
 
-This design allows new rendering techniques to be added without changing the underlying pipeline.
+including:
+
+- Vertex shader
+- Fragment shader
+- Culling mode
+- Future pipeline state such as depth testing and blending
+
+Frames act as temporary command buffers. Draw calls are recorded during a frame and executed when the frame is submitted.
+
+This separation allows multiple pipelines to be used within the same frame while keeping the renderer independent from specific shader implementations.
 
 ---
 
@@ -158,6 +166,10 @@ This design allows new rendering techniques to be added without changing the und
 | Perspective-correct interpolation | ✅     |
 | Tile-based rendering              | ✅     |
 | Multithreaded rasterisation       | ✅     |
+| Generic shader pipelines          | ✅     |
+| Pipeline state abstraction        | ✅     |
+| Frame-based command submission    | ✅     |
+| Multiple pipelines per frame      | ✅     |
 
 ---
 
@@ -174,6 +186,9 @@ This project demonstrates experience with:
 - Concurrent rendering using thread pools
 - Memory-safe multithreading with Rust
 - Performance optimisation and cache-aware rendering
+- Trait-based extensible rendering architecture
+- Rendering API architecture inspired by modern graphics APIs
+- Command-based rendering architecture
 
 ---
 
@@ -186,6 +201,8 @@ Potential extensions:
 - Shadow mapping
 - Physically based rendering
 - SIMD optimisation
+- Render passes and framebuffer attachments
+- Pipeline state objects with configurable blending and depth states
 
 ---
 
@@ -202,3 +219,7 @@ Potential extensions:
 Graphics APIs hide much of the complexity involved in rendering. Building a rasteriser from scratch provides a deeper understanding of the algorithms and engineering decisions behind real-time graphics.
 
 This project was built to explore the intersection of mathematics, computer graphics, and performance-focused systems programming.
+
+```
+
+```
