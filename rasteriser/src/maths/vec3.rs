@@ -49,8 +49,12 @@ impl Vec3 {
         if length > 0.0 { *self / length } else { *self }
     }
 
-    pub fn to_homogenous(&self) -> Vec4 {
+    pub fn to_point4(&self) -> Vec4 {
         Vec4::new(self.x, self.y, self.z, 1.0)
+    }
+
+    pub fn to_direction4(&self) -> Vec4 {
+        Vec4::new(self.x, self.y, self.z, 0.0)
     }
 }
 

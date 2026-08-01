@@ -44,14 +44,14 @@ impl VertexShader for GouraudVertexShader {
     type Varyings = GouraudVaryings;
 
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
-        let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
+        let world_position = uniforms.model_matrix * vertex.position.to_point4();
 
         let view_position = uniforms.view_matrix * world_position;
         let clip_position = uniforms.projection_matrix * view_position;
 
         // Transform normal into world space
-        let normal = (uniforms.model_matrix.inverse().transpose() * vertex.normal.to_homogenous())
-            .homogenize_to_vec3()
+        let normal = (uniforms.model_matrix.inverse().transpose() * vertex.normal.to_direction4())
+            .xyz()
             .normalise();
 
         let mut colour = Vec3::new(0.1, 0.1, 0.1);
@@ -100,15 +100,15 @@ impl VertexShader for PhongVertexShader {
     type Varyings = PhongVaryings;
 
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
-        let world_position = uniforms.model_matrix * vertex.position.to_homogenous();
+        let world_position = uniforms.model_matrix * vertex.position.to_point4();
 
         let view_position = uniforms.view_matrix * world_position;
 
         let clip_position = uniforms.projection_matrix * view_position;
 
         // Transform normal into world space
-        let normal = (uniforms.model_matrix.inverse().transpose() * vertex.normal.to_homogenous())
-            .homogenize_to_vec3()
+        let normal = (uniforms.model_matrix.inverse().transpose() * vertex.normal.to_direction4())
+            .xyz()
             .normalise();
 
         let varyings = PhongVaryings {

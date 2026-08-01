@@ -55,6 +55,10 @@ impl Vec4 {
         }
     }
 
+    pub fn xyz(&self) -> Vec3 {
+        Vec3::new(self.x, self.y, self.z)
+    }
+
     pub fn xy(&self) -> Vec2 {
         Vec2::new(self.x, self.y)
     }
