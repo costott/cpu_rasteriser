@@ -1,0 +1,9 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+minifb = "0.28"
+cpu_rasteriser = { path = "../cpu_rasteriser" }
+rasteriser_macros = { path = "../rasteriser_macros" }
