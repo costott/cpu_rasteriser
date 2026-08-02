@@ -56,6 +56,10 @@ impl Vec3 {
     pub fn to_direction4(&self) -> Vec4 {
         Vec4::new(self.x, self.y, self.z, 0.0)
     }
+
+    pub fn xy(&self) -> Vec2 {
+        Vec2::new(self.x, self.y)
+    }
 }
 
 impl Add for Vec3 {
