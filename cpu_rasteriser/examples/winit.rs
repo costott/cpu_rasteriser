@@ -1,23 +1,22 @@
 use cpu_rasteriser::prelude::*;
 
+use cpu_rasteriser::renderer::DrawCall;
 use cpu_rasteriser::{
-    graphics::{
-        camera::{Camera, Projection},
-        fragment_shader::FragmentShader,
-        vertex_shader::VertexShader,
-    },
-    loaders::obj::load_obj,
+    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
     renderer::{CullingMode, Pipeline, Renderer},
 };
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
 
-mod common;
-use common::timer::Timer;
-
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
+
+#[derive(Clone)]
+struct Vertex {
+    pub position: Vec3,
+    pub colour: Vec3,
+}
 
 struct VertexUniforms {
     pub model_matrix: Mat4,
@@ -32,18 +31,17 @@ struct Varyings {
 
 struct BasicVertexShader;
 impl VertexShader for BasicVertexShader {
-    type Vertex = ObjVertex;
+    type Vertex = Vertex;
     type Uniforms = VertexUniforms;
     type Varyings = Varyings;
 
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
         let world_position = uniforms.model_matrix * vertex.position.to_point4();
-
         let view_position = uniforms.view_matrix * world_position;
         let clip_position = uniforms.projection_matrix * view_position;
 
         let varyings = Varyings {
-            colour: vertex.colour.into(),
+            colour: vertex.colour,
         };
 
         (clip_position, varyings)
@@ -66,36 +64,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = winit::event_loop::EventLoop::new()?;
     let context = softbuffer::Context::new(event_loop.owned_display_handle())?;
 
-    let camera = Camera::new(
-        Vec3::new(0.0, 0.75, 1.25),
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Projection::Perspective(
-            cpu_rasteriser::graphics::camera::PerspectiveProjection::new(
-                90.0,
-                WIDTH as f32 / HEIGHT as f32,
-                0.01,
-                50.0,
-            ),
-        ),
-    );
-
-    let mut teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
-    teapot.transform.scale = Vec3::ONE * 0.3;
-    teapot.transform.rotation.y = 0_f32.to_radians();
-
     let mut app = App {
         context,
         state: AppState::Initial,
         viewport: Viewport::new(WIDTH, HEIGHT),
         renderer: Renderer::new(&Viewport::new(WIDTH, HEIGHT))?,
-        teapot,
-        camera,
         timer: Timer::new(),
+        triangle: vec![
+            Vertex {
+                position: Vec3::new(-1.0, -1.0, 0.0),
+                colour: Colour::from_u32(0xff0000).into(),
+            },
+            Vertex {
+                position: Vec3::new(1.0, -1.0, 0.0),
+                colour: Colour::from_u32(0x00ff00).into(),
+            },
+            Vertex {
+                position: Vec3::new(0.0, 1.0, 0.0),
+                colour: Colour::from_u32(0x0000ff).into(),
+            },
+        ],
+        triangle_indices: vec![0, 1, 2],
     };
     event_loop.run_app(&mut app)?;
 
     Ok(())
+}
+
+struct Timer {
+    start_time: std::time::Instant,
+}
+impl Timer {
+    pub fn new() -> Self {
+        Self {
+            start_time: std::time::Instant::now(),
+        }
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.start_time.elapsed()
+    }
 }
 
 struct App {
@@ -103,9 +111,9 @@ struct App {
     state: AppState,
     viewport: Viewport,
     renderer: Renderer,
-    teapot: Model<ObjVertex>,
-    camera: Camera,
     timer: Timer,
+    triangle: Vec<Vertex>,
+    triangle_indices: Vec<u32>,
 }
 
 #[derive(Debug)]
@@ -200,18 +208,31 @@ impl winit::application::ApplicationHandler for App {
 
                 let mut frame = self.renderer.begin_frame(&self.viewport);
 
-                let dt = self.timer.delta();
-                self.teapot.transform.rotation.y += 0.5 * dt.as_secs_f32();
-
-                let teapot_vertex_uniforms = VertexUniforms {
-                    model_matrix: self.teapot.transform.model_matrix(),
-                    view_matrix: self.camera.view_matrix(),
-                    projection_matrix: self.camera.projection_matrix(),
+                let vertex_uniforms = VertexUniforms {
+                    model_matrix: Mat4::rotate_y(self.timer.elapsed().as_secs_f32()),
+                    view_matrix: Mat4::look_at(
+                        Vec3::new(0.0, 0.0, 1.25),
+                        Vec3::new(0.0, 0.0, 0.0),
+                        Vec3::new(0.0, 1.0, 0.0),
+                    ),
+                    projection_matrix: Mat4::perspective(
+                        90.0,
+                        WIDTH as f32 / HEIGHT as f32,
+                        0.01,
+                        50.0,
+                    ),
                 };
 
-                for draw_call in self.teapot.draw_calls(|_| FragmentUniforms) {
-                    frame.draw(&simple_pipeline, draw_call, &teapot_vertex_uniforms);
-                }
+                frame.draw(
+                    &simple_pipeline,
+                    DrawCall::new(
+                        &self.triangle,
+                        &self.triangle_indices,
+                        cpu_rasteriser::renderer::PrimitiveMode::TRIANGLES,
+                        FragmentUniforms,
+                    ),
+                    &vertex_uniforms,
+                );
 
                 frame.finish();
 

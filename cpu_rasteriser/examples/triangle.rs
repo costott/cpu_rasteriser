@@ -1,15 +1,9 @@
 use cpu_rasteriser::prelude::*;
 
 use cpu_rasteriser::{
-    graphics::{
-        camera::{Camera, Projection},
-        fragment_shader::FragmentShader,
-        vertex_shader::VertexShader,
-    },
+    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
     renderer::{CullingMode, DrawCall, Pipeline, PrimitiveMode, Renderer},
 };
-
-mod common;
 
 use minifb::{Key, Window, WindowOptions};
 
@@ -23,7 +17,6 @@ struct Vertex {
 }
 
 struct VertexUniforms {
-    pub model_matrix: Mat4,
     pub view_matrix: Mat4,
     pub projection_matrix: Mat4,
 }
@@ -40,8 +33,7 @@ impl VertexShader for BasicVertexShader {
     type Varyings = Varyings;
 
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
-        let world_position = uniforms.model_matrix * vertex.position.to_point4();
-        let view_position = uniforms.view_matrix * world_position;
+        let view_position = uniforms.view_matrix * vertex.position.to_point4();
         let clip_position = uniforms.projection_matrix * view_position;
 
         let varyings = Varyings {
@@ -82,19 +74,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let simple_pipeline =
         Pipeline::new(BasicVertexShader, BasicFragmentShader).with_culling_mode(CullingMode::None);
 
-    let camera = Camera::new(
-        Vec3::new(0.0, 0.0, 1.0),
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Projection::Perspective(
-            cpu_rasteriser::graphics::camera::PerspectiveProjection::new(
-                90.0,
-                WIDTH as f32 / HEIGHT as f32,
-                0.01,
-                50.0,
-            ),
-        ),
-    );
+    let eye = Vec3::new(0.0, 0.0, 1.0);
+    let look_at = Vec3::new(0.0, 0.0, 0.0);
+    let up = Vec3::new(0.0, 1.0, 0.0);
 
     let triangle = vec![
         Vertex {
@@ -114,9 +96,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let vertex_uniforms = VertexUniforms {
-            model_matrix: Mat4::identity(),
-            view_matrix: camera.view_matrix(),
-            projection_matrix: camera.projection_matrix(),
+            view_matrix: Mat4::look_at(eye, look_at, up),
+            projection_matrix: Mat4::perspective(90.0, WIDTH as f32 / HEIGHT as f32, 0.01, 50.0),
         };
 
         let mut frame = renderer.begin_frame(&viewport);

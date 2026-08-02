@@ -1,18 +1,11 @@
+use engine::prelude::*;
+
 use cpu_rasteriser::prelude::*;
 
 use cpu_rasteriser::{
-    graphics::{
-        camera::{Camera, Projection},
-        fragment_shader::FragmentShader,
-        lighting::DirectionalLight,
-        vertex_shader::VertexShader,
-    },
-    loaders::obj::load_obj,
+    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
     renderer::{CullingMode, Pipeline, Renderer},
 };
-
-mod common;
-use common::camera_controller::FirstPersonControls;
 
 use minifb::{Key, Window, WindowOptions};
 use std::sync::Arc;
@@ -136,14 +129,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Vec3::new(0.0, 0.75, 1.25),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
-        Projection::Perspective(
-            cpu_rasteriser::graphics::camera::PerspectiveProjection::new(
-                90.0,
-                WIDTH as f32 / HEIGHT as f32,
-                0.01,
-                50.0,
-            ),
-        ),
+        Projection::Perspective(PerspectiveProjection::new(
+            90.0,
+            WIDTH as f32 / HEIGHT as f32,
+            0.01,
+            50.0,
+        )),
     );
     let mut controls = FirstPersonControls::new(&camera);
 

@@ -1,6 +1,7 @@
 use crate::prelude::*;
 
-use crate::renderer::DrawCall;
+use cpu_rasteriser::prelude::*;
+use cpu_rasteriser::renderer::DrawCall;
 
 #[derive(Debug)]
 pub struct Model<V: Clone> {
@@ -43,7 +44,7 @@ impl<V: Clone> Model<V> {
             DrawCall::new(
                 &mesh.vertices,
                 &mesh.indices,
-                crate::renderer::PrimitiveMode::TRIANGLES,
+                cpu_rasteriser::renderer::PrimitiveMode::TRIANGLES,
                 make_uniforms(mesh),
             )
         })

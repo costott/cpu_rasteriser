@@ -1,4 +1,4 @@
-# Rust Software Renderer
+# Rust Software Graphics Engine
 
 > A fully custom 3D rendering framework written in Rust, implementing a modern graphics pipeline from scratch without relying on OpenGL, Vulkan, or DirectX, or existing GPU APIs. All geometry processing, rasterisation, interpolation, and shading are implemented from scratch in Rust.
 
@@ -38,7 +38,28 @@ for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
 frame.finish();
 ```
 
-The complete example, including the shader implementations, camera setup, lighting, and model loading, can be found in [`rasteriser/examples/pipelines.rs`](./rasteriser/examples/pipelines.rs).
+The complete example, including the shader implementations, camera setup, lighting, and model loading, can be found in [`engine/examples/pipelines.rs`](./engine/examples/pipelines.rs).
+
+---
+
+## Architecture
+
+The project is organised as two independent crates:
+
+```
+software-graphics/
+├── cpu_rasteriser/     # Low-level CPU rendering API
+├── rasteriser_macros/  # Procedural macros
+└── engine/             # High-level scene and asset management
+```
+
+The `renderer` crate provides a reusable software implementation of a modern graphics pipeline, exposing concepts such as pipelines, shaders, draw calls, and frame recording.
+
+The `engine` crate builds on top of the renderer, providing higher-level abstractions including cameras, models, materials, lights, scene management, and asset loading.
+
+This separation mirrors the design of modern graphics ecosystems, where rendering APIs remain independent of engine-level concepts.
+
+--
 
 ## Features
 
@@ -47,7 +68,7 @@ The complete example, including the shader implementations, camera setup, lighti
 Implemented a full CPU-based rendering pipeline:
 
 ```
-Model Data
+Vertex Buffers
     ↓
 Frame Submission
     ↓
@@ -81,7 +102,7 @@ Supported features:
 
 ---
 
-# Rasterisation
+## Rasterisation
 
 The rasteriser includes custom implementations of:
 
@@ -95,7 +116,7 @@ Perspective correction ensures attributes such as normals, colours, and depth va
 
 ---
 
-# Parallel Tile-Based Rendering
+## Parallel Tile-Based Rendering
 
 To improve rendering performance, the rasteriser uses a tile-based rendering pipeline executed across multiple CPU threads.
 
@@ -114,7 +135,7 @@ This approach provides:
 
 ---
 
-# Generic Shader Pipeline Architecture
+## Generic Shader Pipeline Architecture
 
 The renderer uses a strongly typed, generic shader pipeline inspired by modern graphics APIs and projects such as [black](https://github.com/sinclairzx81/black).
 
@@ -151,7 +172,7 @@ The renderer does not need to know the details of a shader implementation. It on
 
 ---
 
-# Pipeline and Frame Architecture
+## Pipeline and Frame Architecture
 
 The renderer uses an explicit pipeline and frame submission model inspired by modern graphics APIs such as Vulkan, Direct3D, and Metal.
 
@@ -181,22 +202,17 @@ This separation allows multiple pipelines to be used within the same frame while
 
 ---
 
-# Supported Features
+## Supported Features
+
+### Rasteriser
 
 | Feature                           | Status |
 | --------------------------------- | ------ |
 | 3D transformations                | ✅     |
-| Perspective camera                | ✅     |
-| Orthographic camera               | ✅     |
 | Triangle rasterisation            | ✅     |
 | Depth buffering                   | ✅     |
 | Backface culling                  | ✅     |
 | Frustum clipping                  | ✅     |
-| Indexed meshes                    | ✅     |
-| Multiple materials                | ✅     |
-| Directional lighting              | ✅     |
-| Gouraud shading                   | ✅     |
-| Phong shading                     | ✅     |
 | Perspective-correct interpolation | ✅     |
 | Tile-based rendering              | ✅     |
 | Multithreaded rasterisation       | ✅     |
@@ -205,9 +221,22 @@ This separation allows multiple pipelines to be used within the same frame while
 | Frame-based command submission    | ✅     |
 | Multiple pipelines per frame      | ✅     |
 
+### Engine
+
+| Feature              | Status |
+| -------------------- | ------ |
+| Perspective camera   | ✅     |
+| Orthographic camera  | ✅     |
+| Indexed meshes       | ✅     |
+| Multiple materials   | ✅     |
+| Directional lighting | ✅     |
+| Gouraud shading      | ✅     |
+| Phong shading        | ✅     |
+| OBJ loading          | ✅     |
+
 ---
 
-# Technical Highlights
+## Technical Highlights
 
 This project demonstrates experience with:
 
@@ -226,7 +255,7 @@ This project demonstrates experience with:
 
 ---
 
-# Future Improvements
+## Future Improvements
 
 Potential extensions:
 
@@ -240,7 +269,7 @@ Potential extensions:
 
 ---
 
-# Built With
+## Built With
 
 - **Language:** Rust
 - **Rendering:** Custom CPU rasterisation pipeline
@@ -248,12 +277,8 @@ Potential extensions:
 
 ---
 
-# Motivation
+## Motivation
 
 Graphics APIs hide much of the complexity involved in rendering. Building a rasteriser from scratch provides a deeper understanding of the algorithms and engineering decisions behind real-time graphics.
 
 This project was built to explore the intersection of mathematics, computer graphics, and performance-focused systems programming.
-
-```
-
-```

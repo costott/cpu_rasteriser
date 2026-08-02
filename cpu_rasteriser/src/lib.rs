@@ -2,7 +2,6 @@ pub mod colour;
 pub mod depthbuffer;
 pub mod framebuffer;
 pub mod graphics;
-pub mod loaders;
 pub mod maths;
 pub mod prelude;
 pub mod renderer;
