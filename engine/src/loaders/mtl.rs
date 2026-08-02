@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use cpu_rasteriser::prelude::*;
 
 fn parse_colour(parts: &[&str]) -> Result<Colour, MtlError> {
     if parts.len() < 4 {

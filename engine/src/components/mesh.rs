@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use cpu_rasteriser::prelude::*;
 
 #[derive(Debug)]
 pub struct Mesh<V: Clone> {

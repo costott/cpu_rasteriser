@@ -1,7 +1,8 @@
 [workspace]
 members = [
-    "rasteriser",
+    "cpu_rasteriser",
     "rasteriser_macros",
+    "engine",
 ]
 
 resolver = "2"

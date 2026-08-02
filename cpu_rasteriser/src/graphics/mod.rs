@@ -1,16 +1,10 @@
-pub mod camera;
 pub mod circle;
 pub mod clipping;
 pub mod fragment;
 pub mod fragment_shader;
 pub mod geometry_processing;
 pub mod interpolate;
-pub mod lighting;
 pub mod line;
-pub mod material;
-pub mod mesh;
-pub mod model;
-pub mod scene;
 pub mod triangle;
 pub mod vertex;
 pub mod vertex_shader;
