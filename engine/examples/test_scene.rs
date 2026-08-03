@@ -22,7 +22,7 @@ struct VertexUniforms {
 #[derive(Interpolate)]
 struct Varyings {
     pub world_position: Vec3,
-    pub colour: Vec3,
+    pub colour: Vec4,
     pub normal: Vec3,
 }
 
@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let mut controls = FirstPersonControls::new(&camera);
 
-    let floor_material = Material::new(
+    let floor_material = Material::new_simple(
         "Floor".to_string(),
         Colour::from_u32(0x808080),
         Colour::from_u32(0x404040),
@@ -146,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         1.0,
     );
 
-    let red_plastic = Material::new(
+    let red_plastic = Material::new_simple(
         "Red Plastic".to_string(),
         Colour::from_u32(0xff0000),
         Colour::from_u32(0x990000),
@@ -154,7 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         64.0,
     );
 
-    let polished_brass = Material::new(
+    let polished_brass = Material::new_simple(
         "Polished Brass".to_string(),
         Colour::from_u32(0x543808),
         Colour::from_u32(0x8b7500),

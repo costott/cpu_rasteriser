@@ -17,7 +17,7 @@ fn parse_colour(parts: &[&str]) -> Result<Colour, MtlError> {
     let b: f32 = parts[3]
         .parse()
         .map_err(|_| MtlError::ParseError(format!("Invalid colour b value: {}", parts[3])))?;
-    Ok(Colour::from_f32(r, g, b))
+    Ok(Colour::from_f32(r, g, b, 1.0))
 }
 
 pub fn load_mtl(path: impl AsRef<std::path::Path>) -> Result<Vec<Material>, MtlError> {

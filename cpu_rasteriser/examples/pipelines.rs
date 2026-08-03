@@ -13,7 +13,7 @@ const HEIGHT: usize = 360;
 #[derive(Clone)]
 struct Vertex {
     pub position: Vec3,
-    pub colour: Vec3,
+    pub colour: Vec4,
 }
 
 struct VertexUniforms {
@@ -24,7 +24,7 @@ struct VertexUniforms {
 
 #[derive(Interpolate)]
 struct Varyings {
-    pub colour: Vec3,
+    pub colour: Vec4,
 }
 
 struct BasicVertexShader;
@@ -64,7 +64,7 @@ impl FragmentShader<Varyings> for GreyscaleFragmentShader {
     fn shade(&self, varyings: Varyings, _uniforms: &Self::Uniforms) -> Colour {
         let luma =
             0.2126 * varyings.colour.x + 0.7152 * varyings.colour.y + 0.0722 * varyings.colour.z;
-        Vec3::new(luma, luma, luma).into()
+        Vec4::new(luma, luma, luma, varyings.colour.w).into()
     }
 }
 
