@@ -12,6 +12,7 @@ It includes concepts that intentionally do not exist in the renderer itself, suc
 - Transforms
 - Meshes and models
 - Materials
+- Textures
 - Directional lighting
 - OBJ loading
 - Scene rendering utilities
