@@ -233,6 +233,7 @@ This separation allows multiple pipelines to be used within the same frame while
 | Gouraud shading      | ✅     |
 | Phong shading        | ✅     |
 | OBJ loading          | ✅     |
+| Textures             | ✅     |
 
 ---
 
@@ -259,7 +260,6 @@ This project demonstrates experience with:
 
 Potential extensions:
 
-- Texture mapping
 - Normal mapping
 - Shadow mapping
 - Physically based rendering

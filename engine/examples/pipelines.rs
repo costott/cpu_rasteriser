@@ -27,7 +27,7 @@ struct GouraudVertexUniforms {
 
 #[derive(Interpolate)]
 struct GouraudVaryings {
-    pub colour: Vec3,
+    pub colour: Vec4,
 }
 
 struct GouraudVertexShader;
@@ -47,7 +47,7 @@ impl VertexShader for GouraudVertexShader {
             .xyz()
             .normalise();
 
-        let mut colour = Vec3::new(0.1, 0.1, 0.1);
+        let mut colour = Vec4::new(0.1, 0.1, 0.1, 1.0);
 
         let world_pos = world_position.homogenize_to_vec3();
 
@@ -57,7 +57,7 @@ impl VertexShader for GouraudVertexShader {
             // diffuse
             let diffuse = normal.dot(&light_dir).max(0.0);
 
-            colour += Into::<Vec3>::into(light.colour) * diffuse;
+            colour += Into::<Vec4>::into(light.colour) * diffuse;
 
             // specular
             let view_dir = (uniforms.camera_position - world_pos).normalise();
@@ -65,7 +65,7 @@ impl VertexShader for GouraudVertexShader {
             let reflect_dir = reflect(-light_dir, normal).normalise();
             let specular = view_dir.dot(&reflect_dir).max(0.0).powf(32.0);
 
-            colour += Into::<Vec3>::into(light.colour) * specular;
+            colour += Into::<Vec4>::into(light.colour) * specular;
         }
 
         let varyings = GouraudVaryings { colour };
@@ -221,7 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     phong_teapot.calculate_vertex_normals();
 
     // quick hack to add a material to the teapot, since the .obj file doesn't have any materials defined
-    let polished_brass = Material::new(
+    let polished_brass = Material::new_simple(
         "Polished Brass".to_string(),
         Colour::from_u32(0x543808),
         Colour::from_u32(0x8b7500),

@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Sub};
 
 /// Represents a 4D (column) vector
 #[derive(Debug, Copy, PartialEq, Interpolate)]
@@ -74,6 +74,14 @@ impl Add for Vec4 {
             z: self.z + other.z,
             w: self.w + other.w,
         }
+    }
+}
+impl AddAssign for Vec4 {
+    fn add_assign(&mut self, other: Self) {
+        self.x += other.x;
+        self.y += other.y;
+        self.z += other.z;
+        self.w += other.w;
     }
 }
 impl Sub for Vec4 {

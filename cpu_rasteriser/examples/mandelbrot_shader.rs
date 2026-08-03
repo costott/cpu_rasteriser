@@ -83,7 +83,7 @@ impl FragmentShader<Varyings> for BasicFragmentShader {
         let iterations = mandelbrot_iterations(c, uniforms.max_iterations);
         let intensity = iterations as f32 / uniforms.max_iterations as f32;
 
-        Colour::from_f32(intensity, intensity, intensity)
+        Colour::from_f32(intensity, intensity, intensity, 1.0)
     }
 }
 

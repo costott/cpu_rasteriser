@@ -13,7 +13,7 @@ const HEIGHT: usize = 360;
 #[derive(Clone)]
 struct Vertex {
     pub position: Vec3,
-    pub colour: Vec3,
+    pub colour: Vec4,
 }
 
 struct VertexUniforms {
@@ -23,7 +23,7 @@ struct VertexUniforms {
 
 #[derive(Interpolate)]
 struct Varyings {
-    pub colour: Vec3,
+    pub colour: Vec4,
 }
 
 struct BasicVertexShader;
