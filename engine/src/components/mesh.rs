@@ -33,14 +33,14 @@ impl Mesh<ObjVertex> {
     /// Creates a white cube mesh with 8 vertices and 12 triangles (36 indices).
     pub fn cube(colour: Colour, material_index: Option<usize>) -> Self {
         let vertices = vec![
-            ObjVertex::new(Vec3::new(-0.5, -0.5, -0.5), colour),
-            ObjVertex::new(Vec3::new(0.5, -0.5, -0.5), colour),
-            ObjVertex::new(Vec3::new(0.5, 0.5, -0.5), colour),
-            ObjVertex::new(Vec3::new(-0.5, 0.5, -0.5), colour),
-            ObjVertex::new(Vec3::new(-0.5, -0.5, 0.5), colour),
-            ObjVertex::new(Vec3::new(0.5, -0.5, 0.5), colour),
-            ObjVertex::new(Vec3::new(0.5, 0.5, 0.5), colour),
-            ObjVertex::new(Vec3::new(-0.5, 0.5, 0.5), colour),
+            ObjVertex::simple(Vec3::new(-0.5, -0.5, -0.5), colour),
+            ObjVertex::simple(Vec3::new(0.5, -0.5, -0.5), colour),
+            ObjVertex::simple(Vec3::new(0.5, 0.5, -0.5), colour),
+            ObjVertex::simple(Vec3::new(-0.5, 0.5, -0.5), colour),
+            ObjVertex::simple(Vec3::new(-0.5, -0.5, 0.5), colour),
+            ObjVertex::simple(Vec3::new(0.5, -0.5, 0.5), colour),
+            ObjVertex::simple(Vec3::new(0.5, 0.5, 0.5), colour),
+            ObjVertex::simple(Vec3::new(-0.5, 0.5, 0.5), colour),
         ];
 
         let indices = vec![
@@ -95,7 +95,7 @@ impl Mesh<ObjVertex> {
                 let y = radius * cos_theta;
                 let z = radius * sin_theta * sin_phi;
 
-                vertices.push(ObjVertex::new(Vec3::new(x, y, z), colour));
+                vertices.push(ObjVertex::simple(Vec3::new(x, y, z), colour));
             }
         }
 

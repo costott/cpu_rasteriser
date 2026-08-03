@@ -53,22 +53,24 @@ pub struct ObjVertex {
     pub position: Vec3,
     pub colour: Colour,
     pub normal: Vec3,
-    // TODO: UV
+    pub uv: Vec2,
 }
 impl ObjVertex {
-    pub fn new(position: Vec3, colour: Colour) -> Self {
+    pub fn simple(position: Vec3, colour: Colour) -> Self {
         Self {
             position,
             colour,
             normal: Vec3::ZERO,
+            uv: Vec2::ZERO,
         }
     }
 
-    pub fn new_with_normal(position: Vec3, colour: Colour, normal: Vec3) -> Self {
+    pub fn new(position: Vec3, colour: Colour, normal: Vec3, uv: Vec2) -> Self {
         Self {
             position,
             colour,
             normal,
+            uv,
         }
     }
 }
