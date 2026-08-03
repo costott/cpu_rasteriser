@@ -20,7 +20,7 @@ struct VertexUniforms {
 
 #[derive(Interpolate)]
 struct Varyings {
-    pub colour: Vec3,
+    pub colour: Vec4,
 }
 
 struct BasicVertexShader;

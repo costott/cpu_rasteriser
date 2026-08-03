@@ -5,7 +5,7 @@ use crate::loaders::mtl::load_mtl;
 
 use std::{collections::HashMap, eprintln};
 
-/// Load a 3D model from an OBJ file
+/// Load a 3D model from an OBJ file (should really be called load_model)
 pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model<ObjVertex>, ObjError> {
     let obj_data = std::fs::read_to_string(&file_path).map_err(|e| ObjError::IoError(e))?;
 
@@ -87,7 +87,7 @@ pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model<ObjVerte
 
                 for i in 1..parts.len() {
                     let mut indices = parts[i].split('/');
-                    let mut position_index: u32 = indices
+                    let position_index: u32 = indices
                         .next()
                         .ok_or_else(|| {
                             ObjError::ParseError(format!("Invalid face index: {}", parts[i]))
@@ -96,7 +96,7 @@ pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model<ObjVerte
                         .map_err(|_| {
                             ObjError::ParseError(format!("Invalid face index value: {}", parts[i]))
                         })?;
-                    let mut texcoord_index: u32 = indices
+                    let texcoord_index: u32 = indices
                         .next()
                         .ok_or_else(|| {
                             ObjError::ParseError(format!("Invalid face index: {}", parts[i]))
@@ -105,7 +105,7 @@ pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model<ObjVerte
                         .map_err(|_| {
                             ObjError::ParseError(format!("Invalid face index value: {}", parts[i]))
                         })?;
-                    let mut normal_index: u32 = indices
+                    let normal_index: u32 = indices
                         .next()
                         .ok_or_else(|| {
                             ObjError::ParseError(format!("Invalid face index: {}", parts[i]))
@@ -146,7 +146,7 @@ pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model<ObjVerte
                                 })?;
 
                             let vertex =
-                                ObjVertex::new_with_normal(*position, Colour::WHITE, *normal);
+                                ObjVertex::new(*position, Colour::WHITE, *normal, *texcoord);
                             current_mesh.vertices.push(vertex);
 
                             let new_index = (current_mesh.vertices.len() - 1) as u32;

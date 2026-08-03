@@ -120,7 +120,7 @@ mod tests {
 
     #[derive(Interpolate)]
     struct TestVaryings {
-        pub colour: Vec3,
+        pub colour: Vec4,
     }
 
     struct TestUniforms;
