@@ -7,3 +7,4 @@ edition = "2024"
 minifb = "0.28"
 cpu_rasteriser = { path = "../cpu_rasteriser" }
 rasteriser_macros = { path = "../rasteriser_macros" }
+image = "0.25.10"

@@ -3,4 +3,5 @@ pub use crate::components::lighting::*;
 pub use crate::components::material::*;
 pub use crate::components::mesh::*;
 pub use crate::components::model::*;
+pub use crate::components::texture::*;
 pub use crate::loaders::*;

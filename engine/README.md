@@ -36,6 +36,7 @@ Application
 ```bash
 cargo run -p engine --example teapot
 cargo run -p engine --example pipelines
+cargo run -p engine --examples textured_cube
 ```
 
 The engine is designed as a thin layer over the renderer, allowing the renderer to remain reusable as a standalone graphics library.
