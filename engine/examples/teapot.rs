@@ -12,6 +12,7 @@ use minifb::{Key, Window, WindowOptions};
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
 
+#[derive(Clone)]
 struct VertexUniforms {
     pub model_matrix: Mat4,
     pub view_matrix: Mat4,
@@ -116,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut frame = renderer.begin_frame(&viewport);
 
         for draw_call in teapot.draw_calls(|_| FragmentUniforms) {
-            frame.draw(&simple_pipeline, draw_call, &vertex_uniforms);
+            frame.draw(&simple_pipeline, draw_call, vertex_uniforms.clone());
         }
 
         frame.finish();

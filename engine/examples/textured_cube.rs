@@ -13,6 +13,7 @@ use std::sync::Arc;
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
 
+#[derive(Clone)]
 struct VertexUniforms {
     pub model_matrix: Mat4,
     pub view_matrix: Mat4,
@@ -188,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scene: scene_uniforms.clone(),
             material: cube.materials.get(mesh.material_index.unwrap()).cloned(),
         }) {
-            frame.draw(&phong_pipeline, draw_call, &vertex_uniforms);
+            frame.draw(&phong_pipeline, draw_call, vertex_uniforms.clone());
         }
 
         frame.finish();

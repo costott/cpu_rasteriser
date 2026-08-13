@@ -13,6 +13,7 @@ use std::sync::Arc;
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
 
+#[derive(Clone)]
 struct VertexUniforms {
     pub model_matrix: Mat4,
     pub view_matrix: Mat4,
@@ -250,7 +251,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(mesh.material_index.unwrap())
                 .cloned(),
         }) {
-            frame.draw(&phong_pipeline, draw_call, &floor_vertex_uniforms);
+            frame.draw(&phong_pipeline, draw_call, floor_vertex_uniforms.clone());
         }
 
         let cube1_vertex_uniforms = VertexUniforms {
@@ -262,7 +263,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scene: scene_uniforms.clone(),
             material: cube1.materials.get(mesh.material_index.unwrap()).cloned(),
         }) {
-            frame.draw(&phong_pipeline, draw_call, &cube1_vertex_uniforms);
+            frame.draw(&phong_pipeline, draw_call, cube1_vertex_uniforms.clone());
         }
 
         let cube2_vertex_uniforms = VertexUniforms {
@@ -274,7 +275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scene: scene_uniforms.clone(),
             material: cube2.materials.get(mesh.material_index.unwrap()).cloned(),
         }) {
-            frame.draw(&phong_pipeline, draw_call, &cube2_vertex_uniforms);
+            frame.draw(&phong_pipeline, draw_call, cube2_vertex_uniforms.clone());
         }
 
         let loaded_cube_vertex_uniforms = VertexUniforms {
@@ -289,7 +290,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(mesh.material_index.unwrap())
                 .cloned(),
         }) {
-            frame.draw(&phong_pipeline, draw_call, &loaded_cube_vertex_uniforms);
+            frame.draw(
+                &phong_pipeline,
+                draw_call,
+                loaded_cube_vertex_uniforms.clone(),
+            );
         }
 
         frame.finish();
