@@ -96,6 +96,7 @@ fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
 
 struct TestSceneApp {
     camera: Camera,
+    camera_controller: FirstPersonControls,
     lights: Vec<DirectionalLight>,
     floor_model: Model<ObjVertex>,
     cube1: Model<ObjVertex>,
@@ -117,6 +118,7 @@ impl TestSceneApp {
             Vec3::new(0.0, 1.0, 0.0),
             Projection::Perspective(PerspectiveProjection::new(90.0, 640.0 / 360.0, 0.01, 50.0)),
         );
+        let camera_controller = FirstPersonControls::new(&camera);
 
         let floor_material = Material::new_simple(
             "Floor".to_string(),
@@ -170,7 +172,7 @@ impl TestSceneApp {
             vec![Mesh::cube(Colour::WHITE, Some(0))],
             vec![red_plastic],
             ModelTransform::new(
-                Vec3::new(0.5, 0.25, 0.5),
+                Vec3::new(0.5, 0.0, 0.5),
                 Vec3::new(0.0, 0.0, 0.0),
                 Vec3::new(0.5, 0.5, 0.5),
             ),
@@ -207,6 +209,7 @@ impl TestSceneApp {
 
         Ok(Self {
             camera,
+            camera_controller,
             lights: vec![DirectionalLight::new(
                 Vec3::new(0.0, -1.0, -1.0),
                 Colour::from_u32(0xfffde8),
@@ -229,8 +232,31 @@ impl TestSceneApp {
 impl Application for TestSceneApp {
     fn update(&mut self, dt: f32) {
         self.elapsed += dt;
-        self.camera.eye.x = self.elapsed.sin() * 0.25;
-        self.camera.eye.z = 1.25 + self.elapsed.cos() * 0.2;
+        self.camera_controller
+            .update_from_events(&mut self.camera, dt);
+    }
+
+    fn event(&mut self, event: AppEvent) {
+        if let AppEvent::Key {
+            key: InputKey::Escape,
+            state: MouseState::Released,
+        } = event
+        {
+            self.camera_controller.toggle_cursor_grabbed();
+        }
+
+        self.camera_controller.handle_event(event);
+    }
+
+    fn window_cursor_settings(&self) -> WindowCursorSettings {
+        if self.camera_controller.cursor_grabbed() {
+            WindowCursorSettings {
+                visible: false,
+                grab: CursorGrab::Locked,
+            }
+        } else {
+            WindowCursorSettings::default()
+        }
     }
 
     fn render<'a>(&'a mut self, frame: &mut Frame<'a, 'a>, _viewport: &'a Viewport) {
@@ -310,6 +336,11 @@ impl Application for TestSceneApp {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Engine::run(TestSceneApp::new()?)
-    Engine::with_backend::<WinitEngine, _>(TestSceneApp::new()?)
+    let app = TestSceneApp::new()?;
+    WinitEngine::new()
+        .with_window_attributes(
+            winit::window::Window::default_attributes()
+                .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None))),
+        )
+        .run(app)
 }

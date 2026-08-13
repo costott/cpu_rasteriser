@@ -6,4 +6,5 @@ pub use crate::components::mesh::*;
 pub use crate::components::model::*;
 pub use crate::components::texture::*;
 pub use crate::engine::*;
+pub use crate::input::*;
 pub use crate::loaders::*;
