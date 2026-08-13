@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     max_iterations: 500,
                 },
             ),
-            &vertex_uniforms,
+            vertex_uniforms,
         );
 
         frame.finish();
