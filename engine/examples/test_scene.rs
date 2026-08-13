@@ -216,14 +216,16 @@ impl Application for TestSceneApp {
         self.camera_controller.handle_event(event);
     }
 
-    fn window_cursor_settings(&self) -> WindowCursorSettings {
-        if self.camera_controller.cursor_grabbed() {
-            WindowCursorSettings {
-                visible: false,
-                grab: CursorGrab::Locked,
-            }
-        } else {
-            WindowCursorSettings::default()
+    fn window_state(&self) -> WindowState {
+        WindowState {
+            cursor: if self.camera_controller.cursor_grabbed() {
+                WindowCursorSettings {
+                    visible: false,
+                    grab: CursorGrab::Locked,
+                }
+            } else {
+                WindowCursorSettings::default()
+            },
         }
     }
 
