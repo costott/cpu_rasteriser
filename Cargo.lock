@@ -553,6 +553,8 @@ dependencies = [
  "image",
  "minifb",
  "rasteriser_macros",
+ "softbuffer",
+ "winit",
 ]
 
 [[package]]
