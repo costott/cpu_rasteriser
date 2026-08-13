@@ -232,7 +232,7 @@ pub enum CullingMode {
 /// frame.draw(
 ///     &pipeline,
 ///     draw_call,
-///     &vertex_uniforms,
+///     vertex_uniforms,
 /// );
 ///
 /// frame.finish();
@@ -269,14 +269,14 @@ impl<'renderer, 'viewport> Frame<'renderer, 'viewport> {
     ///         PrimitiveMode::TRIANGLES,
     ///         material,
     ///     ),
-    ///     &transform,
+    ///     transform,
     /// );
     /// ```
     pub fn draw<VS, FS>(
         &mut self,
         pipeline: &'renderer Pipeline<VS, FS>,
         draw_call: DrawCall<'renderer, VS::Vertex, FS::Uniforms>,
-        vertex_uniforms: &'renderer VS::Uniforms,
+        vertex_uniforms: VS::Uniforms,
     ) where
         VS: VertexShader,
         FS: FragmentShader<VS::Varyings>,
@@ -345,7 +345,7 @@ where
 
     draw_call: DrawCall<'a, VS::Vertex, FS::Uniforms>,
 
-    vertex_uniforms: &'a VS::Uniforms,
+    vertex_uniforms: VS::Uniforms,
 }
 impl<VS, FS> FrameCommand for QueuedDraw<'_, VS, FS>
 where
@@ -361,7 +361,7 @@ where
             let triangles = GeometryProcessor::process_triangle(
                 triangle,
                 &self.pipeline.vertex_shader,
-                self.vertex_uniforms,
+                &self.vertex_uniforms,
                 viewport,
                 self.pipeline.culling_mode,
             );

@@ -127,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms,
             ),
-            &simple_vertex_uniforms,
+            simple_vertex_uniforms,
         );
 
         let greyscale_vertex_uniforms = VertexUniforms {
@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms,
             ),
-            &greyscale_vertex_uniforms,
+            greyscale_vertex_uniforms,
         );
 
         frame.finish();
