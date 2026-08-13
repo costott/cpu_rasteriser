@@ -221,7 +221,7 @@ where
             self.apply_resize(width.get(), height.get());
         }
 
-        apply_winit_cursor_settings(self.app.window_cursor_settings(), window.as_ref());
+        apply_winit_window_state(self.app.window_state(), window.as_ref());
         self.state = AppState::Running { surface };
         self.app.event(AppEvent::Resumed);
     }
@@ -331,7 +331,7 @@ where
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         if let AppState::Running { surface } = &self.state {
             let window = surface.window().clone();
-            apply_winit_cursor_settings(self.app.window_cursor_settings(), window.as_ref());
+            apply_winit_window_state(self.app.window_state(), window.as_ref());
             window.request_redraw();
         }
     }
@@ -348,6 +348,10 @@ where
     last_frame: Instant,
     keys_down: HashSet<InputKey>,
     buttons_down: HashSet<MouseButton>,
+}
+
+fn apply_winit_window_state(state: crate::app::WindowState, window: &Window) {
+    apply_winit_cursor_settings(state.cursor, window);
 }
 
 fn apply_winit_cursor_settings(settings: crate::app::WindowCursorSettings, window: &Window) {
@@ -474,9 +478,9 @@ where
         });
     }
 
-    fn apply_cursor_settings(&mut self) {
-        let settings = self.app.window_cursor_settings();
-        self.window.set_cursor_visibility(settings.visible);
+    fn apply_window_state(&mut self) {
+        let state = self.app.window_state();
+        self.window.set_cursor_visibility(state.cursor.visible);
     }
 
     fn render_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -503,7 +507,7 @@ where
         while self.window.is_open() && !self.window.is_key_down(minifb::Key::Escape) {
             self.emit_input_events();
             self.apply_resize();
-            self.apply_cursor_settings();
+            self.apply_window_state();
             self.render_frame()?;
         }
 

@@ -10,6 +10,19 @@ pub enum CursorGrab {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindowState {
+    pub cursor: WindowCursorSettings,
+}
+
+impl Default for WindowState {
+    fn default() -> Self {
+        Self {
+            cursor: WindowCursorSettings::default(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WindowCursorSettings {
     pub visible: bool,
     pub grab: CursorGrab,
@@ -33,8 +46,8 @@ pub trait Application {
 
     fn event(&mut self, _event: AppEvent) {}
 
-    fn window_cursor_settings(&self) -> WindowCursorSettings {
-        WindowCursorSettings::default()
+    fn window_state(&self) -> WindowState {
+        WindowState::default()
     }
 }
 
