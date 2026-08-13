@@ -126,33 +126,16 @@ where
         let dt = self.last_frame.elapsed().as_secs_f32();
         self.last_frame = Instant::now();
 
-        let start = Instant::now();
-
         self.app.update(dt);
-        let update = start.elapsed();
 
         let mut frame = self.renderer.begin_frame(&self.viewport);
         self.app.render(&mut frame, &self.viewport);
         frame.finish();
-        let render = start.elapsed();
 
         let mut buffer = surface.buffer_mut().unwrap();
-        let buffer_mut = start.elapsed();
 
         buffer.copy_from_slice(self.renderer.pixels());
-        let copy = start.elapsed();
-
         buffer.present().unwrap();
-        let present = start.elapsed();
-
-        println!(
-            "update={:?} render={:?} buffer={:?} copy={:?} present={:?}",
-            update,
-            render - update,
-            buffer_mut - render,
-            copy - buffer_mut,
-            present - copy,
-        );
     }
 }
 
