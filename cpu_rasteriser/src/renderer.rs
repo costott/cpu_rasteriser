@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 use threadpool::ThreadPool;
 
 use crate::prelude::*;
@@ -129,23 +130,79 @@ impl Renderer {
     }
 
     fn render_tiles(&mut self, tile_binner: TileBinner) {
+        let start = std::time::Instant::now();
+
         let (tx, rx) = std::sync::mpsc::channel();
 
         for tile in tile_binner.tiles {
             let tx = tx.clone();
 
             self.thread_pool.execute(move || {
-                tx.send(render_tile(tile)).unwrap();
+                let result = render_tile(tile);
+                tx.send(result).unwrap();
             });
         }
 
         drop(tx);
 
+        println!("job submission: {:?}", start.elapsed());
+
+        let mut aggregate = TileProfilingAggregate::default();
+        let mut wall_total = std::time::Duration::ZERO;
+        let mut wall_max = std::time::Duration::ZERO;
+
         for result in rx {
+            wall_total += result.profiling.total_tile_time;
+            wall_max = wall_max.max(result.profiling.total_tile_time);
+
+            aggregate.add(&result.profiling);
             self.merge_tile(result);
         }
 
+        println!(
+            "tile wall time: total={:?}, avg={:?}, max={:?}",
+            wall_total,
+            average_duration(wall_total, aggregate.tile_count),
+            wall_max,
+        );
+
+        println!(
+            "tile profiling aggregate: tiles={}, alloc total={:?}, avg={:?}, max={:?}, triangle total={:?}, avg={:?}, max={:?}, coverage+interp total={:?}, avg={:?}, max={:?}, shader total={:?}, avg={:?}, max={:?}, depth test total={:?}, avg={:?}, max={:?}, write total={:?}, avg={:?}, max={:?}, fragments tested total={}, avg={}, max={}, fragments passed total={}, avg={}, max={}",
+            aggregate.tile_count,
+            aggregate.total_alloc_time,
+            average_duration(aggregate.total_alloc_time, aggregate.tile_count),
+            aggregate.max_alloc_time,
+            aggregate.total_triangle_time,
+            average_duration(aggregate.total_triangle_time, aggregate.tile_count),
+            aggregate.max_triangle_time,
+            aggregate.total_coverage_and_interpolation_time,
+            average_duration(
+                aggregate.total_coverage_and_interpolation_time,
+                aggregate.tile_count
+            ),
+            aggregate.max_coverage_and_interpolation_time,
+            aggregate.total_shader_time,
+            average_duration(aggregate.total_shader_time, aggregate.tile_count),
+            aggregate.max_shader_time,
+            aggregate.total_depth_test_time,
+            average_duration(aggregate.total_depth_test_time, aggregate.tile_count),
+            aggregate.max_depth_test_time,
+            aggregate.total_write_time,
+            average_duration(aggregate.total_write_time, aggregate.tile_count),
+            aggregate.max_write_time,
+            aggregate.total_fragments_tested,
+            average_usize(aggregate.total_fragments_tested, aggregate.tile_count),
+            aggregate.max_fragments_tested,
+            aggregate.total_fragments_passed,
+            average_usize(aggregate.total_fragments_passed, aggregate.tile_count),
+            aggregate.max_fragments_passed,
+        );
+
+        let start = std::time::Instant::now();
+
         self.thread_pool.join();
+
+        println!("join: {:?}", start.elapsed());
     }
 
     fn merge_tile(&mut self, result: TileResult) {
@@ -297,11 +354,19 @@ impl<'renderer, 'viewport> Frame<'renderer, 'viewport> {
     ///
     /// After completion, rendered pixels can be accessed through [`Renderer::pixels`].
     pub fn finish(mut self) {
+        let start = std::time::Instant::now();
+
         for draw in self.queued_draws {
             draw.execute(&mut self.tile_binner, self.viewport);
         }
 
+        println!("geometry + binning: {:?}", start.elapsed());
+
+        let start = std::time::Instant::now();
+
         self.renderer.render_tiles(self.tile_binner);
+
+        println!("tile rendering + merge: {:?}", start.elapsed());
     }
 }
 
@@ -468,13 +533,25 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct RasterStats {
+    fragments_tested: usize,
+    fragments_passed: usize,
+    depth_tests: usize,
+    successful_writes: usize,
+    coverage_and_interpolation_time: Duration,
+    shader_time: Duration,
+    depth_test_time: Duration,
+    write_time: Duration,
+}
+
 trait RasterCommand: Send + Sync {
     fn rasterise(
         self: Box<Self>,
         framebuffer: &mut FrameBuffer,
         depthbuffer: &mut DepthBuffer,
         bounds: Rect,
-    );
+    ) -> RasterStats;
     fn clone_box(&self) -> Box<dyn RasterCommand>;
 }
 impl Clone for Box<dyn RasterCommand> {
@@ -505,20 +582,41 @@ where
         framebuffer: &mut FrameBuffer,
         depthbuffer: &mut DepthBuffer,
         bounds: Rect,
-    ) {
+    ) -> RasterStats {
+        let total_start = std::time::Instant::now();
+        let mut stats = RasterStats::default();
+
         self.triangle.rasterise_segment(bounds, |mut fragment| {
             fragment.position.x -= bounds.min_x as f32;
-
             fragment.position.y -= bounds.min_y as f32;
 
+            stats.fragments_tested += 1;
+            stats.depth_tests += 1;
+
+            let shade_start = std::time::Instant::now();
             let colour = self.shader.shade(fragment.varyings, self.uniforms.as_ref());
+            stats.shader_time += shade_start.elapsed();
 
-            if fragment.depth < depthbuffer.get(fragment.position) {
+            let depth_test_start = std::time::Instant::now();
+            let passes_depth_test = fragment.depth < depthbuffer.get(fragment.position);
+            stats.depth_test_time += depth_test_start.elapsed();
+
+            if passes_depth_test {
+                stats.fragments_passed += 1;
+
+                let write_start = std::time::Instant::now();
                 framebuffer.set_pixel(fragment.position, colour);
-
                 depthbuffer.set_depth(fragment.position, fragment.depth);
+                stats.write_time += write_start.elapsed();
+                stats.successful_writes += 1;
             }
         });
+
+        let total_time = total_start.elapsed();
+        let measured_fragment_path = stats.shader_time + stats.depth_test_time + stats.write_time;
+        stats.coverage_and_interpolation_time = total_time.saturating_sub(measured_fragment_path);
+
+        stats
     }
 
     fn clone_box(&self) -> Box<dyn RasterCommand> {
@@ -609,22 +707,156 @@ struct Tile {
     triangles: Vec<Box<dyn RasterCommand>>,
 }
 
-fn render_tile(tile: Tile) -> TileResult {
-    let width = (tile.bounds.max_x - tile.bounds.min_x) as usize;
+fn average_duration(total: std::time::Duration, count: usize) -> std::time::Duration {
+    if count == 0 {
+        std::time::Duration::ZERO
+    } else {
+        total / count as u32
+    }
+}
 
+fn average_usize(total: usize, count: usize) -> usize {
+    if count == 0 { 0 } else { total / count }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct TileProfiling {
+    total_tile_time: std::time::Duration,
+    framebuffer_alloc_time: std::time::Duration,
+    triangle_rasterisation_time: std::time::Duration,
+    coverage_and_interpolation_time: std::time::Duration,
+    shader_time: std::time::Duration,
+    depth_test_time: std::time::Duration,
+    write_time: std::time::Duration,
+    fragments_tested: usize,
+    fragments_passed: usize,
+    depth_tests: usize,
+    successful_writes: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct TileProfilingAggregate {
+    tile_count: usize,
+    total_tile_time: std::time::Duration,
+    max_tile_time: std::time::Duration,
+    total_alloc_time: std::time::Duration,
+    max_alloc_time: std::time::Duration,
+    total_triangle_time: std::time::Duration,
+    max_triangle_time: std::time::Duration,
+    total_coverage_and_interpolation_time: std::time::Duration,
+    max_coverage_and_interpolation_time: std::time::Duration,
+    total_shader_time: std::time::Duration,
+    max_shader_time: std::time::Duration,
+    total_depth_test_time: std::time::Duration,
+    max_depth_test_time: std::time::Duration,
+    total_write_time: std::time::Duration,
+    max_write_time: std::time::Duration,
+    total_fragments_tested: usize,
+    max_fragments_tested: usize,
+    total_fragments_passed: usize,
+    max_fragments_passed: usize,
+    total_depth_tests: usize,
+    max_depth_tests: usize,
+    total_successful_writes: usize,
+    max_successful_writes: usize,
+}
+
+impl TileProfilingAggregate {
+    fn add(&mut self, profiling: &TileProfiling) {
+        self.tile_count += 1;
+        self.total_tile_time += profiling.total_tile_time;
+        self.max_tile_time = self.max_tile_time.max(profiling.total_tile_time);
+
+        self.total_alloc_time += profiling.framebuffer_alloc_time;
+        self.max_alloc_time = self.max_alloc_time.max(profiling.framebuffer_alloc_time);
+
+        self.total_triangle_time += profiling.triangle_rasterisation_time;
+        self.max_triangle_time = self
+            .max_triangle_time
+            .max(profiling.triangle_rasterisation_time);
+
+        self.total_coverage_and_interpolation_time += profiling.coverage_and_interpolation_time;
+        self.max_coverage_and_interpolation_time = self
+            .max_coverage_and_interpolation_time
+            .max(profiling.coverage_and_interpolation_time);
+
+        self.total_shader_time += profiling.shader_time;
+        self.max_shader_time = self.max_shader_time.max(profiling.shader_time);
+
+        self.total_depth_test_time += profiling.depth_test_time;
+        self.max_depth_test_time = self.max_depth_test_time.max(profiling.depth_test_time);
+
+        self.total_write_time += profiling.write_time;
+        self.max_write_time = self.max_write_time.max(profiling.write_time);
+
+        self.total_fragments_tested += profiling.fragments_tested;
+        self.max_fragments_tested = self.max_fragments_tested.max(profiling.fragments_tested);
+
+        self.total_fragments_passed += profiling.fragments_passed;
+        self.max_fragments_passed = self.max_fragments_passed.max(profiling.fragments_passed);
+
+        self.total_depth_tests += profiling.depth_tests;
+        self.max_depth_tests = self.max_depth_tests.max(profiling.depth_tests);
+
+        self.total_successful_writes += profiling.successful_writes;
+        self.max_successful_writes = self.max_successful_writes.max(profiling.successful_writes);
+    }
+}
+
+fn render_tile(tile: Tile) -> TileResult {
+    let total_start = std::time::Instant::now();
+
+    let width = (tile.bounds.max_x - tile.bounds.min_x) as usize;
     let height = (tile.bounds.max_y - tile.bounds.min_y) as usize;
 
+    let alloc_start = std::time::Instant::now();
     let mut framebuffer = FrameBuffer::new(width, height);
-
     let mut depthbuffer = DepthBuffer::new(width, height);
+    let framebuffer_alloc_time = alloc_start.elapsed();
+
+    let mut triangle_rasterisation_time = std::time::Duration::ZERO;
+    let mut coverage_and_interpolation_time = std::time::Duration::ZERO;
+    let mut shader_time = std::time::Duration::ZERO;
+    let mut depth_test_time = std::time::Duration::ZERO;
+    let mut write_time = std::time::Duration::ZERO;
+    let mut fragments_tested = 0usize;
+    let mut fragments_passed = 0usize;
+    let mut depth_tests = 0usize;
+    let mut successful_writes = 0usize;
 
     for triangle in tile.triangles {
-        triangle.rasterise(&mut framebuffer, &mut depthbuffer, tile.bounds);
+        let triangle_start = std::time::Instant::now();
+        let stats = triangle.rasterise(&mut framebuffer, &mut depthbuffer, tile.bounds);
+        triangle_rasterisation_time += triangle_start.elapsed();
+
+        coverage_and_interpolation_time += stats.coverage_and_interpolation_time;
+        shader_time += stats.shader_time;
+        depth_test_time += stats.depth_test_time;
+        write_time += stats.write_time;
+        fragments_tested += stats.fragments_tested;
+        fragments_passed += stats.fragments_passed;
+        depth_tests += stats.depth_tests;
+        successful_writes += stats.successful_writes;
     }
+
+    let total_tile_time = total_start.elapsed();
 
     TileResult {
         bounds: tile.bounds,
         framebuffer,
+        profiling: TileProfiling {
+            total_tile_time,
+            framebuffer_alloc_time,
+            triangle_rasterisation_time,
+            coverage_and_interpolation_time,
+            shader_time,
+            depth_test_time,
+            write_time,
+            fragments_tested,
+            fragments_passed,
+            depth_tests,
+            successful_writes,
+        },
     }
 }
 
@@ -632,6 +864,7 @@ fn render_tile(tile: Tile) -> TileResult {
 struct TileResult {
     bounds: Rect,
     framebuffer: FrameBuffer,
+    profiling: TileProfiling,
 }
 
 /// A rectangular pixel-space region.
@@ -643,4 +876,39 @@ pub struct Rect {
     pub min_y: i32,
     pub max_x: i32,
     pub max_y: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tile_profiling_aggregate_tracks_totals() {
+        let mut aggregate = TileProfilingAggregate::default();
+
+        let sample = TileProfiling {
+            total_tile_time: Duration::from_millis(4),
+            framebuffer_alloc_time: Duration::from_millis(1),
+            triangle_rasterisation_time: Duration::from_millis(2),
+            coverage_and_interpolation_time: Duration::from_millis(1),
+            shader_time: Duration::from_millis(1),
+            depth_test_time: Duration::from_millis(1),
+            write_time: Duration::from_millis(1),
+            fragments_tested: 200,
+            fragments_passed: 50,
+            depth_tests: 200,
+            successful_writes: 50,
+        };
+
+        aggregate.add(&sample);
+        aggregate.add(&sample);
+
+        assert_eq!(aggregate.tile_count, 2);
+        assert_eq!(aggregate.total_fragments_tested, 400);
+        assert_eq!(aggregate.total_fragments_passed, 100);
+        assert_eq!(aggregate.max_fragments_tested, 200);
+        assert_eq!(aggregate.max_fragments_passed, 50);
+        assert_eq!(aggregate.total_depth_tests, 400);
+        assert_eq!(aggregate.total_successful_writes, 100);
+    }
 }
