@@ -22,7 +22,7 @@ Rendering with multiple pipelines requires only a few API calls:
 let mut frame = renderer.begin_frame(&viewport);
 
 for draw_call in gouraud_teapot.draw_calls(|_| GouraudFragmentUniforms) {
-    frame.draw(&gouraud_pipeline, draw_call, &gouraud_vertex_uniforms);
+    frame.draw(&gouraud_pipeline, draw_call, gouraud_vertex_uniforms.clone());
 }
 
 for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
@@ -32,7 +32,7 @@ for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
         .get(mesh.material_index.unwrap())
         .cloned(),
 }) {
-    frame.draw(&phong_pipeline, draw_call, &phong_vertex_uniforms);
+    frame.draw(&phong_pipeline, draw_call, phong_vertex_uniforms.clone());
 }
 
 frame.finish();

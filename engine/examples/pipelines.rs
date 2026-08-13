@@ -17,12 +17,10 @@ fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
     vector - normal * 2.0 * vector.dot(&normal)
 }
 
+#[derive(Clone)]
 struct GouraudVertexUniforms {
     pub model_matrix: Mat4,
-    pub view_matrix: Mat4,
-    pub projection_matrix: Mat4,
-    pub camera_position: Vec3,
-    pub lights: Vec<DirectionalLight>,
+    pub scene: std::sync::Arc<SceneUniforms>,
 }
 
 #[derive(Interpolate)]
@@ -39,8 +37,8 @@ impl VertexShader for GouraudVertexShader {
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
         let world_position = uniforms.model_matrix * vertex.position.to_point4();
 
-        let view_position = uniforms.view_matrix * world_position;
-        let clip_position = uniforms.projection_matrix * view_position;
+        let view_position = uniforms.scene.camera.view_matrix() * world_position;
+        let clip_position = uniforms.scene.camera.projection_matrix() * view_position;
 
         // Transform normal into world space
         let normal = (uniforms.model_matrix.inverse().transpose() * vertex.normal.to_direction4())
@@ -51,7 +49,7 @@ impl VertexShader for GouraudVertexShader {
 
         let world_pos = world_position.homogenize_to_vec3();
 
-        for light in &uniforms.lights {
+        for light in &uniforms.scene.lights {
             let light_dir = -light.direction.normalise();
 
             // diffuse
@@ -60,7 +58,7 @@ impl VertexShader for GouraudVertexShader {
             colour += Into::<Vec4>::into(light.colour) * diffuse;
 
             // specular
-            let view_dir = (uniforms.camera_position - world_pos).normalise();
+            let view_dir = (uniforms.scene.camera.eye - world_pos).normalise();
 
             let reflect_dir = reflect(-light_dir, normal).normalise();
             let specular = view_dir.dot(&reflect_dir).max(0.0).powf(32.0);
@@ -74,10 +72,10 @@ impl VertexShader for GouraudVertexShader {
     }
 }
 
+#[derive(Clone)]
 struct PhongVertexUniforms {
     pub model_matrix: Mat4,
-    pub view_matrix: Mat4,
-    pub projection_matrix: Mat4,
+    pub scene: std::sync::Arc<SceneUniforms>,
 }
 
 #[derive(Interpolate)]
@@ -95,9 +93,9 @@ impl VertexShader for PhongVertexShader {
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
         let world_position = uniforms.model_matrix * vertex.position.to_point4();
 
-        let view_position = uniforms.view_matrix * world_position;
+        let view_position = uniforms.scene.camera.view_matrix() * world_position;
 
-        let clip_position = uniforms.projection_matrix * view_position;
+        let clip_position = uniforms.scene.camera.projection_matrix() * view_position;
 
         // Transform normal into world space
         let normal = (uniforms.model_matrix.inverse().transpose() * vertex.normal.to_direction4())
@@ -246,23 +244,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         gouraud_teapot.transform.rotation.y = 0.5 * t;
         phong_teapot.transform.rotation.y = 0.5 * t;
 
-        let gouraud_vertex_uniforms = GouraudVertexUniforms {
-            model_matrix: gouraud_teapot.transform.model_matrix(),
-            view_matrix: camera.view_matrix(),
-            projection_matrix: camera.projection_matrix(),
-            camera_position: camera.eye,
-            lights: vec![DirectionalLight::new(
-                Vec3::new(0.0, -1.0, -1.0),
-                Colour::from_u32(0xfffde8),
-            )],
-        };
-
-        let phong_vertex_uniforms = PhongVertexUniforms {
-            model_matrix: phong_teapot.transform.model_matrix(),
-            view_matrix: camera.view_matrix(),
-            projection_matrix: camera.projection_matrix(),
-        };
-
         let scene_uniforms = std::sync::Arc::new(SceneUniforms {
             camera: camera.clone(),
             lights: vec![DirectionalLight::new(
@@ -271,10 +252,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )],
         });
 
+        let gouraud_vertex_uniforms = GouraudVertexUniforms {
+            model_matrix: gouraud_teapot.transform.model_matrix(),
+            scene: scene_uniforms.clone(),
+        };
+
+        let phong_vertex_uniforms = PhongVertexUniforms {
+            model_matrix: phong_teapot.transform.model_matrix(),
+            scene: scene_uniforms.clone(),
+        };
+
         let mut frame = renderer.begin_frame(&viewport);
 
         for draw_call in gouraud_teapot.draw_calls(|_| GouraudFragmentUniforms) {
-            frame.draw(&gouraud_pipeline, draw_call, &gouraud_vertex_uniforms);
+            frame.draw(
+                &gouraud_pipeline,
+                draw_call,
+                gouraud_vertex_uniforms.clone(),
+            );
         }
 
         for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
@@ -284,7 +279,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(mesh.material_index.unwrap())
                 .cloned(),
         }) {
-            frame.draw(&phong_pipeline, draw_call, &phong_vertex_uniforms);
+            frame.draw(&phong_pipeline, draw_call, phong_vertex_uniforms.clone());
         }
 
         frame.finish();
