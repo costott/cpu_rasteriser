@@ -10,10 +10,15 @@ use cpu_rasteriser::{
 
 use std::sync::Arc;
 
+struct SceneUniforms {
+    camera: Camera,
+    lights: Vec<DirectionalLight>,
+}
+
+#[derive(Clone)]
 struct VertexUniforms {
     pub model_matrix: Mat4,
-    pub view_matrix: Mat4,
-    pub projection_matrix: Mat4,
+    pub scene: Arc<SceneUniforms>,
 }
 
 #[derive(Interpolate)]
@@ -33,8 +38,8 @@ impl VertexShader for BasicVertexShader {
         let world_position = uniforms.model_matrix * vertex.position.to_point4();
         let normal_matrix = uniforms.model_matrix.inverse().transpose();
 
-        let view_position = uniforms.view_matrix * world_position;
-        let clip_position = uniforms.projection_matrix * view_position;
+        let view_position = uniforms.scene.camera.view_matrix() * world_position;
+        let clip_position = uniforms.scene.camera.projection_matrix() * view_position;
 
         let varyings = Varyings {
             world_position: world_position.homogenize_to_vec3(),
@@ -46,11 +51,6 @@ impl VertexShader for BasicVertexShader {
 
         (clip_position, varyings)
     }
-}
-
-struct SceneUniforms {
-    camera: Camera,
-    lights: Vec<DirectionalLight>,
 }
 
 struct FragmentUniforms {
@@ -103,10 +103,6 @@ struct TestSceneApp {
     cube2: Model<ObjVertex>,
     loaded_cube: Model<ObjVertex>,
     phong_pipeline: Pipeline<BasicVertexShader, PhongFragmentShader>,
-    floor_vertex_uniforms: VertexUniforms,
-    cube1_vertex_uniforms: VertexUniforms,
-    cube2_vertex_uniforms: VertexUniforms,
-    loaded_cube_vertex_uniforms: VertexUniforms,
     elapsed: f32,
 }
 
@@ -183,30 +179,6 @@ impl TestSceneApp {
         let mut loaded_cube = load_obj(std::path::Path::new("assets/cube/cube.obj"))?;
         loaded_cube.transform.scale = Vec3::ONE * 0.5;
 
-        let floor_vertex_uniforms = VertexUniforms {
-            model_matrix: floor_model.transform.model_matrix(),
-            view_matrix: camera.view_matrix(),
-            projection_matrix: camera.projection_matrix(),
-        };
-
-        let cube1_vertex_uniforms = VertexUniforms {
-            model_matrix: cube1.transform.model_matrix(),
-            view_matrix: camera.view_matrix(),
-            projection_matrix: camera.projection_matrix(),
-        };
-
-        let cube2_vertex_uniforms = VertexUniforms {
-            model_matrix: cube2.transform.model_matrix(),
-            view_matrix: camera.view_matrix(),
-            projection_matrix: camera.projection_matrix(),
-        };
-
-        let loaded_cube_vertex_uniforms = VertexUniforms {
-            model_matrix: loaded_cube.transform.model_matrix(),
-            view_matrix: camera.view_matrix(),
-            projection_matrix: camera.projection_matrix(),
-        };
-
         Ok(Self {
             camera,
             camera_controller,
@@ -220,10 +192,6 @@ impl TestSceneApp {
             loaded_cube,
             phong_pipeline: Pipeline::new(BasicVertexShader, PhongFragmentShader)
                 .with_culling_mode(CullingMode::BackFace),
-            floor_vertex_uniforms,
-            cube1_vertex_uniforms,
-            cube2_vertex_uniforms,
-            loaded_cube_vertex_uniforms,
             elapsed: 0.0,
         })
     }
@@ -265,10 +233,9 @@ impl Application for TestSceneApp {
             lights: self.lights.clone(),
         });
 
-        self.floor_vertex_uniforms = VertexUniforms {
+        let floor_vertex_uniforms = VertexUniforms {
             model_matrix: self.floor_model.transform.model_matrix(),
-            view_matrix: self.camera.view_matrix(),
-            projection_matrix: self.camera.projection_matrix(),
+            scene: scene_uniforms.clone(),
         };
         for draw_call in self.floor_model.draw_calls(|mesh| FragmentUniforms {
             scene: scene_uniforms.clone(),
@@ -278,13 +245,16 @@ impl Application for TestSceneApp {
                 .get(mesh.material_index.unwrap())
                 .cloned(),
         }) {
-            frame.draw(&self.phong_pipeline, draw_call, &self.floor_vertex_uniforms);
+            frame.draw(
+                &self.phong_pipeline,
+                draw_call,
+                floor_vertex_uniforms.clone(),
+            );
         }
 
-        self.cube1_vertex_uniforms = VertexUniforms {
+        let cube1_vertex_uniforms = VertexUniforms {
             model_matrix: self.cube1.transform.model_matrix(),
-            view_matrix: self.camera.view_matrix(),
-            projection_matrix: self.camera.projection_matrix(),
+            scene: scene_uniforms.clone(),
         };
         for draw_call in self.cube1.draw_calls(|mesh| FragmentUniforms {
             scene: scene_uniforms.clone(),
@@ -294,13 +264,16 @@ impl Application for TestSceneApp {
                 .get(mesh.material_index.unwrap())
                 .cloned(),
         }) {
-            frame.draw(&self.phong_pipeline, draw_call, &self.cube1_vertex_uniforms);
+            frame.draw(
+                &self.phong_pipeline,
+                draw_call,
+                cube1_vertex_uniforms.clone(),
+            );
         }
 
-        self.cube2_vertex_uniforms = VertexUniforms {
+        let cube2_vertex_uniforms = VertexUniforms {
             model_matrix: self.cube2.transform.model_matrix(),
-            view_matrix: self.camera.view_matrix(),
-            projection_matrix: self.camera.projection_matrix(),
+            scene: scene_uniforms.clone(),
         };
         for draw_call in self.cube2.draw_calls(|mesh| FragmentUniforms {
             scene: scene_uniforms.clone(),
@@ -310,13 +283,16 @@ impl Application for TestSceneApp {
                 .get(mesh.material_index.unwrap())
                 .cloned(),
         }) {
-            frame.draw(&self.phong_pipeline, draw_call, &self.cube2_vertex_uniforms);
+            frame.draw(
+                &self.phong_pipeline,
+                draw_call,
+                cube2_vertex_uniforms.clone(),
+            );
         }
 
-        self.loaded_cube_vertex_uniforms = VertexUniforms {
+        let loaded_cube_vertex_uniforms = VertexUniforms {
             model_matrix: self.loaded_cube.transform.model_matrix(),
-            view_matrix: self.camera.view_matrix(),
-            projection_matrix: self.camera.projection_matrix(),
+            scene: scene_uniforms.clone(),
         };
         for draw_call in self.loaded_cube.draw_calls(|mesh| FragmentUniforms {
             scene: scene_uniforms.clone(),
@@ -329,7 +305,7 @@ impl Application for TestSceneApp {
             frame.draw(
                 &self.phong_pipeline,
                 draw_call,
-                &self.loaded_cube_vertex_uniforms,
+                loaded_cube_vertex_uniforms.clone(),
             );
         }
     }
