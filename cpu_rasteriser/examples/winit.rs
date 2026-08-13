@@ -231,7 +231,7 @@ impl winit::application::ApplicationHandler for App {
                         cpu_rasteriser::renderer::PrimitiveMode::TRIANGLES,
                         FragmentUniforms,
                     ),
-                    &vertex_uniforms,
+                    vertex_uniforms,
                 );
 
                 frame.finish();

@@ -110,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms,
             ),
-            &vertex_uniforms,
+            vertex_uniforms,
         );
 
         frame.finish();
