@@ -4,10 +4,9 @@ use cpu_rasteriser::prelude::*;
 
 use cpu_rasteriser::{
     graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, Pipeline, Renderer},
+    renderer::{CullingMode, Pipeline},
 };
 
-use minifb::{Key, Window, WindowOptions};
 use std::sync::Arc;
 
 const WIDTH: usize = 640;
@@ -119,85 +118,99 @@ fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
     vector - normal * 2.0 * vector.dot(&normal)
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut window = Window::new(
-        "Textured Cube Demo - ESC to exit",
-        WIDTH,
-        HEIGHT,
-        WindowOptions::default(),
-    )
-    .unwrap_or_else(|e| {
-        panic!("{}", e);
-    });
-    window.set_target_fps(60);
+struct TexturedCubeApp {
+    camera: Camera,
+    camera_controls: OrbitControls,
+    cube: Model<ObjVertex>,
+    phong_pipeline: Pipeline<BasicVertexShader, PhongFragmentShader>,
+}
+impl TexturedCubeApp {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let phong_pipeline = Pipeline::new(BasicVertexShader, PhongFragmentShader)
+            .with_culling_mode(CullingMode::None);
 
-    let viewport = Viewport::new(WIDTH, HEIGHT);
+        let camera = Camera::new(
+            Vec3::new(0.0, 0.75, 1.25),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Projection::Perspective(PerspectiveProjection::new(
+                90.0,
+                WIDTH as f32 / HEIGHT as f32,
+                0.01,
+                50.0,
+            )),
+        );
+        let camera_controls = OrbitControls::new(&camera);
 
-    let mut renderer = Renderer::new(&viewport)?;
+        let mut cube = load_obj(std::path::Path::new("assets/dice/cube-tex.obj"))?;
+        cube.transform.position = Vec3::new(-0.5, -0.5, -0.5);
+        cube.calculate_vertex_normals();
 
-    let phong_pipeline =
-        Pipeline::new(BasicVertexShader, PhongFragmentShader).with_culling_mode(CullingMode::None);
+        Ok(Self {
+            camera,
+            camera_controls,
+            cube,
+            phong_pipeline,
+        })
+    }
+}
 
-    let mut camera = Camera::new(
-        Vec3::new(0.0, 0.75, 1.25),
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Projection::Perspective(PerspectiveProjection::new(
-            90.0,
-            WIDTH as f32 / HEIGHT as f32,
-            0.01,
-            50.0,
-        )),
-    );
-    let mut controls = OrbitControls::new(&camera);
-
-    let mut cube = load_obj(std::path::Path::new("assets/dice/cube-tex.obj"))?;
-    cube.transform.position = Vec3::new(-0.5, -0.5, -0.5);
-    cube.calculate_vertex_normals();
-
-    let lights = vec![DirectionalLight::new(
-        Vec3::new(-0.5, -1.0, 2.0).normalise(),
-        Colour::from_u32(0xfffde8),
-    )];
-    let ambient_light = Colour::from_u32(0x202020);
-
-    let mut previous_time = std::time::Instant::now();
-
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        let dt = std::time::Instant::now()
-            .duration_since(previous_time)
-            .as_secs_f32();
-        previous_time = std::time::Instant::now();
-
-        controls.update(&mut camera, &window, dt);
-
-        let vertex_uniforms = VertexUniforms {
-            model_matrix: cube.transform.model_matrix(),
-            view_matrix: camera.view_matrix(),
-            projection_matrix: camera.projection_matrix(),
-        };
-
-        let mut frame = renderer.begin_frame(&viewport);
-
-        let scene_uniforms = Arc::new(SceneUniforms {
-            camera: camera.clone(),
-            lights: lights.to_vec(),
-            ambient_light,
-        });
-
-        for draw_call in cube.draw_calls(|mesh| FragmentUniforms {
-            scene: scene_uniforms.clone(),
-            material: cube.materials.get(mesh.material_index.unwrap()).cloned(),
-        }) {
-            frame.draw(&phong_pipeline, draw_call, vertex_uniforms.clone());
-        }
-
-        frame.finish();
-
-        window
-            .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
-            .unwrap();
+impl Application for TexturedCubeApp {
+    fn update(&mut self, dt: f32) {
+        self.camera_controls
+            .update_from_events(&mut self.camera, dt);
     }
 
-    Ok(())
+    fn event(&mut self, event: AppEvent, handle: &mut AppHandle) {
+        self.camera_controls.handle_event(event);
+
+        // Exit the application if the Escape key is pressed
+        if let AppEvent::Input(InputEvent::Key {
+            key: InputKey::Escape,
+            state: ButtonState::Released,
+        }) = event
+        {
+            handle.request_exit();
+        }
+    }
+
+    fn render<'frame>(
+        &'frame mut self,
+        frame: &mut cpu_rasteriser::renderer::Frame<'_, '_, 'frame>,
+        _viewport: &Viewport,
+    ) {
+        let vertex_uniforms = VertexUniforms {
+            model_matrix: self.cube.transform.model_matrix(),
+            view_matrix: self.camera.view_matrix(),
+            projection_matrix: self.camera.projection_matrix(),
+        };
+
+        let scene_uniforms = Arc::new(SceneUniforms {
+            camera: self.camera.clone(),
+            lights: vec![DirectionalLight::new(
+                Vec3::new(-0.5, -1.0, 2.0).normalise(),
+                Colour::from_u32(0xfffde8),
+            )],
+            ambient_light: Colour::from_u32(0x202020),
+        });
+
+        self.cube
+            .draw_to_frame(frame, &self.phong_pipeline, vertex_uniforms, |mesh| {
+                FragmentUniforms {
+                    scene: scene_uniforms.clone(),
+                    material: self
+                        .cube
+                        .materials
+                        .get(mesh.material_index.unwrap())
+                        .cloned(),
+                }
+            });
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    MinifbEngine::new()
+        .with_title("Textured Cube Demo - ESC to exit")
+        .with_size(WIDTH, HEIGHT)
+        .run(TexturedCubeApp::new()?)
 }

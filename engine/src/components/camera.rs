@@ -1,5 +1,8 @@
 use cpu_rasteriser::prelude::*;
 
+use crate::app::AppEvent;
+use crate::input::{CameraControlInput, InputKey, InputState};
+
 #[derive(Debug, Clone)]
 pub struct Camera {
     pub eye: Vec3,
@@ -32,6 +35,19 @@ impl Camera {
 
     pub fn projection_matrix(&self) -> Mat4 {
         self.projection.matrix()
+    }
+
+    pub fn set_aspect_ratio(&mut self, aspect_ratio: f32) {
+        match &mut self.projection {
+            Projection::Perspective(perspective) => perspective.aspect_ratio = aspect_ratio,
+            Projection::Orthographic(orthographic) => {
+                let width = orthographic.right - orthographic.left;
+                let height = width / aspect_ratio;
+                let center_y = (orthographic.top + orthographic.bottom) / 2.0;
+                orthographic.bottom = center_y - height / 2.0;
+                orthographic.top = center_y + height / 2.0;
+            }
+        }
     }
 }
 
@@ -110,17 +126,21 @@ impl PerspectiveProjection {
 /// Zoom: Mouse scroll wheel
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// let mut controls = OrbitControls::new(&camera);
 ///
 /// while window.is_open() && !window.is_key_down(Key::Escape) {
-///     controls.update(&mut camera, &window, dt);
+///     // Capture events from window
+///     controls.handle_event(AppEvent::Input(InputEvent::MouseWheel { delta_y: 1.0 }));
+///     // ...
+///     controls.update_from_events(&mut camera, dt);
 /// }
 /// ```
 pub struct OrbitControls {
     pub radius: f32,
     pub azimuth: f32,
     pub elevation: f32,
+    input_state: InputState,
 }
 impl OrbitControls {
     const SPEED: f32 = 1.0;
@@ -132,7 +152,22 @@ impl OrbitControls {
             radius: camera.eye.length(),
             azimuth: camera.eye.z.atan2(camera.eye.x),
             elevation: (camera.eye.y / camera.eye.length()).asin(),
+            input_state: InputState::default(),
         }
+    }
+
+    /// Consume a normalized application event and update internal controller input state.
+    pub fn handle_event(&mut self, event: AppEvent) {
+        if let AppEvent::Input(input_event) = event {
+            self.input_state.handle_event(input_event);
+        }
+    }
+
+    /// Update camera by using controller-owned event state.
+    pub fn update_from_events(&mut self, camera: &mut Camera, dt: f32) {
+        let input = self.input_state.clone();
+        self.update(camera, &input, dt);
+        self.input_state.clear_deltas();
     }
 
     /// Update the camera's position based on the controller's current state.
@@ -145,21 +180,22 @@ impl OrbitControls {
     }
 
     /// Update the controller's and camera's state based on user input and the elapsed time.
-    pub fn update(&mut self, camera: &mut Camera, window: &minifb::Window, dt: f32) {
-        if window.is_key_down(minifb::Key::Left) || window.is_key_down(minifb::Key::A) {
+    pub fn update<I: CameraControlInput>(&mut self, camera: &mut Camera, input: &I, dt: f32) {
+        if input.is_key_down(InputKey::Left) || input.is_key_down(InputKey::A) {
             self.azimuth -= Self::SPEED * dt;
         }
-        if window.is_key_down(minifb::Key::Right) || window.is_key_down(minifb::Key::D) {
+        if input.is_key_down(InputKey::Right) || input.is_key_down(InputKey::D) {
             self.azimuth += Self::SPEED * dt;
         }
-        if window.is_key_down(minifb::Key::Up) || window.is_key_down(minifb::Key::W) {
+        if input.is_key_down(InputKey::Up) || input.is_key_down(InputKey::W) {
             self.elevation += Self::SPEED * dt;
         }
-        if window.is_key_down(minifb::Key::Down) || window.is_key_down(minifb::Key::S) {
+        if input.is_key_down(InputKey::Down) || input.is_key_down(InputKey::S) {
             self.elevation -= Self::SPEED * dt;
         }
 
-        if let Some((_, y)) = window.get_scroll_wheel() {
+        let y = input.scroll_delta_y();
+        if y != 0.0 {
             self.radius -= y * Self::ZOOM_SPEED * dt;
             if self.radius < 0.1 {
                 self.radius = 0.1;
@@ -179,6 +215,8 @@ pub struct FirstPersonControls {
     pub yaw: f32,
     pub pitch: f32,
 
+    input_state: InputState,
+    cursor_grabbed: bool,
     last_mouse: Option<(f32, f32)>,
 }
 impl FirstPersonControls {
@@ -193,17 +231,60 @@ impl FirstPersonControls {
         Self {
             yaw,
             pitch,
+            input_state: InputState::default(),
+            cursor_grabbed: true,
             last_mouse: None,
         }
     }
 
-    pub fn update(&mut self, camera: &mut Camera, window: &minifb::Window, dt: f32) {
-        self.update_mouse(camera, window);
-        self.update_keyboard(camera, window, dt);
+    /// Consume a normalized application event and update internal controller input state.
+    pub fn handle_event(&mut self, event: AppEvent) {
+        if let AppEvent::Input(input_event) = event {
+            self.input_state.handle_event(input_event);
+        }
     }
 
-    fn update_mouse(&mut self, camera: &mut Camera, window: &minifb::Window) {
-        if let Some((x, y)) = window.get_mouse_pos(minifb::MouseMode::Pass) {
+    /// Update camera by using controller-owned event state.
+    pub fn update_from_events(&mut self, camera: &mut Camera, dt: f32) {
+        if self.cursor_grabbed {
+            let input = self.input_state.clone();
+            self.update(camera, &input, dt);
+        }
+        self.input_state.clear_deltas();
+    }
+
+    pub fn cursor_grabbed(&self) -> bool {
+        self.cursor_grabbed
+    }
+
+    /// Set whether this controller should own cursor grab mode.
+    pub fn set_cursor_grabbed(&mut self, grabbed: bool) {
+        self.cursor_grabbed = grabbed;
+
+        if !grabbed {
+            self.input_state.clear_deltas();
+            self.last_mouse = None;
+        }
+    }
+
+    pub fn toggle_cursor_grabbed(&mut self) {
+        self.set_cursor_grabbed(!self.cursor_grabbed);
+    }
+
+    pub fn update<I: CameraControlInput>(&mut self, camera: &mut Camera, input: &I, dt: f32) {
+        self.update_mouse(camera, input);
+        self.update_keyboard(camera, input, dt);
+    }
+
+    fn update_mouse<I: CameraControlInput>(&mut self, camera: &mut Camera, input: &I) {
+        let (dx, dy) = input.mouse_delta();
+        if dx != 0.0 || dy != 0.0 {
+            self.yaw += dx * Self::MOUSE_SENSITIVITY;
+            self.pitch -= dy * Self::MOUSE_SENSITIVITY;
+
+            let limit = std::f32::consts::FRAC_PI_2 - 0.01;
+            self.pitch = self.pitch.clamp(-limit, limit);
+        } else if let Some((x, y)) = input.mouse_position() {
             if let Some((last_x, last_y)) = self.last_mouse {
                 let dx = x - last_x;
                 let dy = y - last_y;
@@ -228,7 +309,7 @@ impl FirstPersonControls {
         camera.lookat = camera.eye + forward;
     }
 
-    fn update_keyboard(&mut self, camera: &mut Camera, window: &minifb::Window, dt: f32) {
+    fn update_keyboard<I: CameraControlInput>(&mut self, camera: &mut Camera, input: &I, dt: f32) {
         let mut forward = (camera.lookat - camera.eye).normalise();
         forward.y = 0.0;
         forward = forward.normalise();
@@ -241,28 +322,28 @@ impl FirstPersonControls {
 
         let speed = Self::MOVEMENT_SPEED * dt;
 
-        if window.is_key_down(minifb::Key::W) {
+        if input.is_key_down(InputKey::W) {
             camera.eye += forward * speed;
             camera.lookat += forward * speed;
         }
-        if window.is_key_down(minifb::Key::S) {
+        if input.is_key_down(InputKey::S) {
             camera.eye -= forward * speed;
             camera.lookat -= forward * speed;
         }
-        if window.is_key_down(minifb::Key::A) {
+        if input.is_key_down(InputKey::A) {
             camera.eye -= right * speed;
             camera.lookat -= right * speed;
         }
-        if window.is_key_down(minifb::Key::D) {
+        if input.is_key_down(InputKey::D) {
             camera.eye += right * speed;
             camera.lookat += right * speed;
         }
 
-        if window.is_key_down(minifb::Key::Space) {
+        if input.is_key_down(InputKey::Space) {
             camera.eye += up * speed;
             camera.lookat += up * speed;
         }
-        if window.is_key_down(minifb::Key::LeftShift) {
+        if input.is_key_down(InputKey::LeftShift) {
             camera.eye -= up * speed;
             camera.lookat -= up * speed;
         }

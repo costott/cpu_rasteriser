@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "cpu_rasteriser"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "minifb",
  "rasteriser_macros",
@@ -547,12 +547,14 @@ checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cpu_rasteriser",
  "image",
  "minifb",
  "rasteriser_macros",
+ "softbuffer",
+ "winit",
 ]
 
 [[package]]

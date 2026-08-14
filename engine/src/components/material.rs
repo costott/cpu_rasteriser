@@ -2,8 +2,6 @@ use crate::prelude::*;
 
 use cpu_rasteriser::prelude::*;
 
-use std::path::PathBuf;
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Material {
     pub name: String,
