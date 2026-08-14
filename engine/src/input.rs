@@ -23,9 +23,32 @@ pub enum MouseButton {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MouseState {
+pub enum ButtonState {
     Pressed,
     Released,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum InputEvent {
+    Key {
+        key: InputKey,
+        state: ButtonState,
+    },
+    MouseButton {
+        button: MouseButton,
+        state: ButtonState,
+    },
+    MouseMoved {
+        x: f32,
+        y: f32,
+    },
+    MouseMotion {
+        dx: f32,
+        dy: f32,
+    },
+    MouseWheel {
+        delta_y: f32,
+    },
 }
 
 pub trait CameraControlInput {
@@ -36,7 +59,7 @@ pub trait CameraControlInput {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct CameraInputState {
+pub struct InputState {
     keys_down: HashSet<InputKey>,
     mouse_buttons_down: HashSet<MouseButton>,
     mouse_position: Option<(f32, f32)>,
@@ -44,24 +67,34 @@ pub struct CameraInputState {
     scroll_delta_y: f32,
 }
 
-impl CameraInputState {
-    pub fn set_key_state(&mut self, key: InputKey, state: MouseState) {
+impl InputState {
+    pub fn handle_event(&mut self, event: InputEvent) {
+        match event {
+            InputEvent::Key { key, state } => self.set_key_state(key, state),
+            InputEvent::MouseButton { button, state } => self.set_button_state(button, state),
+            InputEvent::MouseMoved { x, y } => self.set_mouse_position(x, y),
+            InputEvent::MouseMotion { dx, dy } => self.add_mouse_delta(dx, dy),
+            InputEvent::MouseWheel { delta_y } => self.add_scroll_delta_y(delta_y),
+        }
+    }
+
+    pub fn set_key_state(&mut self, key: InputKey, state: ButtonState) {
         match state {
-            MouseState::Pressed => {
+            ButtonState::Pressed => {
                 self.keys_down.insert(key);
             }
-            MouseState::Released => {
+            ButtonState::Released => {
                 self.keys_down.remove(&key);
             }
         }
     }
 
-    pub fn set_button_state(&mut self, button: MouseButton, state: MouseState) {
+    pub fn set_button_state(&mut self, button: MouseButton, state: ButtonState) {
         match state {
-            MouseState::Pressed => {
+            ButtonState::Pressed => {
                 self.mouse_buttons_down.insert(button);
             }
-            MouseState::Released => {
+            ButtonState::Released => {
                 self.mouse_buttons_down.remove(&button);
             }
         }
@@ -85,12 +118,28 @@ impl CameraInputState {
         self.scroll_delta_y = 0.0;
     }
 
+    pub fn is_key_down(&self, key: InputKey) -> bool {
+        self.keys_down.contains(&key)
+    }
+
     pub fn is_button_down(&self, button: MouseButton) -> bool {
         self.mouse_buttons_down.contains(&button)
     }
+
+    pub fn mouse_position(&self) -> Option<(f32, f32)> {
+        self.mouse_position
+    }
+
+    pub fn mouse_delta(&self) -> (f32, f32) {
+        self.mouse_delta
+    }
+
+    pub fn scroll_delta_y(&self) -> f32 {
+        self.scroll_delta_y
+    }
 }
 
-impl CameraControlInput for CameraInputState {
+impl CameraControlInput for InputState {
     fn is_key_down(&self, key: InputKey) -> bool {
         self.keys_down.contains(&key)
     }
@@ -108,72 +157,39 @@ impl CameraControlInput for CameraInputState {
     }
 }
 
-impl CameraControlInput for minifb::Window {
-    fn is_key_down(&self, key: InputKey) -> bool {
-        match key {
-            InputKey::Escape => self.is_key_down(minifb::Key::Escape),
-            InputKey::Left => self.is_key_down(minifb::Key::Left),
-            InputKey::Right => self.is_key_down(minifb::Key::Right),
-            InputKey::Up => self.is_key_down(minifb::Key::Up),
-            InputKey::Down => self.is_key_down(minifb::Key::Down),
-            InputKey::W => self.is_key_down(minifb::Key::W),
-            InputKey::A => self.is_key_down(minifb::Key::A),
-            InputKey::S => self.is_key_down(minifb::Key::S),
-            InputKey::D => self.is_key_down(minifb::Key::D),
-            InputKey::Space => self.is_key_down(minifb::Key::Space),
-            InputKey::LeftShift => self.is_key_down(minifb::Key::LeftShift),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_state_tracks_pressed_and_released_events() {
+        let mut state = InputState::default();
+
+        state.handle_event(InputEvent::Key {
+            key: InputKey::W,
+            state: ButtonState::Pressed,
+        });
+        assert!(state.is_key_down(InputKey::W));
+
+        state.handle_event(InputEvent::Key {
+            key: InputKey::W,
+            state: ButtonState::Released,
+        });
+        assert!(!state.is_key_down(InputKey::W));
     }
 
-    fn mouse_position(&self) -> Option<(f32, f32)> {
-        self.get_mouse_pos(minifb::MouseMode::Pass)
-    }
+    #[test]
+    fn input_state_accumulates_motion_and_scroll() {
+        let mut state = InputState::default();
 
-    fn mouse_delta(&self) -> (f32, f32) {
-        (0.0, 0.0)
-    }
+        state.handle_event(InputEvent::MouseMotion { dx: 3.0, dy: -2.0 });
+        state.handle_event(InputEvent::MouseWheel { delta_y: 5.0 });
 
-    fn scroll_delta_y(&self) -> f32 {
-        self.get_scroll_wheel().map(|(_, y)| y).unwrap_or(0.0)
-    }
-}
+        assert_eq!(state.mouse_delta(), (3.0, -2.0));
+        assert_eq!(state.scroll_delta_y(), 5.0);
 
-pub fn map_winit_key_code(key_code: winit::keyboard::KeyCode) -> Option<InputKey> {
-    match key_code {
-        winit::keyboard::KeyCode::Escape => Some(InputKey::Escape),
-        winit::keyboard::KeyCode::ArrowLeft => Some(InputKey::Left),
-        winit::keyboard::KeyCode::ArrowRight => Some(InputKey::Right),
-        winit::keyboard::KeyCode::ArrowUp => Some(InputKey::Up),
-        winit::keyboard::KeyCode::ArrowDown => Some(InputKey::Down),
-        winit::keyboard::KeyCode::KeyW => Some(InputKey::W),
-        winit::keyboard::KeyCode::KeyA => Some(InputKey::A),
-        winit::keyboard::KeyCode::KeyS => Some(InputKey::S),
-        winit::keyboard::KeyCode::KeyD => Some(InputKey::D),
-        winit::keyboard::KeyCode::Space => Some(InputKey::Space),
-        winit::keyboard::KeyCode::ShiftLeft => Some(InputKey::LeftShift),
-        _ => None,
-    }
-}
-
-pub fn map_winit_mouse_button(button: winit::event::MouseButton) -> Option<MouseButton> {
-    match button {
-        winit::event::MouseButton::Left => Some(MouseButton::Left),
-        winit::event::MouseButton::Right => Some(MouseButton::Right),
-        winit::event::MouseButton::Middle => Some(MouseButton::Middle),
-        _ => None,
-    }
-}
-
-pub fn map_winit_element_state(state: winit::event::ElementState) -> MouseState {
-    match state {
-        winit::event::ElementState::Pressed => MouseState::Pressed,
-        winit::event::ElementState::Released => MouseState::Released,
-    }
-}
-
-pub fn map_winit_scroll_delta_y(delta: winit::event::MouseScrollDelta) -> f32 {
-    match delta {
-        winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+        state.clear_deltas();
+        assert_eq!(state.mouse_delta(), (0.0, 0.0));
+        assert_eq!(state.scroll_delta_y(), 0.0);
     }
 }

@@ -11,10 +11,7 @@ use winit::keyboard::PhysicalKey;
 use winit::window::Window;
 
 use crate::app::{AppEvent, Application, CursorGrab};
-use crate::input::{
-    InputKey, MouseButton, MouseState, map_winit_element_state, map_winit_key_code,
-    map_winit_mouse_button, map_winit_scroll_delta_y,
-};
+use crate::input::{ButtonState, InputEvent, InputKey, InputState, MouseButton};
 
 pub trait EngineBackend: Sized {
     fn run<A>(self, app: A) -> Result<(), Box<dyn std::error::Error>>
@@ -125,6 +122,7 @@ where
     window_attributes: winit::window::WindowAttributes,
     state: AppState,
     last_frame: Instant,
+    input_state: InputState,
 }
 
 enum AppState {
@@ -155,7 +153,13 @@ where
             window_attributes,
             state: AppState::Initial,
             last_frame: Instant::now(),
+            input_state: InputState::default(),
         })
+    }
+
+    fn handle_input_event(&mut self, event: InputEvent) {
+        self.input_state.handle_event(event);
+        self.app.event(AppEvent::Input(event));
     }
 
     fn apply_resize(&mut self, width: u32, height: u32) {
@@ -279,32 +283,34 @@ where
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(key) = map_winit_key_code(code) {
-                        self.app.event(AppEvent::Key {
+                    if let Some(key) = WinitInputMapper::map_winit_key_code(code) {
+                        let input_event = InputEvent::Key {
                             key,
-                            state: map_winit_element_state(event.state),
-                        });
+                            state: WinitInputMapper::map_winit_element_state(event.state),
+                        };
+                        self.handle_input_event(input_event);
                     }
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                if let Some(button) = map_winit_mouse_button(button) {
-                    self.app.event(AppEvent::MouseButton {
+                if let Some(button) = WinitInputMapper::map_winit_mouse_button(button) {
+                    let input_event = InputEvent::MouseButton {
                         button,
-                        state: map_winit_element_state(state),
-                    });
+                        state: WinitInputMapper::map_winit_element_state(state),
+                    };
+                    self.handle_input_event(input_event);
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.app.event(AppEvent::MouseMoved {
+                self.handle_input_event(InputEvent::MouseMoved {
                     x: position.x as f32,
                     y: position.y as f32,
                 });
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let delta_y = map_winit_scroll_delta_y(delta);
+                let delta_y = WinitInputMapper::map_winit_scroll_delta_y(delta);
                 if delta_y != 0.0 {
-                    self.app.event(AppEvent::MouseWheel { delta_y });
+                    self.handle_input_event(InputEvent::MouseWheel { delta_y });
                 }
             }
             _ => {}
@@ -320,7 +326,7 @@ where
         if let DeviceEvent::MouseMotion { delta } = event {
             let (dx, dy) = delta;
             if dx != 0.0 || dy != 0.0 {
-                self.app.event(AppEvent::MouseMotionDelta {
+                self.handle_input_event(InputEvent::MouseMotion {
                     dx: dx as f32,
                     dy: dy as f32,
                 });
@@ -337,6 +343,49 @@ where
     }
 }
 
+struct WinitInputMapper;
+impl WinitInputMapper {
+    fn map_winit_key_code(key_code: winit::keyboard::KeyCode) -> Option<InputKey> {
+        match key_code {
+            winit::keyboard::KeyCode::Escape => Some(InputKey::Escape),
+            winit::keyboard::KeyCode::ArrowLeft => Some(InputKey::Left),
+            winit::keyboard::KeyCode::ArrowRight => Some(InputKey::Right),
+            winit::keyboard::KeyCode::ArrowUp => Some(InputKey::Up),
+            winit::keyboard::KeyCode::ArrowDown => Some(InputKey::Down),
+            winit::keyboard::KeyCode::KeyW => Some(InputKey::W),
+            winit::keyboard::KeyCode::KeyA => Some(InputKey::A),
+            winit::keyboard::KeyCode::KeyS => Some(InputKey::S),
+            winit::keyboard::KeyCode::KeyD => Some(InputKey::D),
+            winit::keyboard::KeyCode::Space => Some(InputKey::Space),
+            winit::keyboard::KeyCode::ShiftLeft => Some(InputKey::LeftShift),
+            _ => None,
+        }
+    }
+
+    fn map_winit_mouse_button(button: winit::event::MouseButton) -> Option<MouseButton> {
+        match button {
+            winit::event::MouseButton::Left => Some(MouseButton::Left),
+            winit::event::MouseButton::Right => Some(MouseButton::Right),
+            winit::event::MouseButton::Middle => Some(MouseButton::Middle),
+            _ => None,
+        }
+    }
+
+    fn map_winit_element_state(state: winit::event::ElementState) -> ButtonState {
+        match state {
+            winit::event::ElementState::Pressed => ButtonState::Pressed,
+            winit::event::ElementState::Released => ButtonState::Released,
+        }
+    }
+
+    fn map_winit_scroll_delta_y(delta: winit::event::MouseScrollDelta) -> f32 {
+        match delta {
+            winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+            winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+        }
+    }
+}
+
 struct MinifbEngineApp<A>
 where
     A: Application,
@@ -346,8 +395,9 @@ where
     viewport: Viewport,
     window: minifb::Window,
     last_frame: Instant,
-    keys_down: HashSet<InputKey>,
-    buttons_down: HashSet<MouseButton>,
+    input_state: InputState,
+    previous_keys: HashSet<InputKey>,
+    previous_buttons: HashSet<MouseButton>,
 }
 
 fn apply_winit_window_state(state: crate::app::WindowState, window: &Window) {
@@ -379,9 +429,15 @@ where
             viewport,
             window,
             last_frame: Instant::now(),
-            keys_down: HashSet::new(),
-            buttons_down: HashSet::new(),
+            input_state: InputState::default(),
+            previous_keys: HashSet::new(),
+            previous_buttons: HashSet::new(),
         })
+    }
+
+    fn handle_input_event(&mut self, event: InputEvent) {
+        self.input_state.handle_event(event);
+        self.app.event(AppEvent::Input(event));
     }
 
     fn emit_input_events(&mut self) {
@@ -407,21 +463,21 @@ where
 
         for (minifb_key, key) in TRACKED_KEYS {
             let is_down = self.window.is_key_down(minifb_key);
-            let was_down = self.keys_down.contains(&key);
+            let was_down = self.previous_keys.contains(&key);
 
             match (was_down, is_down) {
                 (false, true) => {
-                    self.keys_down.insert(key);
-                    self.app.event(AppEvent::Key {
+                    self.previous_keys.insert(key);
+                    self.handle_input_event(InputEvent::Key {
                         key,
-                        state: MouseState::Pressed,
+                        state: ButtonState::Pressed,
                     });
                 }
                 (true, false) => {
-                    self.keys_down.remove(&key);
-                    self.app.event(AppEvent::Key {
+                    self.previous_keys.remove(&key);
+                    self.handle_input_event(InputEvent::Key {
                         key,
-                        state: MouseState::Released,
+                        state: ButtonState::Released,
                     });
                 }
                 _ => {}
@@ -430,21 +486,21 @@ where
 
         for (minifb_button, button) in TRACKED_BUTTONS {
             let is_down = self.window.get_mouse_down(minifb_button);
-            let was_down = self.buttons_down.contains(&button);
+            let was_down = self.previous_buttons.contains(&button);
 
             match (was_down, is_down) {
                 (false, true) => {
-                    self.buttons_down.insert(button);
-                    self.app.event(AppEvent::MouseButton {
+                    self.previous_buttons.insert(button);
+                    self.handle_input_event(InputEvent::MouseButton {
                         button,
-                        state: MouseState::Pressed,
+                        state: ButtonState::Pressed,
                     });
                 }
                 (true, false) => {
-                    self.buttons_down.remove(&button);
-                    self.app.event(AppEvent::MouseButton {
+                    self.previous_buttons.remove(&button);
+                    self.handle_input_event(InputEvent::MouseButton {
                         button,
-                        state: MouseState::Released,
+                        state: ButtonState::Released,
                     });
                 }
                 _ => {}
@@ -452,12 +508,12 @@ where
         }
 
         if let Some((x, y)) = self.window.get_mouse_pos(minifb::MouseMode::Pass) {
-            self.app.event(AppEvent::MouseMoved { x, y });
+            self.handle_input_event(InputEvent::MouseMoved { x, y });
         }
 
         if let Some((_, y)) = self.window.get_scroll_wheel() {
             if y != 0.0 {
-                self.app.event(AppEvent::MouseWheel { delta_y: y });
+                self.handle_input_event(InputEvent::MouseWheel { delta_y: y });
             }
         }
     }
@@ -504,6 +560,7 @@ where
     fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.app.event(AppEvent::Resumed);
 
+        // TODO: remove hard-coding of escape key to exit
         while self.window.is_open() && !self.window.is_key_down(minifb::Key::Escape) {
             self.emit_input_events();
             self.apply_resize();

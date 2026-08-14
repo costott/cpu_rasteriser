@@ -1,6 +1,6 @@
 use cpu_rasteriser::{renderer::Frame, viewport::Viewport};
 
-use crate::input::{InputKey, MouseButton, MouseState};
+use crate::input::InputEvent;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CursorGrab {
@@ -54,30 +54,9 @@ pub trait Application {
 #[derive(Clone, Copy, Debug)]
 pub enum AppEvent {
     CloseRequested,
-    Resized {
-        width: u32,
-        height: u32,
-    },
+    Resized { width: u32, height: u32 },
     RedrawRequested,
     Suspended,
     Resumed,
-    Key {
-        key: InputKey,
-        state: MouseState,
-    },
-    MouseButton {
-        button: MouseButton,
-        state: MouseState,
-    },
-    MouseMoved {
-        x: f32,
-        y: f32,
-    },
-    MouseMotionDelta {
-        dx: f32,
-        dy: f32,
-    },
-    MouseWheel {
-        delta_y: f32,
-    },
+    Input(InputEvent),
 }

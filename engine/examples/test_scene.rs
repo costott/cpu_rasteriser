@@ -205,10 +205,10 @@ impl Application for TestSceneApp {
     }
 
     fn event(&mut self, event: AppEvent) {
-        if let AppEvent::Key {
+        if let AppEvent::Input(InputEvent::Key {
             key: InputKey::Escape,
-            state: MouseState::Released,
-        } = event
+            state: ButtonState::Released,
+        }) = event
         {
             self.camera_controller.toggle_cursor_grabbed();
         }
