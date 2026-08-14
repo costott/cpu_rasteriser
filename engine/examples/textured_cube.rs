@@ -185,12 +185,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ambient_light,
         });
 
-        for draw_call in cube.draw_calls(|mesh| FragmentUniforms {
-            scene: scene_uniforms.clone(),
-            material: cube.materials.get(mesh.material_index.unwrap()).cloned(),
-        }) {
-            frame.draw(&phong_pipeline, draw_call, vertex_uniforms.clone());
-        }
+        cube.draw_to_frame(&mut frame, &phong_pipeline, vertex_uniforms, |mesh| {
+            FragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: cube.materials.get(mesh.material_index.unwrap()).cloned(),
+            }
+        });
 
         frame.finish();
 

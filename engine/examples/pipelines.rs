@@ -264,23 +264,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut frame = renderer.begin_frame(&viewport);
 
-        for draw_call in gouraud_teapot.draw_calls(|_| GouraudFragmentUniforms) {
-            frame.draw(
-                &gouraud_pipeline,
-                draw_call,
-                gouraud_vertex_uniforms.clone(),
-            );
-        }
+        gouraud_teapot.draw_to_frame(
+            &mut frame,
+            &gouraud_pipeline,
+            gouraud_vertex_uniforms.clone(),
+            |_| GouraudFragmentUniforms,
+        );
 
-        for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
-            scene: scene_uniforms.clone(),
-            material: phong_teapot
-                .materials
-                .get(mesh.material_index.unwrap())
-                .cloned(),
-        }) {
-            frame.draw(&phong_pipeline, draw_call, phong_vertex_uniforms.clone());
-        }
+        phong_teapot.draw_to_frame(
+            &mut frame,
+            &phong_pipeline,
+            phong_vertex_uniforms.clone(),
+            |mesh| PhongFragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: phong_teapot
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            },
+        );
 
         frame.finish();
 

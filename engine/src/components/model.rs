@@ -54,10 +54,10 @@ impl<V: Clone> Model<V> {
         })
     }
 
-    pub fn draw_to_frame<VS, FS, F>(
-        &self,
-        frame: &mut Frame,
-        pipeline: &Pipeline<VS, FS>,
+    pub fn draw_to_frame<'frame, VS, FS, F>(
+        &'frame self,
+        frame: &mut Frame<'_, '_, 'frame>,
+        pipeline: &'frame Pipeline<VS, FS>,
         vertex_uniforms: VS::Uniforms,
         make_fragment_uniforms: F,
     ) where
