@@ -63,8 +63,6 @@ impl<V: Clone> Model<V> {
     ) where
         VS: VertexShader<Vertex = V>,
         FS: FragmentShader<VS::Varyings>,
-        VS::Varyings: Interpolate + Send + Sync + 'static,
-        FS::Uniforms: Send + Sync + 'static,
         VS::Uniforms: Clone,
         F: Fn(&Mesh<V>) -> FS::Uniforms,
     {

@@ -55,7 +55,6 @@ impl FragmentShader<Varyings> for BasicFragmentShader {
 
 struct TeapotApp {
     camera: Camera,
-    camera_controls: OrbitControls,
     teapot: Model<ObjVertex>,
     simple_pipeline: Pipeline<BasicVertexShader, BasicFragmentShader>,
 }
@@ -75,15 +74,12 @@ impl TeapotApp {
                 50.0,
             )),
         );
-        let camera_controls = OrbitControls::new(&camera);
 
         let mut teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
         teapot.transform.scale = Vec3::ONE * 0.3;
-        teapot.transform.rotation.y = 90_f32.to_radians();
 
         Ok(Self {
             camera,
-            camera_controls,
             teapot,
             simple_pipeline,
         })
@@ -91,13 +87,8 @@ impl TeapotApp {
 }
 
 impl Application for TeapotApp {
-    fn update(&mut self, dt: f32) {
-        self.camera_controls
-            .update_from_events(&mut self.camera, dt);
-    }
-
-    fn event(&mut self, event: AppEvent) {
-        self.camera_controls.handle_event(event);
+    fn resize(&mut self, width: u32, height: u32) {
+        self.camera.set_aspect_ratio(width as f32 / height as f32);
     }
 
     fn render<'frame>(
@@ -120,7 +111,11 @@ impl Application for TeapotApp {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     MinifbEngine::new()
-        .with_title("Teapot Demo - ESC to exit")
+        .with_title("Resize Demo - ESC to exit")
         .with_size(WIDTH, HEIGHT)
+        .with_options(minifb::WindowOptions {
+            resize: true,
+            ..Default::default()
+        })
         .run(TeapotApp::new()?)
 }

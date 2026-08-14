@@ -1,7 +1,7 @@
 use cpu_rasteriser::prelude::*;
 
 use crate::app::AppEvent;
-use crate::input::{CameraControlInput, CameraInputState, InputKey};
+use crate::input::{CameraControlInput, InputKey, InputState};
 
 #[derive(Debug, Clone)]
 pub struct Camera {
@@ -35,6 +35,19 @@ impl Camera {
 
     pub fn projection_matrix(&self) -> Mat4 {
         self.projection.matrix()
+    }
+
+    pub fn set_aspect_ratio(&mut self, aspect_ratio: f32) {
+        match &mut self.projection {
+            Projection::Perspective(perspective) => perspective.aspect_ratio = aspect_ratio,
+            Projection::Orthographic(orthographic) => {
+                let width = orthographic.right - orthographic.left;
+                let height = width / aspect_ratio;
+                let center_y = (orthographic.top + orthographic.bottom) / 2.0;
+                orthographic.bottom = center_y - height / 2.0;
+                orthographic.top = center_y + height / 2.0;
+            }
+        }
     }
 }
 
@@ -113,17 +126,21 @@ impl PerspectiveProjection {
 /// Zoom: Mouse scroll wheel
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// let mut controls = OrbitControls::new(&camera);
 ///
 /// while window.is_open() && !window.is_key_down(Key::Escape) {
-///     controls.update(&mut camera, &window, dt);
+///     // Capture events from window
+///     controls.handle_event(AppEvent::Input(InputEvent::MouseWheel { delta_y: 1.0 }));
+///     // ...
+///     controls.update_from_events(&mut camera, dt);
 /// }
 /// ```
 pub struct OrbitControls {
     pub radius: f32,
     pub azimuth: f32,
     pub elevation: f32,
+    input_state: InputState,
 }
 impl OrbitControls {
     const SPEED: f32 = 1.0;
@@ -135,7 +152,22 @@ impl OrbitControls {
             radius: camera.eye.length(),
             azimuth: camera.eye.z.atan2(camera.eye.x),
             elevation: (camera.eye.y / camera.eye.length()).asin(),
+            input_state: InputState::default(),
         }
+    }
+
+    /// Consume a normalized application event and update internal controller input state.
+    pub fn handle_event(&mut self, event: AppEvent) {
+        if let AppEvent::Input(input_event) = event {
+            self.input_state.handle_event(input_event);
+        }
+    }
+
+    /// Update camera by using controller-owned event state.
+    pub fn update_from_events(&mut self, camera: &mut Camera, dt: f32) {
+        let input = self.input_state.clone();
+        self.update(camera, &input, dt);
+        self.input_state.clear_deltas();
     }
 
     /// Update the camera's position based on the controller's current state.
@@ -183,7 +215,7 @@ pub struct FirstPersonControls {
     pub yaw: f32,
     pub pitch: f32,
 
-    input_state: CameraInputState,
+    input_state: InputState,
     cursor_grabbed: bool,
     last_mouse: Option<(f32, f32)>,
 }
@@ -199,7 +231,7 @@ impl FirstPersonControls {
         Self {
             yaw,
             pitch,
-            input_state: CameraInputState::default(),
+            input_state: InputState::default(),
             cursor_grabbed: true,
             last_mouse: None,
         }
@@ -207,23 +239,8 @@ impl FirstPersonControls {
 
     /// Consume a normalized application event and update internal controller input state.
     pub fn handle_event(&mut self, event: AppEvent) {
-        match event {
-            AppEvent::Key { key, state } => {
-                self.input_state.set_key_state(key, state);
-            }
-            AppEvent::MouseButton { button, state } => {
-                self.input_state.set_button_state(button, state);
-            }
-            AppEvent::MouseMoved { x, y } => {
-                self.input_state.set_mouse_position(x, y);
-            }
-            AppEvent::MouseMotionDelta { dx, dy } => {
-                self.input_state.add_mouse_delta(dx, dy);
-            }
-            AppEvent::MouseWheel { delta_y } => {
-                self.input_state.add_scroll_delta_y(delta_y);
-            }
-            _ => {}
+        if let AppEvent::Input(input_event) = event {
+            self.input_state.handle_event(input_event);
         }
     }
 
