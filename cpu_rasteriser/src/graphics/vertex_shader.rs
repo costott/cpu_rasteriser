@@ -52,7 +52,7 @@ use crate::prelude::*;
 pub trait VertexShader: Send + Sync + 'static {
     type Vertex: Clone;
     type Uniforms: Send + Sync + 'static;
-    type Varyings: Interpolate + 'static;
+    type Varyings: Interpolate + Send + Sync + 'static;
 
     /// Processes a world-space vertex, before projection and clipping.
     fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings);
