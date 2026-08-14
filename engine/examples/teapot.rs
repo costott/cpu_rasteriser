@@ -91,13 +91,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     teapot.transform.scale = Vec3::ONE * 0.3;
     teapot.transform.rotation.y = 90_f32.to_radians();
 
-    // let mut scene = Scene::new(camera);
-    // scene.add_light(DirectionalLight::new(
-    //     Vec3::new(0.0, -1.0, -1.0),
-    //     Colour::from_u32(0xfffde8),
-    // ));
-    // scene.add_model(teapot);
-
     let mut previous_time = std::time::Instant::now();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {

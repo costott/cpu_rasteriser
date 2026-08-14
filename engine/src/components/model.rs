@@ -1,7 +1,11 @@
 use crate::prelude::*;
 
 use cpu_rasteriser::prelude::*;
+
+use cpu_rasteriser::graphics::fragment_shader::FragmentShader;
+use cpu_rasteriser::graphics::vertex_shader::VertexShader;
 use cpu_rasteriser::renderer::DrawCall;
+use cpu_rasteriser::renderer::{Frame, Pipeline};
 
 #[derive(Debug)]
 pub struct Model<V: Clone> {
@@ -48,6 +52,25 @@ impl<V: Clone> Model<V> {
                 make_uniforms(mesh),
             )
         })
+    }
+
+    pub fn draw_to_frame<VS, FS, F>(
+        &self,
+        frame: &mut Frame,
+        pipeline: &Pipeline<VS, FS>,
+        vertex_uniforms: VS::Uniforms,
+        make_fragment_uniforms: F,
+    ) where
+        VS: VertexShader<Vertex = V>,
+        FS: FragmentShader<VS::Varyings>,
+        VS::Varyings: Interpolate + Send + Sync + 'static,
+        FS::Uniforms: Send + Sync + 'static,
+        VS::Uniforms: Clone,
+        F: Fn(&Mesh<V>) -> FS::Uniforms,
+    {
+        for draw_call in self.draw_calls(make_fragment_uniforms) {
+            frame.draw(pipeline, draw_call, vertex_uniforms.clone());
+        }
     }
 }
 impl Model<ObjVertex> {
