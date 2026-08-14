@@ -109,9 +109,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut frame = renderer.begin_frame(&viewport);
 
-        for draw_call in teapot.draw_calls(|_| FragmentUniforms) {
-            frame.draw(&simple_pipeline, draw_call, vertex_uniforms.clone());
-        }
+        teapot.draw_to_frame(&mut frame, &simple_pipeline, vertex_uniforms, |_| {
+            FragmentUniforms
+        });
 
         frame.finish();
 

@@ -40,7 +40,7 @@ impl Default for WindowCursorSettings {
 pub trait Application {
     fn update(&mut self, _dt: f32) {}
 
-    fn render<'a>(&'a mut self, _frame: &mut Frame<'a, 'a>, _viewport: &'a Viewport) {}
+    fn render<'frame>(&'frame mut self, _frame: &mut Frame<'_, '_, 'frame>, _viewport: &Viewport) {}
 
     fn resize(&mut self, _width: u32, _height: u32) {}
 

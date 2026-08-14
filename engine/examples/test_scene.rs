@@ -229,7 +229,7 @@ impl Application for TestSceneApp {
         }
     }
 
-    fn render<'a>(&'a mut self, frame: &mut Frame<'a, 'a>, _viewport: &'a Viewport) {
+    fn render<'frame>(&'frame mut self, frame: &mut Frame<'_, '_, 'frame>, _viewport: &Viewport) {
         let scene_uniforms = Arc::new(SceneUniforms {
             camera: self.camera.clone(),
             lights: self.lights.clone(),
@@ -239,77 +239,69 @@ impl Application for TestSceneApp {
             model_matrix: self.floor_model.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
-        for draw_call in self.floor_model.draw_calls(|mesh| FragmentUniforms {
-            scene: scene_uniforms.clone(),
-            material: self
-                .floor_model
-                .materials
-                .get(mesh.material_index.unwrap())
-                .cloned(),
-        }) {
-            frame.draw(
-                &self.phong_pipeline,
-                draw_call,
-                floor_vertex_uniforms.clone(),
-            );
-        }
+        self.floor_model.draw_to_frame(
+            frame,
+            &self.phong_pipeline,
+            floor_vertex_uniforms,
+            |mesh| FragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: self
+                    .floor_model
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            },
+        );
 
         let cube1_vertex_uniforms = VertexUniforms {
             model_matrix: self.cube1.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
-        for draw_call in self.cube1.draw_calls(|mesh| FragmentUniforms {
-            scene: scene_uniforms.clone(),
-            material: self
-                .cube1
-                .materials
-                .get(mesh.material_index.unwrap())
-                .cloned(),
-        }) {
-            frame.draw(
-                &self.phong_pipeline,
-                draw_call,
-                cube1_vertex_uniforms.clone(),
-            );
-        }
+        self.cube1
+            .draw_to_frame(frame, &self.phong_pipeline, cube1_vertex_uniforms, |mesh| {
+                FragmentUniforms {
+                    scene: scene_uniforms.clone(),
+                    material: self
+                        .cube1
+                        .materials
+                        .get(mesh.material_index.unwrap())
+                        .cloned(),
+                }
+            });
 
         let cube2_vertex_uniforms = VertexUniforms {
             model_matrix: self.cube2.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
-        for draw_call in self.cube2.draw_calls(|mesh| FragmentUniforms {
-            scene: scene_uniforms.clone(),
-            material: self
-                .cube2
-                .materials
-                .get(mesh.material_index.unwrap())
-                .cloned(),
-        }) {
-            frame.draw(
-                &self.phong_pipeline,
-                draw_call,
-                cube2_vertex_uniforms.clone(),
-            );
-        }
+        self.cube2
+            .draw_to_frame(frame, &self.phong_pipeline, cube2_vertex_uniforms, |mesh| {
+                FragmentUniforms {
+                    scene: scene_uniforms.clone(),
+                    material: self
+                        .cube2
+                        .materials
+                        .get(mesh.material_index.unwrap())
+                        .cloned(),
+                }
+            });
 
         let loaded_cube_vertex_uniforms = VertexUniforms {
             model_matrix: self.loaded_cube.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
-        for draw_call in self.loaded_cube.draw_calls(|mesh| FragmentUniforms {
-            scene: scene_uniforms.clone(),
-            material: self
-                .loaded_cube
-                .materials
-                .get(mesh.material_index.unwrap())
-                .cloned(),
-        }) {
-            frame.draw(
-                &self.phong_pipeline,
-                draw_call,
-                loaded_cube_vertex_uniforms.clone(),
-            );
-        }
+        self.loaded_cube.draw_to_frame(
+            frame,
+            &self.phong_pipeline,
+            loaded_cube_vertex_uniforms,
+            |mesh| FragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: self
+                    .loaded_cube
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            },
+        )
     }
 }
 
