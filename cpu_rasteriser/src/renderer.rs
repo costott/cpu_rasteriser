@@ -113,10 +113,10 @@ impl Renderer {
     ///
     /// frame.finish();
     /// ```
-    pub fn begin_frame<'renderer, 'viewport>(
+    pub fn begin_frame<'renderer, 'viewport, 'frame>(
         &'renderer mut self,
         viewport: &'viewport Viewport,
-    ) -> Frame<'renderer, 'viewport> {
+    ) -> Frame<'renderer, 'viewport, 'frame> {
         self.framebuffer.clear(Colour::BLACK);
         self.depthbuffer.clear();
 
@@ -237,16 +237,16 @@ pub enum CullingMode {
 ///
 /// frame.finish();
 /// ```
-pub struct Frame<'renderer, 'viewport> {
+pub struct Frame<'renderer, 'viewport, 'frame> {
     renderer: &'renderer mut Renderer,
 
     viewport: &'viewport Viewport,
 
-    queued_draws: Vec<Box<dyn FrameCommand + 'renderer>>,
+    queued_draws: Vec<Box<dyn FrameCommand + 'frame>>,
 
     tile_binner: TileBinner,
 }
-impl<'renderer, 'viewport> Frame<'renderer, 'viewport> {
+impl<'renderer, 'viewport, 'frame> Frame<'renderer, 'viewport, 'frame> {
     /// Queues a draw call for execution during this frame.
     ///
     /// Draw calls are not rendered immediately. They are stored and processed when [`Frame::finish`]
@@ -272,12 +272,13 @@ impl<'renderer, 'viewport> Frame<'renderer, 'viewport> {
     ///     transform,
     /// );
     /// ```
-    pub fn draw<VS, FS>(
+    pub fn draw<'pipeline, VS, FS>(
         &mut self,
-        pipeline: &'renderer Pipeline<VS, FS>,
-        draw_call: DrawCall<'renderer, VS::Vertex, FS::Uniforms>,
+        pipeline: &'pipeline Pipeline<VS, FS>,
+        draw_call: DrawCall<'frame, VS::Vertex, FS::Uniforms>,
         vertex_uniforms: VS::Uniforms,
     ) where
+        'pipeline: 'frame,
         VS: VertexShader,
         FS: FragmentShader<VS::Varyings>,
         VS::Varyings: Interpolate + Send + Sync + 'static,
