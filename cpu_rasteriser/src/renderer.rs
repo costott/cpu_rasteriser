@@ -281,8 +281,6 @@ impl<'renderer, 'viewport, 'frame> Frame<'renderer, 'viewport, 'frame> {
         'pipeline: 'frame,
         VS: VertexShader,
         FS: FragmentShader<VS::Varyings>,
-        VS::Varyings: Interpolate + Send + Sync + 'static,
-        FS::Uniforms: Send + Sync + 'static,
     {
         self.queued_draws.push(Box::new(QueuedDraw {
             pipeline,
@@ -352,8 +350,6 @@ impl<VS, FS> FrameCommand for QueuedDraw<'_, VS, FS>
 where
     VS: VertexShader,
     FS: FragmentShader<VS::Varyings>,
-    VS::Varyings: Interpolate + Send + Sync + 'static,
-    FS::Uniforms: Send + Sync + 'static,
 {
     fn execute(self: Box<Self>, tile_binner: &mut TileBinner, viewport: &Viewport) {
         let uniforms = Arc::new(self.draw_call.fragment_uniforms);
@@ -499,7 +495,6 @@ impl<V, FS> RasterCommand for TriangleRasterCommand<V, FS>
 where
     V: Interpolate + Send + Sync + 'static,
     FS: FragmentShader<V> + Send + Sync + 'static,
-    FS::Uniforms: Send + Sync + 'static,
 {
     fn rasterise(
         self: Box<Self>,
