@@ -4,10 +4,8 @@ use cpu_rasteriser::prelude::*;
 
 use cpu_rasteriser::{
     graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, Pipeline, Renderer},
+    renderer::{CullingMode, Pipeline},
 };
-
-use minifb::{Key, Window, WindowOptions};
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
@@ -171,123 +169,144 @@ impl FragmentShader<PhongVaryings> for PhongFragmentShader {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut window = Window::new(
-        "Multi-Pipeline Demo - ESC to exit",
-        WIDTH,
-        HEIGHT,
-        WindowOptions::default(),
-    )
-    .unwrap_or_else(|e| {
-        panic!("{}", e);
-    });
-    window.set_target_fps(60);
+struct PipelinesApp {
+    camera: Camera,
+    camera_controller: OrbitControls,
+    lights: Vec<DirectionalLight>,
+    gouraud_teapot: Model<ObjVertex>,
+    phong_teapot: Model<ObjVertex>,
+    gouraud_pipeline: Pipeline<GouraudVertexShader, GouraudFragmentShader>,
+    phong_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
+    elapsed: f32,
+}
+impl PipelinesApp {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let gouraud_pipeline = Pipeline::new(GouraudVertexShader, GouraudFragmentShader)
+            .with_culling_mode(CullingMode::None);
 
-    let viewport = Viewport::new(WIDTH, HEIGHT);
+        let phong_pipeline = Pipeline::new(PhongVertexShader, PhongFragmentShader)
+            .with_culling_mode(CullingMode::None);
 
-    let mut renderer = Renderer::new(&viewport)?;
+        let camera = Camera::new(
+            Vec3::new(0.0, 0.75, 1.25),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Projection::Perspective(PerspectiveProjection::new(
+                90.0,
+                WIDTH as f32 / HEIGHT as f32,
+                0.01,
+                50.0,
+            )),
+        );
+        let controls = OrbitControls::new(&camera);
 
-    let gouraud_pipeline = Pipeline::new(GouraudVertexShader, GouraudFragmentShader)
-        .with_culling_mode(CullingMode::None);
+        let light = DirectionalLight::new(Vec3::new(0.0, -1.0, -1.0), Colour::from_u32(0xfffde8));
 
-    let phong_pipeline =
-        Pipeline::new(PhongVertexShader, PhongFragmentShader).with_culling_mode(CullingMode::None);
+        let mut gouraud_teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
+        gouraud_teapot.transform.scale = Vec3::ONE * 0.2;
+        gouraud_teapot.transform.rotation.y = 90_f32.to_radians();
+        gouraud_teapot.transform.position.z = -0.75;
+        gouraud_teapot.calculate_vertex_normals();
 
-    let mut camera = Camera::new(
-        Vec3::new(0.0, 0.75, 1.25),
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Projection::Perspective(PerspectiveProjection::new(
-            90.0,
-            WIDTH as f32 / HEIGHT as f32,
-            0.01,
-            50.0,
-        )),
-    );
-    let mut controls = OrbitControls::new(&camera);
+        let mut phong_teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
+        phong_teapot.transform.scale = Vec3::ONE * 0.2;
+        phong_teapot.transform.rotation.y = 90_f32.to_radians();
+        phong_teapot.transform.position.z = 0.75;
+        phong_teapot.calculate_vertex_normals();
 
-    let mut gouraud_teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
-    gouraud_teapot.transform.scale = Vec3::ONE * 0.2;
-    gouraud_teapot.transform.rotation.y = 90_f32.to_radians();
-    gouraud_teapot.transform.position.z = -0.75;
-    gouraud_teapot.calculate_vertex_normals();
+        // quick hack to add a material to the teapot, since the .obj file doesn't have any materials defined
+        let polished_brass = Material::new_simple(
+            "Polished Brass".to_string(),
+            Colour::from_u32(0x543808),
+            Colour::from_u32(0x8b7500),
+            Colour::from_u32(0xffffff),
+            21.8,
+        );
+        phong_teapot.materials = vec![polished_brass];
+        phong_teapot.meshes[0].material_index = Some(0);
 
-    let mut phong_teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
-    phong_teapot.transform.scale = Vec3::ONE * 0.2;
-    phong_teapot.transform.rotation.y = 90_f32.to_radians();
-    phong_teapot.transform.position.z = 0.75;
-    phong_teapot.calculate_vertex_normals();
+        Ok(Self {
+            camera,
+            camera_controller: controls,
+            lights: vec![light],
+            gouraud_teapot,
+            phong_teapot,
+            gouraud_pipeline,
+            phong_pipeline,
+            elapsed: 0.0,
+        })
+    }
+}
 
-    // quick hack to add a material to the teapot, since the .obj file doesn't have any materials defined
-    let polished_brass = Material::new_simple(
-        "Polished Brass".to_string(),
-        Colour::from_u32(0x543808),
-        Colour::from_u32(0x8b7500),
-        Colour::from_u32(0xffffff),
-        21.8,
-    );
-    phong_teapot.materials = vec![polished_brass];
-    phong_teapot.meshes[0].material_index = Some(0);
+impl Application for PipelinesApp {
+    fn update(&mut self, dt: f32) {
+        self.elapsed += dt;
+        self.gouraud_teapot.transform.rotation.y = 0.5 * self.elapsed;
+        self.phong_teapot.transform.rotation.y = 0.5 * self.elapsed;
 
-    let mut previous_time = std::time::Instant::now();
-    let mut t = 0.0;
+        self.camera_controller
+            .update_from_events(&mut self.camera, dt);
+    }
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        let dt = std::time::Instant::now()
-            .duration_since(previous_time)
-            .as_secs_f32();
-        previous_time = std::time::Instant::now();
+    fn event(&mut self, event: AppEvent, handle: &mut AppHandle) {
+        self.camera_controller.handle_event(event);
 
-        t += dt;
+        // Exit the application if the Escape key is pressed
+        if let AppEvent::Input(InputEvent::Key {
+            key: InputKey::Escape,
+            state: ButtonState::Released,
+        }) = event
+        {
+            handle.request_exit();
+        }
+    }
 
-        controls.update(&mut camera, &window, dt);
-        gouraud_teapot.transform.rotation.y = 0.5 * t;
-        phong_teapot.transform.rotation.y = 0.5 * t;
-
+    fn render<'frame>(
+        &'frame mut self,
+        frame: &mut cpu_rasteriser::renderer::Frame<'_, '_, 'frame>,
+        _viewport: &Viewport,
+    ) {
         let scene_uniforms = std::sync::Arc::new(SceneUniforms {
-            camera: camera.clone(),
-            lights: vec![DirectionalLight::new(
-                Vec3::new(0.0, -1.0, -1.0),
-                Colour::from_u32(0xfffde8),
-            )],
+            camera: self.camera.clone(),
+            lights: self.lights.clone(),
         });
 
         let gouraud_vertex_uniforms = GouraudVertexUniforms {
-            model_matrix: gouraud_teapot.transform.model_matrix(),
+            model_matrix: self.gouraud_teapot.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
 
         let phong_vertex_uniforms = PhongVertexUniforms {
-            model_matrix: phong_teapot.transform.model_matrix(),
+            model_matrix: self.phong_teapot.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
 
-        let mut frame = renderer.begin_frame(&viewport);
+        self.gouraud_teapot.draw_to_frame(
+            frame,
+            &self.gouraud_pipeline,
+            gouraud_vertex_uniforms.clone(),
+            |_| GouraudFragmentUniforms,
+        );
 
-        for draw_call in gouraud_teapot.draw_calls(|_| GouraudFragmentUniforms) {
-            frame.draw(
-                &gouraud_pipeline,
-                draw_call,
-                gouraud_vertex_uniforms.clone(),
-            );
-        }
-
-        for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
-            scene: scene_uniforms.clone(),
-            material: phong_teapot
-                .materials
-                .get(mesh.material_index.unwrap())
-                .cloned(),
-        }) {
-            frame.draw(&phong_pipeline, draw_call, phong_vertex_uniforms.clone());
-        }
-
-        frame.finish();
-
-        window
-            .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
-            .unwrap();
+        self.phong_teapot.draw_to_frame(
+            frame,
+            &self.phong_pipeline,
+            phong_vertex_uniforms.clone(),
+            |mesh| PhongFragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: self
+                    .phong_teapot
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            },
+        );
     }
+}
 
-    Ok(())
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    MinifbEngine::new()
+        .with_title("Pipelines Demo - ESC to exit")
+        .with_size(WIDTH, HEIGHT)
+        .run(PipelinesApp::new()?)
 }
