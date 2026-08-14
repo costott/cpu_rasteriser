@@ -204,7 +204,7 @@ impl Application for TestSceneApp {
             .update_from_events(&mut self.camera, dt);
     }
 
-    fn event(&mut self, event: AppEvent) {
+    fn event(&mut self, event: AppEvent, _handle: &mut AppHandle) {
         if let AppEvent::Input(InputEvent::Key {
             key: InputKey::Escape,
             state: ButtonState::Released,

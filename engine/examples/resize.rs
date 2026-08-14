@@ -111,7 +111,7 @@ impl Application for TeapotApp {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     MinifbEngine::new()
-        .with_title("Resize Demo - ESC to exit")
+        .with_title("Resize Demo")
         .with_size(WIDTH, HEIGHT)
         .with_options(minifb::WindowOptions {
             resize: true,
