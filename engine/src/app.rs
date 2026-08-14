@@ -44,7 +44,7 @@ pub trait Application {
 
     fn resize(&mut self, _width: u32, _height: u32) {}
 
-    fn event(&mut self, _event: AppEvent) {}
+    fn event(&mut self, _event: AppEvent, _handle: &mut AppHandle) {}
 
     fn window_state(&self) -> WindowState {
         WindowState::default()
@@ -59,4 +59,24 @@ pub enum AppEvent {
     Suspended,
     Resumed,
     Input(InputEvent),
+}
+
+pub struct AppHandle {
+    exit_requested: bool,
+}
+impl AppHandle {
+    pub fn request_exit(&mut self) {
+        self.exit_requested = true;
+    }
+
+    pub fn should_exit(&self) -> bool {
+        self.exit_requested
+    }
+}
+impl Default for AppHandle {
+    fn default() -> Self {
+        Self {
+            exit_requested: false,
+        }
+    }
 }

@@ -248,8 +248,17 @@ impl Application for PipelinesApp {
             .update_from_events(&mut self.camera, dt);
     }
 
-    fn event(&mut self, event: AppEvent) {
+    fn event(&mut self, event: AppEvent, handle: &mut AppHandle) {
         self.camera_controller.handle_event(event);
+
+        // Exit the application if the Escape key is pressed
+        if let AppEvent::Input(InputEvent::Key {
+            key: InputKey::Escape,
+            state: ButtonState::Released,
+        }) = event
+        {
+            handle.request_exit();
+        }
     }
 
     fn render<'frame>(

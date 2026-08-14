@@ -10,6 +10,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::Window;
 
+use crate::AppHandle;
 use crate::app::{AppEvent, Application, CursorGrab};
 use crate::input::{ButtonState, InputEvent, InputKey, InputState, MouseButton};
 
@@ -116,6 +117,7 @@ where
     A: Application,
 {
     app: A,
+    app_handle: AppHandle,
     context: softbuffer::Context<winit::event_loop::OwnedDisplayHandle>,
     renderer: Renderer,
     viewport: Viewport,
@@ -147,6 +149,7 @@ where
         let viewport = Viewport::new(640, 360);
         Ok(Self {
             app,
+            app_handle: AppHandle::default(),
             context,
             renderer: Renderer::new(&viewport)?,
             viewport,
@@ -159,7 +162,7 @@ where
 
     fn handle_input_event(&mut self, event: InputEvent) {
         self.input_state.handle_event(event);
-        self.app.event(AppEvent::Input(event));
+        self.app.event(AppEvent::Input(event), &mut self.app_handle);
     }
 
     fn apply_resize(&mut self, width: u32, height: u32) {
@@ -227,7 +230,7 @@ where
 
         apply_winit_window_state(self.app.window_state(), window.as_ref());
         self.state = AppState::Running { surface };
-        self.app.event(AppEvent::Resumed);
+        self.app.event(AppEvent::Resumed, &mut self.app_handle);
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -237,7 +240,7 @@ where
 
         let window = surface.window().clone();
         self.state = AppState::Suspended { window };
-        self.app.event(AppEvent::Suspended);
+        self.app.event(AppEvent::Suspended, &mut self.app_handle);
     }
 
     fn window_event(
@@ -267,19 +270,24 @@ where
                         surface.resize(width, height).unwrap();
                     }
                     self.apply_resize(width.get(), height.get());
-                    self.app.event(AppEvent::Resized {
-                        width: width.get(),
-                        height: height.get(),
-                    });
+                    self.app.event(
+                        AppEvent::Resized {
+                            width: width.get(),
+                            height: height.get(),
+                        },
+                        &mut self.app_handle,
+                    );
                 }
             }
             WindowEvent::RedrawRequested => {
                 self.render_frame();
-                self.app.event(AppEvent::RedrawRequested);
+                self.app
+                    .event(AppEvent::RedrawRequested, &mut self.app_handle);
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
-                self.app.event(AppEvent::CloseRequested);
+                self.app
+                    .event(AppEvent::CloseRequested, &mut self.app_handle);
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
@@ -334,7 +342,12 @@ where
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.app_handle.should_exit() {
+            event_loop.exit();
+            return;
+        }
+
         if let AppState::Running { surface } = &self.state {
             let window = surface.window().clone();
             apply_winit_window_state(self.app.window_state(), window.as_ref());
@@ -391,6 +404,7 @@ where
     A: Application,
 {
     app: A,
+    app_handle: AppHandle,
     renderer: Renderer,
     viewport: Viewport,
     window: minifb::Window,
@@ -425,6 +439,7 @@ where
         let viewport = Viewport::new(width, height);
         Ok(Self {
             app,
+            app_handle: AppHandle::default(),
             renderer: Renderer::new(&viewport)?,
             viewport,
             window,
@@ -437,7 +452,7 @@ where
 
     fn handle_input_event(&mut self, event: InputEvent) {
         self.input_state.handle_event(event);
-        self.app.event(AppEvent::Input(event));
+        self.app.event(AppEvent::Input(event), &mut self.app_handle);
     }
 
     fn emit_input_events(&mut self) {
@@ -528,10 +543,13 @@ where
         self.viewport = viewport;
         self.renderer.resize(&self.viewport);
         self.app.resize(width as u32, height as u32);
-        self.app.event(AppEvent::Resized {
-            width: width as u32,
-            height: height as u32,
-        });
+        self.app.event(
+            AppEvent::Resized {
+                width: width as u32,
+                height: height as u32,
+            },
+            &mut self.app_handle,
+        );
     }
 
     fn apply_window_state(&mut self) {
@@ -558,17 +576,22 @@ where
     }
 
     fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.app.event(AppEvent::Resumed);
+        self.app.event(AppEvent::Resumed, &mut self.app_handle);
 
-        // TODO: remove hard-coding of escape key to exit
-        while self.window.is_open() && !self.window.is_key_down(minifb::Key::Escape) {
+        while self.window.is_open() {
             self.emit_input_events();
+
+            if self.app_handle.should_exit() {
+                break;
+            }
+
             self.apply_resize();
             self.apply_window_state();
             self.render_frame()?;
         }
 
-        self.app.event(AppEvent::CloseRequested);
+        self.app
+            .event(AppEvent::CloseRequested, &mut self.app_handle);
         Ok(())
     }
 }
