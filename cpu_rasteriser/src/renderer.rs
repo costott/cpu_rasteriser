@@ -507,11 +507,10 @@ where
 
             fragment.position.y -= bounds.min_y as f32;
 
-            let colour = self.shader.shade(fragment.varyings, self.uniforms.as_ref());
-
             if fragment.depth < depthbuffer.get(fragment.position) {
-                framebuffer.set_pixel(fragment.position, colour);
+                let colour = self.shader.shade(fragment.varyings, self.uniforms.as_ref());
 
+                framebuffer.set_pixel(fragment.position, colour);
                 depthbuffer.set_depth(fragment.position, fragment.depth);
             }
         });

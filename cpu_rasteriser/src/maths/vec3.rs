@@ -24,10 +24,6 @@ impl Vec3 {
         Self { x, y, z }
     }
 
-    pub fn interpolate(&self, other: &Self, t: f32) -> Self {
-        *self * (1.0 - t) + *other * t
-    }
-
     pub fn dot(&self, other: &Self) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
@@ -159,6 +155,8 @@ impl From<(i32, i32, i32)> for Vec3 {
 #[cfg(test)]
 mod tests {
     use super::Vec3;
+
+    use crate::graphics::interpolate::Interpolate;
 
     const EPSILON: f32 = 1e-6;
 
