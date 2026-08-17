@@ -21,16 +21,7 @@ impl Camera {
     }
 
     pub fn view_matrix(&self) -> Mat4 {
-        let n = (self.eye - self.lookat).normalise();
-        let u = self.up.cross(&n).normalise();
-        let v = n.cross(&u);
-
-        Mat4::new([
-            [u.x, u.y, u.z, -u.dot(&self.eye)],
-            [v.x, v.y, v.z, -v.dot(&self.eye)],
-            [n.x, n.y, n.z, -n.dot(&self.eye)],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
+        Mat4::look_at(self.eye, self.lookat, self.up)
     }
 
     pub fn projection_matrix(&self) -> Mat4 {
