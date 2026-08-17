@@ -7,7 +7,7 @@ use cpu_rasteriser::graphics::vertex_shader::VertexShader;
 use cpu_rasteriser::renderer::DrawCall;
 use cpu_rasteriser::renderer::{Frame, Pipeline};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Model<V: Clone> {
     pub meshes: Vec<Mesh<V>>,
     pub materials: Vec<Material>,
