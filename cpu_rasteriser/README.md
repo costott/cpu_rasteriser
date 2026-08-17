@@ -21,7 +21,7 @@ The renderer provides a low-level rendering API inspired by modern graphics APIs
 cargo run -p cpu_rasteriser --example triangle
 cargo run -p cpu_rasteriser --example pipelines
 cargo run -p cpu_rasteriser --example mandelbrot_shader
-cargo run -p cpu_rasteriser --example mandelbulb
+cargo run --release -p cpu_rasteriser --example mandelbulb
 cargo run -p cpu_rasteriser --example winit
 ```
 
