@@ -171,7 +171,7 @@ impl Renderer {
 ///
 /// - A vertex shader, responsible for transforming input vertices and producing interpolated data.
 /// - A fragment shader, responsible for calculating the final colour of each rasterised fragment.
-/// - Rasterisation state such as back-face culling configuration.
+/// - Rasterisation state such as back-face culling, blending, and depth testing.
 ///
 /// Pipelines are intended to be created once and reused across multiple frames.
 pub struct Pipeline<VS, FS>
@@ -179,10 +179,16 @@ where
     VS: VertexShader,
     FS: FragmentShader<VS::Varyings>,
 {
-    pub vertex_shader: VS,
-    pub fragment_shader: Arc<FS>,
+    vertex_shader: VS,
+    fragment_shader: Arc<FS>,
 
-    pub culling_mode: CullingMode,
+    culling_mode: CullingMode,
+    /// Optional blending configuration.
+    ///
+    /// When `None`, the source colour replaces the destination colour.
+    /// When `Some`, the configured blend factors and operation are applied.
+    blend_state: Option<BlendState>,
+    depth_state: DepthState,
 }
 impl<VS, FS> Pipeline<VS, FS>
 where
@@ -194,11 +200,35 @@ where
             vertex_shader,
             fragment_shader: Arc::new(fragment_shader),
             culling_mode: CullingMode::BackFace,
+            blend_state: None,
+            depth_state: DepthState::DEFAULT,
         }
     }
 
+    /// Configures the back-face culling mode used by the pipeline.
     pub fn with_culling_mode(mut self, culling_mode: CullingMode) -> Self {
         self.culling_mode = culling_mode;
+        self
+    }
+
+    /// Configures the blending state used by the pipeline.
+    ///
+    /// When set, fragment colours are combined with the existing framebuffer colour
+    /// according to the provided [`BlendState`].
+    pub fn with_blend_state(mut self, blend_state: BlendState) -> Self {
+        self.blend_state = Some(blend_state);
+        self
+    }
+
+    /// Removes any blending state from the pipeline, causing fragment colours to replace
+    /// the existing framebuffer colour.
+    pub fn without_blend_state(mut self) -> Self {
+        self.blend_state = None;
+        self
+    }
+
+    pub fn with_depth_state(mut self, depth_state: DepthState) -> Self {
+        self.depth_state = depth_state;
         self
     }
 }
@@ -213,6 +243,141 @@ pub enum CullingMode {
     None,
     /// Triangles facing away from the camera are culled.
     BackFace,
+}
+
+/// Rendering depth-test and depth-write configuration.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DepthState {
+    pub test_enabled: bool,
+    pub write_enabled: bool,
+}
+impl DepthState {
+    /// Default depth state with depth testing and depth writes enabled.
+    pub const DEFAULT: DepthState = DepthState {
+        test_enabled: true,
+        write_enabled: true,
+    };
+
+    /// Depth testing enabled with depth writes disabled.
+    pub const READ_ONLY: DepthState = DepthState {
+        test_enabled: true,
+        write_enabled: false,
+    };
+
+    /// Depth testing disabled with depth writes enabled.
+    pub const WRITE_ONLY: DepthState = DepthState {
+        test_enabled: false,
+        write_enabled: true,
+    };
+
+    /// Disables both depth testing and depth writes.
+    pub const DISABLED: DepthState = DepthState {
+        test_enabled: false,
+        write_enabled: false,
+    };
+}
+
+/// Determines how a source or destination colour contributes to the blend result.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BlendFactor {
+    Zero,
+    One,
+    SrcColor,
+    OneMinusSrcColor,
+    DstColor,
+    OneMinusDstColor,
+    SrcAlpha,
+    OneMinusSrcAlpha,
+    DstAlpha,
+    OneMinusDstAlpha,
+}
+impl BlendFactor {
+    /// Resolves this blend factor to a colour value using the source and destination colours.
+    fn resolve(&self, src: Colour, dst: Colour) -> Colour {
+        match self {
+            BlendFactor::Zero => Colour::BLACK,
+            BlendFactor::One => Colour::WHITE,
+            BlendFactor::SrcColor => src,
+            BlendFactor::OneMinusSrcColor => Colour::WHITE - src,
+            BlendFactor::DstColor => dst,
+            BlendFactor::OneMinusDstColor => Colour::WHITE - dst,
+            BlendFactor::SrcAlpha => Colour::new(src.a, src.a, src.a, src.a),
+            BlendFactor::OneMinusSrcAlpha => {
+                let a = 255 - src.a;
+                Colour::new(a, a, a, a)
+            }
+            BlendFactor::DstAlpha => Colour::new(dst.a, dst.a, dst.a, dst.a),
+            BlendFactor::OneMinusDstAlpha => {
+                let a = 255 - dst.a;
+                Colour::new(a, a, a, a)
+            }
+        }
+    }
+}
+
+/// Determines the arithmetic operation used to combine the scaled source and destination colours.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BlendOp {
+    Add,
+    Subtract,
+    ReverseSubtract,
+    Min,
+    Max,
+}
+
+/// A fixed-function blending configuration.
+///
+/// A blend state determines how a fragment's source colour is combined with
+/// the existing destination colour in the framebuffer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlendState {
+    pub src_factor: BlendFactor,
+    pub dst_factor: BlendFactor,
+    pub op: BlendOp,
+}
+impl BlendState {
+    /// Common alpha blending configuration.
+    ///
+    /// Uses source alpha for the source factor and one minus source alpha for
+    /// the destination factor.
+    pub const ALPHA_BLEND: BlendState = BlendState {
+        src_factor: BlendFactor::SrcAlpha,
+        dst_factor: BlendFactor::OneMinusSrcAlpha,
+        op: BlendOp::Add,
+    };
+
+    /// Common additive blending configuration.
+    ///
+    /// Adds the source and destination colours together.
+    pub const ADDITIVE: BlendState = BlendState {
+        src_factor: BlendFactor::One,
+        dst_factor: BlendFactor::One,
+        op: BlendOp::Add,
+    };
+
+    /// Applies this blend state to a source and destination colour.
+    fn apply(&self, src: Colour, dst: Colour) -> Colour {
+        let src_term = src * self.src_factor.resolve(src, dst);
+        let dst_term = dst * self.dst_factor.resolve(src, dst);
+
+        match self.op {
+            BlendOp::Add => src_term + dst_term,
+            BlendOp::Subtract => src_term - dst_term,
+            BlendOp::ReverseSubtract => dst_term - src_term,
+            BlendOp::Min => Colour::new(
+                src_term.r.min(dst_term.r),
+                src_term.g.min(dst_term.g),
+                src_term.b.min(dst_term.b),
+                src_term.a.min(dst_term.a),
+            ),
+            BlendOp::Max => Colour::new(
+                src_term.r.max(dst_term.r),
+                src_term.g.max(dst_term.g),
+                src_term.b.max(dst_term.b),
+                src_term.a.max(dst_term.a),
+            ),
+        }
+    }
 }
 
 /// A single rendering frame.
@@ -368,6 +533,8 @@ where
                     triangle: triangle.clone(),
                     uniforms: uniforms.clone(),
                     shader: self.pipeline.fragment_shader.clone(),
+                    blend_state: self.pipeline.blend_state,
+                    depth_state: self.pipeline.depth_state,
                 });
 
                 tile_binner.bin_command(command);
@@ -394,9 +561,9 @@ pub struct Primitive<'a, V>
 where
     V: Clone,
 {
-    pub vertices: &'a [V],
-    pub indices: &'a [u32],
-    pub primitive_mode: PrimitiveMode,
+    vertices: &'a [V],
+    indices: &'a [u32],
+    primitive_mode: PrimitiveMode,
 }
 impl<'a, V> Primitive<'a, V>
 where
@@ -432,8 +599,8 @@ pub struct DrawCall<'a, V, U>
 where
     V: Clone,
 {
-    pub primitive: Primitive<'a, V>,
-    pub fragment_uniforms: U,
+    primitive: Primitive<'a, V>,
+    fragment_uniforms: U,
 }
 impl<'a, V, U> DrawCall<'a, V, U>
 where
@@ -482,6 +649,9 @@ where
     uniforms: Arc<FS::Uniforms>,
 
     shader: Arc<FS>,
+
+    blend_state: Option<BlendState>,
+    depth_state: DepthState,
 }
 impl<V, FS> RasterCommand for TriangleRasterCommand<V, FS>
 where
@@ -496,13 +666,25 @@ where
     ) {
         self.triangle.rasterise_segment(bounds, |mut fragment| {
             fragment.position.x -= bounds.min_x as f32;
-
             fragment.position.y -= bounds.min_y as f32;
 
-            if fragment.depth < depthbuffer.get(fragment.position) {
-                let colour = self.shader.shade(fragment.varyings, self.uniforms.as_ref());
+            if self.depth_state.test_enabled && fragment.depth >= depthbuffer.get(fragment.position)
+            {
+                return;
+            }
 
-                framebuffer.set_pixel(fragment.position, colour);
+            let src = self.shader.shade(fragment.varyings, self.uniforms.as_ref());
+            let dst = framebuffer
+                .get_pixel(fragment.position)
+                .unwrap_or(Colour::BLACK);
+
+            let colour = match self.blend_state {
+                Some(blend_state) => blend_state.apply(src, dst),
+                None => src,
+            };
+            framebuffer.set_pixel(fragment.position, colour);
+
+            if self.depth_state.write_enabled {
                 depthbuffer.set_depth(fragment.position, fragment.depth);
             }
         });
@@ -626,4 +808,151 @@ pub struct Rect {
     pub min_y: i32,
     pub max_x: i32,
     pub max_y: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blend_state_alpha_blend() {
+        let state = BlendState::ALPHA_BLEND;
+
+        let src = Colour::new(255, 0, 0, 128);
+        let dst = Colour::new(0, 0, 255, 255);
+
+        let result = state.apply(src, dst);
+
+        assert_eq!(result.r, 128);
+        assert_eq!(result.g, 0);
+        assert_eq!(result.b, 127);
+    }
+
+    #[test]
+    fn blend_state_additive() {
+        let state = BlendState::ADDITIVE;
+
+        let src = Colour::new(100, 50, 25, 128);
+        let dst = Colour::new(20, 30, 40, 255);
+
+        let result = state.apply(src, dst);
+
+        assert_eq!(result.r, 120);
+        assert_eq!(result.g, 80);
+        assert_eq!(result.b, 65);
+        assert_eq!(result.a, 255);
+    }
+
+    #[test]
+    fn blend_state_subtract() {
+        let state = BlendState {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::One,
+            op: BlendOp::Subtract,
+        };
+
+        let src = Colour::new(100, 150, 200, 255);
+        let dst = Colour::new(20, 40, 60, 255);
+
+        let result = state.apply(src, dst);
+
+        assert_eq!(result.r, 80);
+        assert_eq!(result.g, 110);
+        assert_eq!(result.b, 140);
+        assert_eq!(result.a, 0);
+    }
+
+    #[test]
+    fn blend_state_reverse_subtract() {
+        let state = BlendState {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::One,
+            op: BlendOp::ReverseSubtract,
+        };
+
+        let src = Colour::new(20, 40, 60, 255);
+        let dst = Colour::new(100, 150, 200, 255);
+
+        let result = state.apply(src, dst);
+
+        assert_eq!(result.r, 80);
+        assert_eq!(result.g, 110);
+        assert_eq!(result.b, 140);
+        assert_eq!(result.a, 0);
+    }
+
+    #[test]
+    fn blend_state_min() {
+        let state = BlendState {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::One,
+            op: BlendOp::Min,
+        };
+
+        let src = Colour::new(100, 50, 200, 128);
+        let dst = Colour::new(20, 100, 150, 255);
+
+        let result = state.apply(src, dst);
+
+        assert_eq!(result, Colour::new(20, 50, 150, 128));
+    }
+
+    #[test]
+    fn blend_state_max() {
+        let state = BlendState {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::One,
+            op: BlendOp::Max,
+        };
+
+        let src = Colour::new(100, 50, 200, 128);
+        let dst = Colour::new(20, 100, 150, 255);
+
+        let result = state.apply(src, dst);
+
+        assert_eq!(result, Colour::new(100, 100, 200, 255));
+    }
+
+    #[test]
+    fn blend_factor_resolve() {
+        let src = Colour::new(100, 150, 200, 128);
+        let dst = Colour::new(20, 40, 60, 64);
+
+        assert_eq!(BlendFactor::Zero.resolve(src, dst), Colour::BLACK);
+        assert_eq!(BlendFactor::One.resolve(src, dst), Colour::WHITE);
+
+        assert_eq!(BlendFactor::SrcColor.resolve(src, dst), src);
+
+        assert_eq!(
+            BlendFactor::OneMinusSrcColor.resolve(src, dst),
+            Colour::new(155, 105, 55, 127)
+        );
+
+        assert_eq!(BlendFactor::DstColor.resolve(src, dst), dst);
+
+        assert_eq!(
+            BlendFactor::OneMinusDstColor.resolve(src, dst),
+            Colour::new(235, 215, 195, 191)
+        );
+
+        assert_eq!(
+            BlendFactor::SrcAlpha.resolve(src, dst),
+            Colour::new(128, 128, 128, 128)
+        );
+
+        assert_eq!(
+            BlendFactor::OneMinusSrcAlpha.resolve(src, dst),
+            Colour::new(127, 127, 127, 127)
+        );
+
+        assert_eq!(
+            BlendFactor::DstAlpha.resolve(src, dst),
+            Colour::new(64, 64, 64, 64)
+        );
+
+        assert_eq!(
+            BlendFactor::OneMinusDstAlpha.resolve(src, dst),
+            Colour::new(191, 191, 191, 191)
+        );
+    }
 }

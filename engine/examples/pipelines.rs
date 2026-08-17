@@ -4,7 +4,7 @@ use cpu_rasteriser::prelude::*;
 
 use cpu_rasteriser::{
     graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, Pipeline},
+    renderer::{BlendState, CullingMode, DepthState, Pipeline},
 };
 
 const WIDTH: usize = 640;
@@ -173,10 +173,17 @@ struct PipelinesApp {
     camera: Camera,
     camera_controller: OrbitControls,
     lights: Vec<DirectionalLight>,
+
     gouraud_teapot: Model<ObjVertex>,
     phong_teapot: Model<ObjVertex>,
+    alpha_teapot: Model<ObjVertex>,
+    additive_teapot: Model<ObjVertex>,
+
     gouraud_pipeline: Pipeline<GouraudVertexShader, GouraudFragmentShader>,
     phong_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
+    alpha_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
+    additive_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
+
     elapsed: f32,
 }
 impl PipelinesApp {
@@ -187,8 +194,18 @@ impl PipelinesApp {
         let phong_pipeline = Pipeline::new(PhongVertexShader, PhongFragmentShader)
             .with_culling_mode(CullingMode::None);
 
+        let alpha_pipeline = Pipeline::new(PhongVertexShader, PhongFragmentShader)
+            .with_culling_mode(CullingMode::None)
+            .with_depth_state(DepthState::READ_ONLY)
+            .with_blend_state(BlendState::ALPHA_BLEND);
+
+        let additive_pipeline = Pipeline::new(PhongVertexShader, PhongFragmentShader)
+            .with_culling_mode(CullingMode::None)
+            .with_depth_state(DepthState::READ_ONLY)
+            .with_blend_state(BlendState::ADDITIVE);
+
         let camera = Camera::new(
-            Vec3::new(0.0, 0.75, 1.25),
+            Vec3::new(-0.01, 1.0, 0.8),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
             Projection::Perspective(PerspectiveProjection::new(
@@ -202,17 +219,19 @@ impl PipelinesApp {
 
         let light = DirectionalLight::new(Vec3::new(0.0, -1.0, -1.0), Colour::from_u32(0xfffde8));
 
-        let mut gouraud_teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
-        gouraud_teapot.transform.scale = Vec3::ONE * 0.2;
-        gouraud_teapot.transform.rotation.y = 90_f32.to_radians();
-        gouraud_teapot.transform.position.z = -0.75;
-        gouraud_teapot.calculate_vertex_normals();
+        let mut teapot_model = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
+        teapot_model.transform.scale = Vec3::ONE * 0.2;
+        teapot_model.calculate_vertex_normals();
 
-        let mut phong_teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
-        phong_teapot.transform.scale = Vec3::ONE * 0.2;
-        phong_teapot.transform.rotation.y = 90_f32.to_radians();
-        phong_teapot.transform.position.z = 0.75;
-        phong_teapot.calculate_vertex_normals();
+        let mut gouraud_teapot = teapot_model.clone();
+        gouraud_teapot.transform.position = Vec3::new(0.0, 0.0, -0.75);
+
+        let mut phong_teapot = teapot_model.clone();
+        phong_teapot.transform.position = Vec3::new(0.0, 0.0, 0.75);
+
+        let mut alpha_teapot = teapot_model.clone();
+
+        let mut additive_teapot = teapot_model.clone();
 
         // quick hack to add a material to the teapot, since the .obj file doesn't have any materials defined
         let polished_brass = Material::new_simple(
@@ -225,14 +244,41 @@ impl PipelinesApp {
         phong_teapot.materials = vec![polished_brass];
         phong_teapot.meshes[0].material_index = Some(0);
 
+        let alpha_material = Material::new_simple(
+            "Transparent Red".to_string(),
+            Colour::from_f32(0.15, 0.0, 0.0, 0.5),
+            Colour::from_f32(1.0, 0.05, 0.05, 0.5),
+            Colour::from_f32(1.0, 0.2, 0.2, 0.5),
+            32.0,
+        );
+        alpha_teapot.materials = vec![alpha_material];
+        alpha_teapot.meshes[0].material_index = Some(0);
+
+        let additive_material = Material::new_simple(
+            "Additive Blue".to_string(),
+            Colour::from_f32(0.0, 0.05, 0.15, 0.6),
+            Colour::from_f32(0.0, 0.4, 1.0, 0.6),
+            Colour::from_f32(0.2, 0.7, 1.0, 0.6),
+            32.0,
+        );
+        additive_teapot.materials = vec![additive_material];
+        additive_teapot.meshes[0].material_index = Some(0);
+
         Ok(Self {
             camera,
             camera_controller: controls,
             lights: vec![light],
+
             gouraud_teapot,
             phong_teapot,
+            alpha_teapot,
+            additive_teapot,
+
             gouraud_pipeline,
             phong_pipeline,
+            alpha_pipeline,
+            additive_pipeline,
+
             elapsed: 0.0,
         })
     }
@@ -241,8 +287,25 @@ impl PipelinesApp {
 impl Application for PipelinesApp {
     fn update(&mut self, dt: f32) {
         self.elapsed += dt;
+
         self.gouraud_teapot.transform.rotation.y = 0.5 * self.elapsed;
         self.phong_teapot.transform.rotation.y = 0.5 * self.elapsed;
+        self.alpha_teapot.transform.rotation.y = -0.3 * self.elapsed;
+        self.additive_teapot.transform.rotation.y = -0.3 * self.elapsed;
+
+        // make the alpha and addtive teapot rotate around the origin
+        let radius = 1.0;
+        let speed = 0.1;
+        let angle = self.elapsed * speed;
+        let alpha_angle = angle;
+        let additive_angle = angle + std::f32::consts::PI;
+        self.alpha_teapot.transform.position =
+            Vec3::new(radius * alpha_angle.cos(), 0.0, radius * alpha_angle.sin());
+        self.additive_teapot.transform.position = Vec3::new(
+            radius * additive_angle.cos(),
+            0.0,
+            radius * additive_angle.sin(),
+        );
 
         self.camera_controller
             .update_from_events(&mut self.camera, dt);
@@ -296,6 +359,40 @@ impl Application for PipelinesApp {
                 scene: scene_uniforms.clone(),
                 material: self
                     .phong_teapot
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            },
+        );
+
+        self.alpha_teapot.draw_to_frame(
+            frame,
+            &self.alpha_pipeline,
+            PhongVertexUniforms {
+                model_matrix: self.alpha_teapot.transform.model_matrix(),
+                scene: scene_uniforms.clone(),
+            },
+            |mesh| PhongFragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: self
+                    .alpha_teapot
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            },
+        );
+
+        self.additive_teapot.draw_to_frame(
+            frame,
+            &self.additive_pipeline,
+            PhongVertexUniforms {
+                model_matrix: self.additive_teapot.transform.model_matrix(),
+                scene: scene_uniforms.clone(),
+            },
+            |mesh| PhongFragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: self
+                    .additive_teapot
                     .materials
                     .get(mesh.material_index.unwrap())
                     .cloned(),
