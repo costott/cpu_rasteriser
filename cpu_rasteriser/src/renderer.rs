@@ -364,14 +364,13 @@ where
             );
 
             for triangle in triangles {
-                tile_binner.bin_triangle(
-                    triangle.clone(),
-                    Box::new(TriangleRasterCommand {
-                        triangle,
-                        uniforms: uniforms.clone(),
-                        shader: self.pipeline.fragment_shader.clone(),
-                    }),
-                );
+                let command = Arc::new(TriangleRasterCommand {
+                    triangle: triangle.clone(),
+                    uniforms: uniforms.clone(),
+                    shader: self.pipeline.fragment_shader.clone(),
+                });
+
+                tile_binner.bin_command(command);
             }
         }
     }
@@ -466,18 +465,11 @@ where
 }
 
 trait RasterCommand: Send + Sync {
-    fn rasterise(
-        self: Box<Self>,
-        framebuffer: &mut FrameBuffer,
-        depthbuffer: &mut DepthBuffer,
-        bounds: Rect,
-    );
-    fn clone_box(&self) -> Box<dyn RasterCommand>;
-}
-impl Clone for Box<dyn RasterCommand> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
+    fn rasterise(&self, framebuffer: &mut FrameBuffer, depthbuffer: &mut DepthBuffer, bounds: Rect);
+    /// Returns the axis-aligned bounding box of the raster command in pixel space.
+    fn bounding_box(&self) -> (Vec2, Vec2);
+    /// Returns true if the raster command intersects the given rectangle in pixel space.
+    fn intersects(&self, rect: Rect) -> bool;
 }
 
 struct TriangleRasterCommand<V, FS>
@@ -497,7 +489,7 @@ where
     FS: FragmentShader<V> + Send + Sync + 'static,
 {
     fn rasterise(
-        self: Box<Self>,
+        &self,
         framebuffer: &mut FrameBuffer,
         depthbuffer: &mut DepthBuffer,
         bounds: Rect,
@@ -507,22 +499,21 @@ where
 
             fragment.position.y -= bounds.min_y as f32;
 
-            let colour = self.shader.shade(fragment.varyings, self.uniforms.as_ref());
-
             if fragment.depth < depthbuffer.get(fragment.position) {
-                framebuffer.set_pixel(fragment.position, colour);
+                let colour = self.shader.shade(fragment.varyings, self.uniforms.as_ref());
 
+                framebuffer.set_pixel(fragment.position, colour);
                 depthbuffer.set_depth(fragment.position, fragment.depth);
             }
         });
     }
 
-    fn clone_box(&self) -> Box<dyn RasterCommand> {
-        Box::new(TriangleRasterCommand {
-            triangle: self.triangle.clone(),
-            uniforms: self.uniforms.clone(),
-            shader: self.shader.clone(),
-        })
+    fn bounding_box(&self) -> (Vec2, Vec2) {
+        self.triangle.bounding_box()
+    }
+
+    fn intersects(&self, rect: Rect) -> bool {
+        self.triangle.intersects_rect(rect)
     }
 }
 
@@ -560,7 +551,7 @@ impl TileBinner {
                         max_y: ((tile_y + 1) * Self::TILE_SIZE as usize) as i32,
                     },
 
-                    triangles: Vec::new(),
+                    commands: Vec::new(),
                 });
             }
         }
@@ -572,12 +563,8 @@ impl TileBinner {
         }
     }
 
-    fn bin_triangle(
-        &mut self,
-        triangle: Triangle2D<impl Interpolate>,
-        command: Box<dyn RasterCommand>,
-    ) {
-        let (mins, maxs) = triangle.bounding_box();
+    fn bin_command(&mut self, command: Arc<dyn RasterCommand>) {
+        let (mins, maxs) = command.bounding_box();
 
         let min_tile_x = (mins.x as i32 / Self::TILE_SIZE).max(0);
 
@@ -591,8 +578,8 @@ impl TileBinner {
             for x in min_tile_x..=max_tile_x {
                 let index = y as usize * self.tiles_x + x as usize;
 
-                if triangle.intersects_rect(self.tiles[index].bounds) {
-                    self.tiles[index].triangles.push(command.clone());
+                if command.intersects(self.tiles[index].bounds) {
+                    self.tiles[index].commands.push(command.clone());
                 }
             }
         }
@@ -602,7 +589,7 @@ impl TileBinner {
 struct Tile {
     bounds: Rect,
 
-    triangles: Vec<Box<dyn RasterCommand>>,
+    commands: Vec<Arc<dyn RasterCommand>>,
 }
 
 fn render_tile(tile: Tile) -> TileResult {
@@ -614,8 +601,8 @@ fn render_tile(tile: Tile) -> TileResult {
 
     let mut depthbuffer = DepthBuffer::new(width, height);
 
-    for triangle in tile.triangles {
-        triangle.rasterise(&mut framebuffer, &mut depthbuffer, tile.bounds);
+    for command in tile.commands {
+        command.rasterise(&mut framebuffer, &mut depthbuffer, tile.bounds);
     }
 
     TileResult {
