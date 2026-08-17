@@ -59,7 +59,7 @@ The `engine` crate builds on top of the renderer, providing higher-level abstrac
 
 This separation mirrors the design of modern graphics ecosystems, where rendering APIs remain independent of engine-level concepts.
 
---
+---
 
 ## Features
 
@@ -194,7 +194,8 @@ including:
 - Vertex shader
 - Fragment shader
 - Culling mode
-- Future pipeline state such as depth testing and blending
+- Colour blending state
+- Depth testing state
 
 Frames act as temporary command buffers. Draw calls are recorded during a frame and executed when the frame is submitted.
 
@@ -265,7 +266,6 @@ Potential extensions:
 - Physically based rendering
 - SIMD optimisation
 - Render passes and framebuffer attachments
-- Pipeline state objects with configurable blending and depth states
 
 ---
 
