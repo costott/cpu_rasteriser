@@ -1,6 +1,6 @@
 use cpu_rasteriser::prelude::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Mesh<V: Clone> {
     /// The vertices of the mesh.
     pub vertices: Vec<V>,
