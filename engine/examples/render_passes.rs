@@ -155,12 +155,12 @@ impl FragmentShader<CloudVaryings> for CloudFragmentShader {
         let cloud = (n1 + n2 + 0.5).clamp(0.0, 1.0);
 
         let sky = Colour::lerp(
-            &Colour::from_u32(0x0d1e2f),
-            &Colour::from_u32(0x4d7ebf),
+            &Colour::new(0.05, 0.1, 0.2, 1.0),
+            &Colour::new(0.3, 0.5, 0.7, 1.0),
             uv.y,
         );
 
-        let cloud_colour = Colour::from_u32(0xf2f7ff);
+        let cloud_colour = Colour::new(0.95, 0.97, 1.0, 1.0);
 
         Colour::lerp(&sky, &cloud_colour, cloud * 0.75)
     }
@@ -240,12 +240,7 @@ impl FragmentShader<PostProcessVaryings> for VignetteFragmentShader {
 
         let vignette_strength = 1.0 - distance * 1.5;
 
-        Colour {
-            r: (source.r as f32 * vignette_strength) as u8,
-            g: (source.g as f32 * vignette_strength) as u8,
-            b: (source.b as f32 * vignette_strength) as u8,
-            a: source.a,
-        }
+        source * vignette_strength
     }
 }
 
@@ -262,12 +257,7 @@ impl FragmentShader<PostProcessVaryings> for GreyscaleFragmentShader {
 
         let luminance = colour.r as f32 * 0.299 + colour.g as f32 * 0.587 + colour.b as f32 * 0.114;
 
-        Colour {
-            r: luminance as u8,
-            g: luminance as u8,
-            b: luminance as u8,
-            a: colour.a,
-        }
+        Colour::new(luminance, luminance, luminance, colour.a)
     }
 }
 
@@ -282,12 +272,7 @@ impl FragmentShader<PostProcessVaryings> for InvertFragmentShader {
     ) -> Colour {
         let colour = uniforms.texture.sample_linear_clamp(varyings.uv);
 
-        Colour {
-            r: 255 - colour.r,
-            g: 255 - colour.g,
-            b: 255 - colour.b,
-            a: colour.a,
-        }
+        Colour::new(1.0 - colour.r, 1.0 - colour.g, 1.0 - colour.b, colour.a)
     }
 }
 
@@ -345,12 +330,7 @@ impl FragmentShader<PostProcessVaryings> for NaiveGaussianBlurFragmentShader {
             b += sample_colour.b as f32 * weight;
         }
 
-        Colour {
-            r: r as u8,
-            g: g as u8,
-            b: b as u8,
-            a: 255,
-        }
+        Colour::new(r, g, b, 1.0)
     }
 }
 
@@ -393,8 +373,7 @@ impl FragmentShader<PostProcessVaryings> for SobelEdgeDetectionFragmentShader {
             let sample_uv = uv + offsets[i] * texel_size;
             let sample = uniforms.texture.sample_nearest_clamp(sample_uv);
 
-            let luminance =
-                0.299 * sample.r as f32 + 0.587 * sample.g as f32 + 0.114 * sample.b as f32;
+            let luminance = sample.luminance();
 
             gradient_x += luminance * gx[i];
             gradient_y += luminance * gy[i];
@@ -402,9 +381,9 @@ impl FragmentShader<PostProcessVaryings> for SobelEdgeDetectionFragmentShader {
 
         let magnitude = (gradient_x * gradient_x + gradient_y * gradient_y).sqrt();
 
-        let magnitude = magnitude.clamp(0.0, 255.0) as u8;
+        let magnitude = magnitude.clamp(0.0, 1.0);
 
-        Colour::new(magnitude, magnitude, magnitude, 255)
+        Colour::new(magnitude, magnitude, magnitude, 1.0)
     }
 }
 

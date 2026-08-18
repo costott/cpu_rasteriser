@@ -10,16 +10,16 @@ use engine::components::texture::{FilterMode, TextureSampler, WrapMode};
 const SCREEN_WIDTH: usize = 1920;
 const SCREEN_HEIGHT: usize = 1080;
 
-fn make_texture(width: u32, height: u32) -> Arc<[u32]> {
+fn make_texture(width: u32, height: u32) -> Arc<[Colour]> {
     let mut pixels = Vec::with_capacity((width * height) as usize);
 
     for y in 0..height {
         for x in 0..width {
-            let r = x * 255 / width;
-            let g = y * 255 / height;
-            let b = (x + y) * 255 / (width + height);
+            let r = x as f32 * 1.0 / width as f32;
+            let g = y as f32 * 1.0 / height as f32;
+            let b = (x + y) as f32 * 1.0 / (width + height) as f32;
 
-            let colour = (255 << 24) | (r << 16) | (g << 8) | b;
+            let colour = Colour::new(r, g, b, 1.0);
 
             pixels.push(colour);
         }
@@ -100,7 +100,7 @@ fn benchmark_sampling(c: &mut Criterion) {
 
     group.bench_function("nearest_512", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler_512_nearest.sample(black_box(uv));
@@ -112,7 +112,7 @@ fn benchmark_sampling(c: &mut Criterion) {
 
     group.bench_function("linear_512", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler_512_linear.sample(black_box(uv));
@@ -124,7 +124,7 @@ fn benchmark_sampling(c: &mut Criterion) {
 
     group.bench_function("nearest_1024", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler_1024_nearest.sample(black_box(uv));
@@ -136,7 +136,7 @@ fn benchmark_sampling(c: &mut Criterion) {
 
     group.bench_function("linear_1024", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler_1024_linear.sample(black_box(uv));
@@ -148,7 +148,7 @@ fn benchmark_sampling(c: &mut Criterion) {
 
     group.bench_function("nearest_2048", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler_2048_nearest.sample(black_box(uv));
@@ -160,7 +160,7 @@ fn benchmark_sampling(c: &mut Criterion) {
 
     group.bench_function("linear_2048", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler_2048_linear.sample(black_box(uv));
@@ -182,7 +182,7 @@ fn benchmark_linear_implementations(c: &mut Criterion) {
 
     group.bench_function("old_sample", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler.sample(black_box(uv));
@@ -194,7 +194,7 @@ fn benchmark_linear_implementations(c: &mut Criterion) {
 
     group.bench_function("sample_linear_clamp", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler.sample_linear_clamp(black_box(uv));
@@ -206,7 +206,7 @@ fn benchmark_linear_implementations(c: &mut Criterion) {
 
     group.bench_function("sample_nearest_clamp", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &uvs {
                 result = sampler.sample_nearest_clamp(black_box(uv));
@@ -230,7 +230,7 @@ fn benchmark_uv_patterns(c: &mut Criterion) {
 
     group.bench_function("fullscreen_coherent", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &fullscreen_uvs {
                 result = sampler.sample(black_box(uv));
@@ -242,7 +242,7 @@ fn benchmark_uv_patterns(c: &mut Criterion) {
 
     group.bench_function("random", |b| {
         b.iter(|| {
-            let mut result = Colour::new(0, 0, 0, 255);
+            let mut result = Colour::new(0.0, 0.0, 0.0, 1.0);
 
             for &uv in &random_uvs {
                 result = sampler.sample(black_box(uv));

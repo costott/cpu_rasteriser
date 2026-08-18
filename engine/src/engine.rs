@@ -190,7 +190,7 @@ where
 
         let mut buffer = surface.buffer_mut().unwrap();
 
-        buffer.copy_from_slice(self.presentation_target.pixels());
+        buffer.copy_from_slice(&self.presentation_target.pixels_u32());
         buffer.present().unwrap();
     }
 }
@@ -562,7 +562,7 @@ where
 
         self.window
             .update_with_buffer(
-                self.presentation_target.pixels(),
+                &self.presentation_target.pixels_u32(),
                 self.presentation_target.width(),
                 self.presentation_target.height(),
             )

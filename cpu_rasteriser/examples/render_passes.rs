@@ -98,12 +98,7 @@ impl FragmentShader<Vec2> for CloudFragmentShader {
 
         let colour = sky * (1.0 - cloud) + cloud_colour * cloud;
 
-        Colour::new(
-            (colour.x * 255.0) as u8,
-            (colour.y * 255.0) as u8,
-            (colour.z * 255.0) as u8,
-            255,
-        )
+        colour.into()
     }
 }
 
@@ -252,7 +247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         render_pass_2.finish();
 
         window
-            .update_with_buffer(screen_target.pixels(), WIDTH, HEIGHT)
+            .update_with_buffer(&screen_target.pixels_u32(), WIDTH, HEIGHT)
             .unwrap();
     }
 

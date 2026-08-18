@@ -232,30 +232,20 @@ impl MandelbulbFragmentShader {
             + Vec3::new(1.0, 1.0, 1.0) * specular * 0.5
             + glow_colour * fresnel * 0.9;
 
-        Colour::from_f32(
-            colour.x.clamp(0.0, 1.0),
-            colour.y.clamp(0.0, 1.0),
-            colour.z.clamp(0.0, 1.0),
-            1.0,
-        )
+        colour.into()
     }
 
     /// Background colour for rays that miss the fractal.
     fn shade_background(ray_direction: Vec3) -> Colour {
         let t = 0.5 * (ray_direction.y + 1.0);
 
-        let bottom: Vec4 = Colour::from_u32(0x000000).into();
+        let bottom: Vec4 = Colour::new(0.0, 0.0, 0.0, 1.0).into();
 
-        let top: Vec4 = Colour::from_u32(0xffffff).into();
+        let top: Vec4 = Colour::new(1.0, 1.0, 1.0, 1.0).into();
 
         let colour = bottom * (1.0 - t) + top * t;
 
-        Colour::from_f32(
-            colour.x.clamp(0.0, 1.0),
-            colour.y.clamp(0.0, 1.0),
-            colour.z.clamp(0.0, 1.0),
-            1.0,
-        )
+        colour.into()
     }
 
     fn rotate_y(position: Vec3, angle: f32) -> Vec3 {
@@ -375,7 +365,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         frame.finish();
 
-        window.update_with_buffer(screen_target.pixels(), WIDTH, HEIGHT)?;
+        window.update_with_buffer(&screen_target.pixels_u32(), WIDTH, HEIGHT)?;
     }
 
     Ok(())

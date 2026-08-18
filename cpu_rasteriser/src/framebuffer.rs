@@ -2,13 +2,13 @@ use crate::prelude::*;
 
 pub struct FrameBuffer {
     extent: Extent,
-    pixels: Vec<u32>,
+    pixels: Vec<Colour>,
 }
 impl FrameBuffer {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             extent: Extent::new(width, height),
-            pixels: vec![0; width * height],
+            pixels: vec![Colour::BLACK; width * height],
         }
     }
 
@@ -24,13 +24,25 @@ impl FrameBuffer {
         self.extent
     }
 
+    pub fn pixels(&self) -> &[Colour] {
+        &self.pixels
+    }
+
+    pub fn pixels_u32(&self) -> Vec<u32> {
+        self.pixels
+            .iter()
+            .copied()
+            .map(Colour::to_u32)
+            .collect()
+    }
+
     pub fn clear(&mut self, colour: Colour) {
-        self.pixels.fill(colour.to_u32());
+        self.pixels.fill(colour);
     }
 
     pub fn resize(&mut self, width: usize, height: usize) {
         self.extent = Extent::new(width, height);
-        self.pixels.resize(width * height, 0);
+        self.pixels.resize(width * height, Colour::BLACK);
     }
 
     pub fn set_pixel(&mut self, p: Vec2, colour: Colour) {
@@ -40,11 +52,14 @@ impl FrameBuffer {
             return;
         }
         let index = (y as usize) * self.width() + (x as usize);
-        self.pixels[index] = colour.to_u32();
+        self.pixels[index] = colour;
     }
 
-    pub fn pixels(&self) -> &[u32] {
-        &self.pixels
+    pub unsafe fn set_pixel_unchecked(&mut self, p: Vec2, colour: Colour) {
+        let index = (p.y as usize) * self.width() + (p.x as usize);
+        unsafe {
+            *self.pixels.get_unchecked_mut(index) = colour;
+        }
     }
 
     pub fn get_pixel(&self, p: Vec2) -> Option<Colour> {
@@ -54,6 +69,12 @@ impl FrameBuffer {
             return None;
         }
         let index = (y as usize) * self.width() + (x as usize);
-        Some(Colour::from_u32(self.pixels[index]))
+        Some(self.pixels[index])
+    }
+
+    pub unsafe fn get_pixel_unchecked(&self, p: Vec2) -> Colour {
+        let index = (p.y as usize) * self.width() + (p.x as usize);
+
+        unsafe { *self.pixels.get_unchecked(index) }
     }
 }

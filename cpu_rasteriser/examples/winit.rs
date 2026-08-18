@@ -243,7 +243,7 @@ impl winit::application::ApplicationHandler for App {
                 let mut buffer = surface.buffer_mut().unwrap();
 
                 // Render into the buffer.
-                buffer.copy_from_slice(self.screen_target.pixels());
+                buffer.copy_from_slice(&self.screen_target.pixels_u32());
 
                 // Send the buffer to the compositor.
                 buffer.present().unwrap();
