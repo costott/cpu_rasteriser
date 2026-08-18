@@ -4,33 +4,38 @@
 
 The engine provides higher-level abstractions for building 3D applications while delegating all rendering to the underlying software renderer.
 
-It includes concepts that intentionally do not exist in the renderer itself, such as cameras, models, materials, lighting, asset loading, and scene management.
+It introduces concepts that intentionally do not exist in the rasteriser itself, such as cameras, models, materials, lighting, asset loading, and scene management.
 
 ## Features
 
-- Cameras
+- Cameras and projections
 - Transforms
 - Meshes and models
-- Materials
-- Textures
+- Materials and textures
 - Directional lighting
-- OBJ loading
+- OBJ/MTL asset loading
+- Scene management
 - Scene rendering utilities
+- Multiple render passes
 
 ## Architecture
 
-```
+```text
 Application
       │
       ▼
- Engine (Scene, Camera, Models, Lights)
+ Engine
+ (Scene, Camera, Models, Materials, Lights)
       │
       ▼
- Renderer (Pipelines, Draw Calls, Rasterisation)
+ CPU Rasteriser
+ (Pipelines, Render Passes, Draw Calls)
       │
       ▼
- Framebuffer
+ Render Targets
 ```
+
+The engine is deliberately kept separate from the low-level renderer. The engine provides the abstractions needed to construct a 3D scene, while `cpu_rasteriser` handles the actual graphics pipeline and rasterisation.
 
 ## Examples
 
@@ -38,8 +43,8 @@ Application
 cargo run --release -p engine --example teapot
 cargo run --release -p engine --example resize
 cargo run --release -p engine --example pipelines
-cargo run --release -p engine --examples textured_cube
+cargo run --release -p engine --example textured_cube
 cargo run --release -p engine --example render_passes
 ```
 
-The engine is designed as a thin layer over the renderer, allowing the renderer to remain reusable as a standalone graphics library.
+The engine is designed as a thin layer over the renderer, keeping the underlying `cpu_rasteriser` reusable as a standalone software graphics library.
