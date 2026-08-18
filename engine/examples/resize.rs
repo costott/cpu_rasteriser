@@ -91,11 +91,15 @@ impl Application for TeapotApp {
         self.camera.set_aspect_ratio(width as f32 / height as f32);
     }
 
-    fn render<'frame>(
-        &'frame mut self,
-        frame: &mut cpu_rasteriser::renderer::Frame<'_, '_, 'frame>,
-        _viewport: &Viewport,
-    ) {
+    fn render<'frame>(&mut self, context: &'frame mut RenderContext<'frame>) -> PresentedFrame {
+        let extent = context.presentation_target().extent();
+
+        let mut pass = context.begin_presentation_pass(RenderPassDescriptor {
+            viewport: Viewport::full(&extent),
+            colour_load_op: LoadOp::Clear(Colour::BLACK),
+            depth_load_op: Some(LoadOp::Clear(1.0)),
+        });
+
         let vertex_uniforms = VertexUniforms {
             model_matrix: self.teapot.transform.model_matrix(),
             view_matrix: self.camera.view_matrix(),
@@ -103,9 +107,11 @@ impl Application for TeapotApp {
         };
 
         self.teapot
-            .draw_to_frame(frame, &self.simple_pipeline, vertex_uniforms, |_| {
+            .draw_to_render_pass(&mut pass, &self.simple_pipeline, vertex_uniforms, |_| {
                 FragmentUniforms
             });
+
+        pass.finish()
     }
 }
 

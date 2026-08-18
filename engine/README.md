@@ -36,8 +36,10 @@ Application
 
 ```bash
 cargo run --release -p engine --example teapot
+cargo run --release -p engine --example resize
 cargo run --release -p engine --example pipelines
 cargo run --release -p engine --examples textured_cube
+cargo run --release -p engine --example render_passes
 ```
 
 The engine is designed as a thin layer over the renderer, allowing the renderer to remain reusable as a standalone graphics library.

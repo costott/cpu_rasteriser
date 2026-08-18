@@ -18,11 +18,11 @@ The renderer provides a low-level rendering API inspired by modern graphics APIs
 ## Examples
 
 ```bash
-cargo run -p cpu_rasteriser --example triangle
-cargo run -p cpu_rasteriser --example pipelines
-cargo run -p cpu_rasteriser --example mandelbrot_shader
+cargo run --release -p cpu_rasteriser --example triangle
+cargo run --release -p cpu_rasteriser --example pipelines
+cargo run --release -p cpu_rasteriser --example mandelbrot_shader
 cargo run --release -p cpu_rasteriser --example mandelbulb
-cargo run -p cpu_rasteriser --example winit
+cargo run --release -p cpu_rasteriser --example winit
 ```
 
 The higher-level engine built on top of this renderer can be found in the `engine` crate.

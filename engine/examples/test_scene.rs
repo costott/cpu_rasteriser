@@ -2,12 +2,6 @@ use engine::prelude::*;
 
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::{
-    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, Frame, Pipeline},
-    viewport::Viewport,
-};
-
 use std::sync::Arc;
 
 struct SceneUniforms {
@@ -191,7 +185,8 @@ impl TestSceneApp {
             cube2,
             loaded_cube,
             phong_pipeline: Pipeline::new(BasicVertexShader, PhongFragmentShader)
-                .with_culling_mode(CullingMode::BackFace),
+                .with_culling_mode(CullingMode::BackFace)
+                .with_depth_state(DepthState::DEFAULT),
             elapsed: 0.0,
         })
     }
@@ -229,7 +224,15 @@ impl Application for TestSceneApp {
         }
     }
 
-    fn render<'frame>(&'frame mut self, frame: &mut Frame<'_, '_, 'frame>, _viewport: &Viewport) {
+    fn render<'frame>(&mut self, context: &'frame mut RenderContext<'frame>) -> PresentedFrame {
+        let extent = context.presentation_target().extent();
+
+        let mut pass = context.begin_presentation_pass(RenderPassDescriptor {
+            viewport: Viewport::full(&extent),
+            colour_load_op: LoadOp::Clear(Colour::BLACK),
+            depth_load_op: Some(LoadOp::Clear(1.0)),
+        });
+
         let scene_uniforms = Arc::new(SceneUniforms {
             camera: self.camera.clone(),
             lights: self.lights.clone(),
@@ -239,8 +242,8 @@ impl Application for TestSceneApp {
             model_matrix: self.floor_model.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
-        self.floor_model.draw_to_frame(
-            frame,
+        self.floor_model.draw_to_render_pass(
+            &mut pass,
             &self.phong_pipeline,
             floor_vertex_uniforms,
             |mesh| FragmentUniforms {
@@ -257,40 +260,44 @@ impl Application for TestSceneApp {
             model_matrix: self.cube1.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
-        self.cube1
-            .draw_to_frame(frame, &self.phong_pipeline, cube1_vertex_uniforms, |mesh| {
-                FragmentUniforms {
-                    scene: scene_uniforms.clone(),
-                    material: self
-                        .cube1
-                        .materials
-                        .get(mesh.material_index.unwrap())
-                        .cloned(),
-                }
-            });
+        self.cube1.draw_to_render_pass(
+            &mut pass,
+            &self.phong_pipeline,
+            cube1_vertex_uniforms,
+            |mesh| FragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: self
+                    .cube1
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            },
+        );
 
         let cube2_vertex_uniforms = VertexUniforms {
             model_matrix: self.cube2.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
-        self.cube2
-            .draw_to_frame(frame, &self.phong_pipeline, cube2_vertex_uniforms, |mesh| {
-                FragmentUniforms {
-                    scene: scene_uniforms.clone(),
-                    material: self
-                        .cube2
-                        .materials
-                        .get(mesh.material_index.unwrap())
-                        .cloned(),
-                }
-            });
+        self.cube2.draw_to_render_pass(
+            &mut pass,
+            &self.phong_pipeline,
+            cube2_vertex_uniforms,
+            |mesh| FragmentUniforms {
+                scene: scene_uniforms.clone(),
+                material: self
+                    .cube2
+                    .materials
+                    .get(mesh.material_index.unwrap())
+                    .cloned(),
+            },
+        );
 
         let loaded_cube_vertex_uniforms = VertexUniforms {
             model_matrix: self.loaded_cube.transform.model_matrix(),
             scene: scene_uniforms.clone(),
         };
-        self.loaded_cube.draw_to_frame(
-            frame,
+        self.loaded_cube.draw_to_render_pass(
+            &mut pass,
             &self.phong_pipeline,
             loaded_cube_vertex_uniforms,
             |mesh| FragmentUniforms {
@@ -301,7 +308,9 @@ impl Application for TestSceneApp {
                     .get(mesh.material_index.unwrap())
                     .cloned(),
             },
-        )
+        );
+
+        pass.finish()
     }
 }
 
