@@ -2,11 +2,6 @@ use engine::prelude::*;
 
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::{
-    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, Pipeline},
-};
-
 use std::sync::Arc;
 
 const WIDTH: usize = 640;
@@ -127,7 +122,8 @@ struct TexturedCubeApp {
 impl TexturedCubeApp {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let phong_pipeline = Pipeline::new(BasicVertexShader, PhongFragmentShader)
-            .with_culling_mode(CullingMode::None);
+            .with_culling_mode(CullingMode::None)
+            .with_depth_state(DepthState::DEFAULT);
 
         let camera = Camera::new(
             Vec3::new(0.0, 0.75, 1.25),
@@ -174,11 +170,15 @@ impl Application for TexturedCubeApp {
         }
     }
 
-    fn render<'frame>(
-        &'frame mut self,
-        frame: &mut cpu_rasteriser::renderer::Frame<'_, '_, 'frame>,
-        _viewport: &Viewport,
-    ) {
+    fn render<'frame>(&mut self, context: &'frame mut RenderContext<'frame>) -> PresentedFrame {
+        let extent = context.presentation_target().extent();
+
+        let mut pass = context.begin_presentation_pass(RenderPassDescriptor {
+            viewport: Viewport::full(&extent),
+            colour_load_op: LoadOp::Clear(Colour::BLACK),
+            depth_load_op: Some(LoadOp::Clear(1.0)),
+        });
+
         let vertex_uniforms = VertexUniforms {
             model_matrix: self.cube.transform.model_matrix(),
             view_matrix: self.camera.view_matrix(),
@@ -195,7 +195,7 @@ impl Application for TexturedCubeApp {
         });
 
         self.cube
-            .draw_to_frame(frame, &self.phong_pipeline, vertex_uniforms, |mesh| {
+            .draw_to_render_pass(&mut pass, &self.phong_pipeline, vertex_uniforms, |mesh| {
                 FragmentUniforms {
                     scene: scene_uniforms.clone(),
                     material: self
@@ -205,6 +205,8 @@ impl Application for TexturedCubeApp {
                         .cloned(),
                 }
             });
+
+        pass.finish()
     }
 }
 

@@ -1,10 +1,5 @@
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::{
-    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, DrawCall, Pipeline, PrimitiveMode, Renderer},
-};
-
 use minifb::{Key, Window, WindowOptions};
 
 const WIDTH: usize = 640;
@@ -99,12 +94,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     window.set_target_fps(60);
 
-    let viewport = Viewport::new(WIDTH, HEIGHT);
+    let mut renderer = Renderer::new()?;
 
-    let mut renderer = Renderer::new(&viewport)?;
+    let extent = Extent::new(WIDTH, HEIGHT);
+    let mut screen_target = RenderTarget::new(extent);
 
-    let simple_pipeline =
-        Pipeline::new(BasicVertexShader, BasicFragmentShader).with_culling_mode(CullingMode::None);
+    let simple_pipeline = Pipeline::new(BasicVertexShader, BasicFragmentShader);
 
     let triangle = vec![
         Vertex {
@@ -127,7 +122,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             model_matrix: Mat4::scaling_vec(Vec3::ONE * 3.0),
         };
 
-        let mut frame = renderer.begin_frame(&viewport);
+        let mut frame = renderer.begin_render_pass(
+            &mut screen_target,
+            RenderPassDescriptor {
+                viewport: Viewport::full(&extent),
+                colour_load_op: LoadOp::Clear(Colour::from_u32(0x000000)),
+                depth_load_op: None,
+            },
+        );
 
         frame.draw(
             &simple_pipeline,
@@ -147,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         frame.finish();
 
         window
-            .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
+            .update_with_buffer(screen_target.pixels(), WIDTH, HEIGHT)
             .unwrap();
     }
 

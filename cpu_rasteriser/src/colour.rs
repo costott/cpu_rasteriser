@@ -48,11 +48,18 @@ impl Colour {
         ((self.r as u32) << 16) | ((self.g as u32) << 8) | (self.b as u32) | ((self.a as u32) << 24)
     }
 
+    #[inline(always)]
     pub fn from_u32(colour: u32) -> Self {
         let r = ((colour >> 16) & 0xFF) as u8;
         let g = ((colour >> 8) & 0xFF) as u8;
         let b = (colour & 0xFF) as u8;
-        let a = ((colour >> 24) & 0xFF) as u8;
+
+        let a = if colour > 0xFFFFFF {
+            ((colour >> 24) & 0xFF) as u8
+        } else {
+            255
+        };
+
         Self { r, g, b, a }
     }
 
@@ -64,8 +71,14 @@ impl Colour {
         Self { r, g, b, a }
     }
 
+    #[inline]
     pub fn lerp(&self, other: &Self, t: f32) -> Self {
-        *self * (1.0 - t) + *other * t
+        Self {
+            r: (self.r as f32 + (other.r as f32 - self.r as f32) * t) as u8,
+            g: (self.g as f32 + (other.g as f32 - self.g as f32) * t) as u8,
+            b: (self.b as f32 + (other.b as f32 - self.b as f32) * t) as u8,
+            a: self.a,
+        }
     }
 }
 impl Add for Colour {
@@ -75,8 +88,7 @@ impl Add for Colour {
         let r = self.r.saturating_add(other.r);
         let g = self.g.saturating_add(other.g);
         let b = self.b.saturating_add(other.b);
-        let a = self.a.saturating_add(other.a);
-        Colour { r, g, b, a }
+        Colour { r, g, b, a: self.a }
     }
 }
 impl AddAssign for Colour {
@@ -84,7 +96,6 @@ impl AddAssign for Colour {
         self.r = self.r.saturating_add(other.r);
         self.g = self.g.saturating_add(other.g);
         self.b = self.b.saturating_add(other.b);
-        self.a = self.a.saturating_add(other.a);
     }
 }
 impl Sub for Colour {
@@ -94,8 +105,8 @@ impl Sub for Colour {
         let r = self.r.saturating_sub(other.r);
         let g = self.g.saturating_sub(other.g);
         let b = self.b.saturating_sub(other.b);
-        let a = self.a.saturating_sub(other.a);
-        Colour { r, g, b, a }
+
+        Colour { r, g, b, a: self.a }
     }
 }
 impl Mul<f32> for Colour {
@@ -105,8 +116,8 @@ impl Mul<f32> for Colour {
         let r = (self.r as f32 * scalar).clamp(0.0, 255.0) as u8;
         let g = (self.g as f32 * scalar).clamp(0.0, 255.0) as u8;
         let b = (self.b as f32 * scalar).clamp(0.0, 255.0) as u8;
-        let a = (self.a as f32 * scalar).clamp(0.0, 255.0) as u8;
-        Self::new(r, g, b, a)
+
+        Self::new(r, g, b, self.a)
     }
 }
 impl Mul for Colour {
@@ -116,8 +127,8 @@ impl Mul for Colour {
         let r = ((self.r as u16 * other.r as u16) / 255) as u8;
         let g = ((self.g as u16 * other.g as u16) / 255) as u8;
         let b = ((self.b as u16 * other.b as u16) / 255) as u8;
-        let a = ((self.a as u16 * other.a as u16) / 255) as u8;
-        Self::new(r, g, b, a)
+
+        Self::new(r, g, b, self.a)
     }
 }
 impl Div<f32> for Colour {
@@ -127,28 +138,23 @@ impl Div<f32> for Colour {
         let r = (self.r as f32 / scalar).clamp(0.0, 255.0) as u8;
         let g = (self.g as f32 / scalar).clamp(0.0, 255.0) as u8;
         let b = (self.b as f32 / scalar).clamp(0.0, 255.0) as u8;
-        let a = (self.a as f32 / scalar).clamp(0.0, 255.0) as u8;
-        Self::new(r, g, b, a)
+
+        Self::new(r, g, b, self.a)
     }
 }
 
 impl From<Vec4> for Colour {
     fn from(vec: Vec4) -> Self {
-        Self::new(
-            vec.x.clamp(0.0, 255.0) as u8,
-            vec.y.clamp(0.0, 255.0) as u8,
-            vec.z.clamp(0.0, 255.0) as u8,
-            vec.w.clamp(0.0, 255.0) as u8,
-        )
+        Self::from_f32(vec.x, vec.y, vec.z, vec.w)
     }
 }
 impl From<Colour> for Vec4 {
     fn from(colour: Colour) -> Self {
         Self::new(
-            colour.r as f32,
-            colour.g as f32,
-            colour.b as f32,
-            colour.a as f32,
+            colour.r as f32 / 255.0,
+            colour.g as f32 / 255.0,
+            colour.b as f32 / 255.0,
+            colour.a as f32 / 255.0,
         )
     }
 }

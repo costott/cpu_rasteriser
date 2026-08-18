@@ -23,7 +23,7 @@ fn parse_colour(parts: &[&str]) -> Result<Colour, MtlError> {
     Ok(Colour::from_f32(r, g, b, 1.0))
 }
 
-fn parse_texture(parts: &[&str], base_path: &PathBuf) -> Result<Texture, MtlError> {
+fn parse_texture(parts: &[&str], base_path: &PathBuf) -> Result<TextureSampler, MtlError> {
     if parts.len() < 2 {
         return Err(MtlError::ParseError(format!(
             "Invalid texture line: {}",
@@ -37,7 +37,9 @@ fn parse_texture(parts: &[&str], base_path: &PathBuf) -> Result<Texture, MtlErro
         tex_path.to_path_buf()
     };
 
-    Texture::from_image(&tex_full_path).map_err(|e| MtlError::TextureError(e))
+    Texture::from_image(&tex_full_path)
+        .map_err(|e| MtlError::TextureError(e))
+        .and_then(|tx| Ok(tx.sampler(WrapMode::Repeat, FilterMode::Linear)))
 }
 
 pub fn load_mtl(path: impl AsRef<std::path::Path>) -> Result<Vec<Material>, MtlError> {

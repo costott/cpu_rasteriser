@@ -1,5 +1,6 @@
 pub mod colour;
 pub mod depthbuffer;
+pub mod extent;
 pub mod framebuffer;
 pub mod graphics;
 pub mod maths;

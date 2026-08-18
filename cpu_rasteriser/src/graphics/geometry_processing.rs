@@ -90,8 +90,8 @@ impl GeometryProcessor {
         let ndc = vertex.position * inv_w;
 
         let screen = Vec2::new(
-            (ndc.x + 1.0) * 0.5 * viewport.width as f32,
-            (1.0 - ndc.y) * 0.5 * viewport.height as f32,
+            viewport.x as f32 + (ndc.x + 1.0) * 0.5 * viewport.width as f32,
+            viewport.y as f32 + (1.0 - ndc.y) * 0.5 * viewport.height as f32,
         );
 
         RasterVertex {
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn process_triangle_keeps_front_facing_triangles() {
-        let viewport = Viewport::new(8, 8);
+        let viewport = Viewport::new(0, 0, 8, 8);
 
         let triangles = GeometryProcessor::process_triangle(
             front_facing_triangle(),
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn process_triangle_culls_back_facing_triangles() {
-        let viewport = Viewport::new(8, 8);
+        let viewport = Viewport::new(0, 0, 8, 8);
 
         let triangles = GeometryProcessor::process_triangle(
             back_facing_triangle(),
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn process_triangle_keeps_back_facing_triangles_when_culling_disabled() {
-        let viewport = Viewport::new(8, 8);
+        let viewport = Viewport::new(0, 0, 8, 8);
 
         let triangles = GeometryProcessor::process_triangle(
             back_facing_triangle(),
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn process_triangle_converts_vertices_to_screen_space() {
-        let viewport = Viewport::new(100, 100);
+        let viewport = Viewport::new(0, 0, 100, 100);
 
         let triangles = GeometryProcessor::process_triangle(
             front_facing_triangle(),
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn process_triangle_preserves_triangle_when_fully_inside_frustum() {
-        let viewport = Viewport::new(100, 100);
+        let viewport = Viewport::new(0, 0, 100, 100);
 
         let triangles = GeometryProcessor::process_triangle(
             front_facing_triangle(),
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn process_triangle_clips_triangle_crossing_near_plane() {
-        let viewport = Viewport::new(100, 100);
+        let viewport = Viewport::new(0, 0, 100, 100);
 
         let triangle = Triangle3D::new(
             vertex(-1.0, -1.0, -0.05), // outside near plane
@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn process_triangle_discards_triangle_outside_frustum() {
-        let viewport = Viewport::new(100, 100);
+        let viewport = Viewport::new(0, 0, 100, 100);
 
         let triangle = Triangle3D::new(
             vertex(100.0, 100.0, -2.0), // outside frustum

@@ -14,8 +14,8 @@ impl DepthBuffer {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.buffer.fill(1.0);
+    pub fn clear(&mut self, depth: f32) {
+        self.buffer.fill(depth);
     }
 
     pub fn resize(&mut self, width: usize, height: usize) {
