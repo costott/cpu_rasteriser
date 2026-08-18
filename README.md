@@ -8,7 +8,7 @@
 
 ## Example
 
-The same Utah teapot rendered using two independent shader pipelines within a single frame.
+The same Utah teapot rendered using two independent shader pipelines within a single render pass.
 
 The left model uses Phong shading (lighting calculated per fragment), while the right model uses Gouraud shading (lighting calculated per vertex). Both share the same renderer, scene, and geometry; only the pipeline changes.
 
@@ -19,10 +19,14 @@ The left model uses Phong shading (lighting calculated per fragment), while the 
 Rendering with multiple pipelines requires only a few API calls:
 
 ```rust
-let mut frame = renderer.begin_frame(&viewport);
+let mut render_pass = renderer.begin_render_pass(&mut render_target, RenderPassDescriptor {
+    viewport: Viewport::full(&extent),
+    load: LoadOp::Clear(Colour::BLACK),
+    store: StoreOp::Store,
+});
 
 for draw_call in gouraud_teapot.draw_calls(|_| GouraudFragmentUniforms) {
-    frame.draw(&gouraud_pipeline, draw_call, gouraud_vertex_uniforms.clone());
+    render_pass.draw(&gouraud_pipeline, draw_call, gouraud_vertex_uniforms.clone());
 }
 
 for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
@@ -32,10 +36,10 @@ for draw_call in phong_teapot.draw_calls(|mesh| PhongFragmentUniforms {
         .get(mesh.material_index.unwrap())
         .cloned(),
 }) {
-    frame.draw(&phong_pipeline, draw_call, phong_vertex_uniforms.clone());
+    render_pass.draw(&phong_pipeline, draw_call, phong_vertex_uniforms.clone());
 }
 
-frame.finish();
+render_pass.finish();
 ```
 
 The complete example, including the shader implementations, camera setup, lighting, and model loading, can be found in [`engine/examples/pipelines.rs`](./engine/examples/pipelines.rs).
@@ -53,7 +57,7 @@ software-graphics/
 └── engine/             # High-level scene and asset management
 ```
 
-The `renderer` crate provides a reusable software implementation of a modern graphics pipeline, exposing concepts such as pipelines, shaders, draw calls, and frame recording.
+The `cpu_rasteriser` crate provides a reusable software implementation of a modern graphics pipeline, exposing concepts such as pipelines, shaders, draw calls, render passes, and render targets.
 
 The `engine` crate builds on top of the renderer, providing higher-level abstractions including cameras, models, materials, lights, scene management, and asset loading.
 
@@ -70,7 +74,9 @@ Implemented a full CPU-based rendering pipeline:
 ```
 Vertex Buffers
     ↓
-Frame Submission
+Render Pass
+    ↓
+Draw Calls
     ↓
 Pipeline Selection
     ↓
@@ -86,7 +92,7 @@ Parallel Rasterisation
     ↓
 Fragment Shading
     ↓
-Framebuffer
+Render Target
 ```
 
 Supported features:
@@ -122,7 +128,7 @@ To improve rendering performance, the rasteriser uses a tile-based rendering pip
 
 After vertex processing and clipping, triangles are converted into rasterisation commands and binned into fixed-size screen-space tiles. Each tile is then rasterised independently by a worker thread.
 
-The tile system is independent of the active shader pipeline, allowing different vertex and fragment shader combinations to contribute rendering work to the same frame.
+The tile system is independent of the active shader pipeline, allowing different vertex and fragment shader combinations to contribute rendering work to the same render pass.
 
 Once all worker threads have completed, the tile framebuffers are merged into the final image.
 
@@ -172,18 +178,19 @@ The renderer does not need to know the details of a shader implementation. It on
 
 ---
 
-## Pipeline and Frame Architecture
+## Pipeline and Render Pass Architecture
 
-The renderer uses an explicit pipeline and frame submission model inspired by modern graphics APIs such as Vulkan, Direct3D, and Metal.
+The renderer uses an explicit pipeline and render pass model inspired by modern graphics APIs such as Vulkan, Direct3D, and Metal.
 
 Rendering is separated into:
 
 - Pipeline state
-- Frame recording
+- Render passes
 - Draw commands
+- Render targets
 - Rasterisation
 
-A pipeline contains programmable stages and fixed rendering configuration:
+A pipeline contains the programmable stages and fixed-function rendering configuration:
 
 ```rust
 Pipeline<VertexShader, FragmentShader>
@@ -197,9 +204,19 @@ including:
 - Colour blending state
 - Depth testing state
 
-Frames act as temporary command buffers. Draw calls are recorded during a frame and executed when the frame is submitted.
+Rendering takes place through explicit render passes. A render pass targets a render target and defines how its existing contents are loaded and how its results are stored.
 
-This separation allows multiple pipelines to be used within the same frame while keeping the renderer independent from specific shader implementations.
+Draw calls are recorded and executed within the render pass, allowing multiple pipelines and rendering techniques to contribute to the same target.
+
+Multiple render passes can be chained together, allowing the renderer to support techniques such as:
+
+- Multi-stage rendering
+- Post-processing
+- Render-to-texture workflows
+- Layered rendering
+- Intermediate render targets
+
+This separates the lifetime of rendering commands from the lifetime of a frame. The renderer operates on explicit render targets and render passes rather than requiring all rendering to be recorded into a single frame object.
 
 ---
 
@@ -219,8 +236,10 @@ This separation allows multiple pipelines to be used within the same frame while
 | Multithreaded rasterisation       | ✅     |
 | Generic shader pipelines          | ✅     |
 | Pipeline state abstraction        | ✅     |
-| Frame-based command submission    | ✅     |
-| Multiple pipelines per frame      | ✅     |
+| Render pass architecture          | ✅     |
+| Multiple render passes            | ✅     |
+| Multiple pipelines per pass       | ✅     |
+| Render target load/store          | ✅     |
 
 ### Engine
 
@@ -265,7 +284,10 @@ Potential extensions:
 - Shadow mapping
 - Physically based rendering
 - SIMD optimisation
-- Render passes and framebuffer attachments
+- MSAA
+- More advanced blending modes
+- Additional primitive types
+- More flexible render target attachments
 
 ---
 
