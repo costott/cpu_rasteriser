@@ -1,11 +1,5 @@
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::renderer::DrawCall;
-use cpu_rasteriser::{
-    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, Pipeline, Renderer},
-};
-
 use std::num::NonZeroU32;
 use std::rc::Rc;
 
@@ -67,8 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App {
         context,
         state: AppState::Initial,
-        viewport: Viewport::new(WIDTH, HEIGHT),
-        renderer: Renderer::new(&Viewport::new(WIDTH, HEIGHT))?,
+        renderer: Renderer::new()?,
+        screen_target: RenderTarget::new(Extent::new(WIDTH, HEIGHT)),
         timer: Timer::new(),
         triangle: vec![
             Vertex {
@@ -109,8 +103,8 @@ impl Timer {
 struct App {
     context: softbuffer::Context<winit::event_loop::OwnedDisplayHandle>,
     state: AppState,
-    viewport: Viewport,
     renderer: Renderer,
+    screen_target: RenderTarget,
     timer: Timer,
     triangle: Vec<Vertex>,
     triangle_indices: Vec<u32>,
@@ -161,8 +155,8 @@ impl winit::application::ApplicationHandler for App {
         {
             // Resize surface
             surface.resize(width, height).unwrap();
-            self.viewport = Viewport::new(width.get() as usize, height.get() as usize);
-            self.renderer.resize(&self.viewport);
+            self.screen_target
+                .resize(Extent::new(width.get() as usize, height.get() as usize));
         }
 
         self.state = AppState::Running { surface };
@@ -198,15 +192,24 @@ impl winit::application::ApplicationHandler for App {
                 {
                     // Resize surface
                     surface.resize(width, height).unwrap();
-                    self.viewport = Viewport::new(width.get() as usize, height.get() as usize);
-                    self.renderer.resize(&self.viewport);
+                    self.screen_target
+                        .resize(Extent::new(width.get() as usize, height.get() as usize));
                 }
             }
             winit::event::WindowEvent::RedrawRequested => {
                 let simple_pipeline = Pipeline::new(BasicVertexShader, BasicFragmentShader)
                     .with_culling_mode(CullingMode::None);
 
-                let mut frame = self.renderer.begin_frame(&self.viewport);
+                let extent = self.screen_target.extent();
+
+                let mut frame = self.renderer.begin_render_pass(
+                    &mut self.screen_target,
+                    RenderPassDescriptor {
+                        viewport: Viewport::full(&extent),
+                        colour_load_op: LoadOp::Clear(Colour::BLACK),
+                        depth_load_op: None,
+                    },
+                );
 
                 let vertex_uniforms = VertexUniforms {
                     model_matrix: Mat4::rotate_y(self.timer.elapsed().as_secs_f32()),
@@ -240,7 +243,7 @@ impl winit::application::ApplicationHandler for App {
                 let mut buffer = surface.buffer_mut().unwrap();
 
                 // Render into the buffer.
-                buffer.copy_from_slice(self.renderer.pixels());
+                buffer.copy_from_slice(self.screen_target.pixels());
 
                 // Send the buffer to the compositor.
                 buffer.present().unwrap();

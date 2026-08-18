@@ -1,4 +1,4 @@
-use cpu_rasteriser::{renderer::Frame, viewport::Viewport};
+use cpu_rasteriser::prelude::*;
 
 use crate::input::InputEvent;
 
@@ -40,7 +40,9 @@ impl Default for WindowCursorSettings {
 pub trait Application {
     fn update(&mut self, _dt: f32) {}
 
-    fn render<'frame>(&'frame mut self, _frame: &mut Frame<'_, '_, 'frame>, _viewport: &Viewport) {}
+    fn render<'frame>(&mut self, _context: &'frame mut RenderContext<'frame>) -> PresentedFrame {
+        PresentedFrame { _private: () }
+    }
 
     fn resize(&mut self, _width: u32, _height: u32) {}
 
@@ -49,6 +51,80 @@ pub trait Application {
     fn window_state(&self) -> WindowState {
         WindowState::default()
     }
+}
+
+pub struct RenderContext<'a> {
+    renderer: &'a mut Renderer,
+    presentation_target: &'a mut RenderTarget,
+}
+impl<'a> RenderContext<'a> {
+    pub fn new(renderer: &'a mut Renderer, presentation_target: &'a mut RenderTarget) -> Self {
+        Self {
+            renderer,
+            presentation_target,
+        }
+    }
+
+    pub fn presentation_target(&self) -> &RenderTarget {
+        self.presentation_target
+    }
+
+    /// Begin a render pass that will render directly to the presentation target (the screen).
+    pub fn begin_presentation_pass<'pass>(
+        &'pass mut self,
+        descriptor: RenderPassDescriptor,
+    ) -> PresentationPass<'pass, 'pass> {
+        PresentationPass::new(
+            self.renderer
+                .begin_render_pass(self.presentation_target, descriptor),
+        )
+    }
+
+    /// Begin a render pass that will render to the given render target.
+    pub fn begin_render_pass<'pass>(
+        &'pass mut self,
+        target: &'pass mut RenderTarget,
+        descriptor: RenderPassDescriptor,
+    ) -> RenderPass<'pass, 'pass> {
+        self.renderer.begin_render_pass(target, descriptor)
+    }
+}
+
+/// A wrapper around the final [`RenderPass`] that will draw to the
+/// engine's presentation target.
+pub struct PresentationPass<'a, 'b> {
+    render_pass: RenderPass<'a, 'b>,
+}
+impl<'a, 'b> PresentationPass<'a, 'b> {
+    pub fn new(render_pass: RenderPass<'a, 'b>) -> Self {
+        Self { render_pass }
+    }
+
+    pub fn render_pass_mut(&mut self) -> &mut RenderPass<'a, 'b> {
+        &mut self.render_pass
+    }
+
+    pub fn finish(self) -> PresentedFrame {
+        self.render_pass.finish();
+        PresentedFrame { _private: () }
+    }
+}
+impl<'a, 'b> std::ops::Deref for PresentationPass<'a, 'b> {
+    type Target = RenderPass<'a, 'b>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.render_pass
+    }
+}
+impl<'a, 'b> std::ops::DerefMut for PresentationPass<'a, 'b> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.render_pass
+    }
+}
+/// Compiler proof token that the [`PresentationPass`] presents a finished pass to the engine's
+/// presentation target.
+pub struct PresentedFrame {
+    _private: (),
 }
 
 #[derive(Clone, Copy, Debug)]

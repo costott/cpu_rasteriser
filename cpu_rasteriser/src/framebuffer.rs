@@ -1,26 +1,27 @@
-use crate::colour::Colour;
-use crate::maths::Vec2;
+use crate::prelude::*;
 
 pub struct FrameBuffer {
-    width: usize,
-    height: usize,
+    extent: Extent,
     pixels: Vec<u32>,
 }
 impl FrameBuffer {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
-            width,
-            height,
+            extent: Extent::new(width, height),
             pixels: vec![0; width * height],
         }
     }
 
     pub fn width(&self) -> usize {
-        self.width
+        self.extent.width
     }
 
     pub fn height(&self) -> usize {
-        self.height
+        self.extent.height
+    }
+
+    pub fn extent(&self) -> Extent {
+        self.extent
     }
 
     pub fn clear(&mut self, colour: Colour) {
@@ -28,18 +29,17 @@ impl FrameBuffer {
     }
 
     pub fn resize(&mut self, width: usize, height: usize) {
-        self.width = width;
-        self.height = height;
+        self.extent = Extent::new(width, height);
         self.pixels.resize(width * height, 0);
     }
 
     pub fn set_pixel(&mut self, p: Vec2, colour: Colour) {
         let x = p.x as i32;
         let y = p.y as i32;
-        if x < 0 || x >= self.width as i32 || y < 0 || y >= self.height as i32 {
+        if x < 0 || x >= self.width() as i32 || y < 0 || y >= self.height() as i32 {
             return;
         }
-        let index = (y as usize) * self.width + (x as usize);
+        let index = (y as usize) * self.width() + (x as usize);
         self.pixels[index] = colour.to_u32();
     }
 
@@ -50,10 +50,10 @@ impl FrameBuffer {
     pub fn get_pixel(&self, p: Vec2) -> Option<Colour> {
         let x = p.x as i32;
         let y = p.y as i32;
-        if x < 0 || x >= self.width as i32 || y < 0 || y >= self.height as i32 {
+        if x < 0 || x >= self.width() as i32 || y < 0 || y >= self.height() as i32 {
             return None;
         }
-        let index = (y as usize) * self.width + (x as usize);
+        let index = (y as usize) * self.width() + (x as usize);
         Some(Colour::from_u32(self.pixels[index]))
     }
 }

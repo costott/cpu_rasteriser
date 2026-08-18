@@ -1,5 +1,3 @@
-use std::ops::{Add, Mul, Sub};
-
 use crate::prelude::*;
 
 /// Represents a 2D vertex in screen space
