@@ -20,7 +20,7 @@ fn parse_colour(parts: &[&str]) -> Result<Colour, MtlError> {
     let b: f32 = parts[3]
         .parse()
         .map_err(|_| MtlError::ParseError(format!("Invalid colour b value: {}", parts[3])))?;
-    Ok(Colour::from_f32(r, g, b, 1.0))
+    Ok(Colour::new(r, g, b, 1.0))
 }
 
 fn parse_texture(parts: &[&str], base_path: &PathBuf) -> Result<TextureSampler, MtlError> {

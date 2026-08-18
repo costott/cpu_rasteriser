@@ -78,7 +78,7 @@ impl FragmentShader<Varyings> for BasicFragmentShader {
         let iterations = mandelbrot_iterations(c, uniforms.max_iterations);
         let intensity = iterations as f32 / uniforms.max_iterations as f32;
 
-        Colour::from_f32(intensity, intensity, intensity, 1.0)
+        Colour::new(intensity, intensity, intensity, 1.0)
     }
 }
 
@@ -126,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut screen_target,
             RenderPassDescriptor {
                 viewport: Viewport::full(&extent),
-                colour_load_op: LoadOp::Clear(Colour::from_u32(0x000000)),
+                colour_load_op: LoadOp::Clear(Colour::BLACK),
                 depth_load_op: None,
             },
         );
@@ -149,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         frame.finish();
 
         window
-            .update_with_buffer(screen_target.pixels(), WIDTH, HEIGHT)
+            .update_with_buffer(&screen_target.pixels_u32(), WIDTH, HEIGHT)
             .unwrap();
     }
 

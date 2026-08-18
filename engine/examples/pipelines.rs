@@ -243,9 +243,9 @@ impl PipelinesApp {
 
         let alpha_material = Material::new_simple(
             "Transparent Red".to_string(),
-            Colour::from_f32(0.15, 0.0, 0.0, 0.5),
-            Colour::from_f32(1.0, 0.05, 0.05, 0.5),
-            Colour::from_f32(1.0, 0.2, 0.2, 0.5),
+            Colour::new(0.15, 0.0, 0.0, 0.5),
+            Colour::new(1.0, 0.05, 0.05, 0.5),
+            Colour::new(1.0, 0.2, 0.2, 0.5),
             32.0,
         );
         alpha_teapot.materials = vec![alpha_material];
@@ -253,9 +253,9 @@ impl PipelinesApp {
 
         let additive_material = Material::new_simple(
             "Additive Blue".to_string(),
-            Colour::from_f32(0.0, 0.05, 0.15, 0.6),
-            Colour::from_f32(0.0, 0.4, 1.0, 0.6),
-            Colour::from_f32(0.2, 0.7, 1.0, 0.6),
+            Colour::new(0.0, 0.05, 0.15, 0.6),
+            Colour::new(0.0, 0.4, 1.0, 0.6),
+            Colour::new(0.2, 0.7, 1.0, 0.6),
             32.0,
         );
         additive_teapot.materials = vec![additive_material];

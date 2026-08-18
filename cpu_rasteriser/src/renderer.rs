@@ -165,8 +165,12 @@ impl RenderTarget {
         self
     }
 
-    pub fn pixels(&self) -> &[u32] {
+    pub fn pixels(&self) -> &[Colour] {
         self.framebuffer.pixels()
+    }
+
+    pub fn pixels_u32(&self) -> Vec<u32> {
+        self.framebuffer.pixels_u32()
     }
 
     pub fn width(&self) -> usize {
@@ -343,12 +347,12 @@ impl BlendFactor {
             BlendFactor::OneMinusDstColor => Colour::WHITE - dst,
             BlendFactor::SrcAlpha => Colour::new(src.a, src.a, src.a, src.a),
             BlendFactor::OneMinusSrcAlpha => {
-                let a = 255 - src.a;
+                let a = 1.0 - src.a;
                 Colour::new(a, a, a, a)
             }
             BlendFactor::DstAlpha => Colour::new(dst.a, dst.a, dst.a, dst.a),
             BlendFactor::OneMinusDstAlpha => {
-                let a = 255 - dst.a;
+                let a = 1.0 - dst.a;
                 Colour::new(a, a, a, a)
             }
         }
@@ -965,29 +969,28 @@ mod tests {
     fn blend_state_alpha_blend() {
         let state = BlendState::ALPHA_BLEND;
 
-        let src = Colour::new(255, 0, 0, 128);
-        let dst = Colour::new(0, 0, 255, 255);
+        let src = Colour::new(1.0, 0.0, 0.0, 0.5);
+        let dst = Colour::new(0.0, 0.0, 1.0, 1.0);
 
         let result = state.apply(src, dst);
 
-        assert_eq!(result.r, 128);
-        assert_eq!(result.g, 0);
-        assert_eq!(result.b, 127);
+        assert!((result.r - 0.5).abs() < f32::EPSILON);
+        assert!((result.g - 0.0).abs() < f32::EPSILON);
+        assert!((result.b - 0.5).abs() < f32::EPSILON);
     }
 
     #[test]
     fn blend_state_additive() {
         let state = BlendState::ADDITIVE;
 
-        let src = Colour::new(100, 50, 25, 128);
-        let dst = Colour::new(20, 30, 40, 255);
+        let src = Colour::new(0.5, 0.2, 0.1, 0.5);
+        let dst = Colour::new(0.1, 0.3, 0.4, 1.0);
 
         let result = state.apply(src, dst);
 
-        assert_eq!(result.r, 120);
-        assert_eq!(result.g, 80);
-        assert_eq!(result.b, 65);
-        assert_eq!(result.a, 255);
+        assert!((result.r - 0.6).abs() < f32::EPSILON);
+        assert!((result.g - 0.5).abs() < f32::EPSILON);
+        assert!((result.b - 0.5).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -998,15 +1001,14 @@ mod tests {
             op: BlendOp::Subtract,
         };
 
-        let src = Colour::new(100, 150, 200, 255);
-        let dst = Colour::new(20, 40, 60, 255);
+        let src = Colour::new(0.5, 0.6, 0.7, 1.0);
+        let dst = Colour::new(0.2, 0.4, 0.6, 1.0);
 
         let result = state.apply(src, dst);
 
-        assert_eq!(result.r, 80);
-        assert_eq!(result.g, 110);
-        assert_eq!(result.b, 140);
-        assert_eq!(result.a, 0);
+        assert!((result.r - 0.3).abs() < f32::EPSILON);
+        assert!((result.g - 0.2).abs() < f32::EPSILON);
+        assert!((result.b - 0.1).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1017,15 +1019,15 @@ mod tests {
             op: BlendOp::ReverseSubtract,
         };
 
-        let src = Colour::new(20, 40, 60, 255);
-        let dst = Colour::new(100, 150, 200, 255);
+        let src = Colour::new(0.2, 0.4, 0.6, 1.0);
+        let dst = Colour::new(1.0, 1.5, 2.0, 2.5);
 
         let result = state.apply(src, dst);
 
-        assert_eq!(result.r, 80);
-        assert_eq!(result.g, 110);
-        assert_eq!(result.b, 140);
-        assert_eq!(result.a, 0);
+        assert!((result.r - 0.8).abs() < f32::EPSILON);
+        assert!((result.g - 1.1).abs() < f32::EPSILON);
+        assert!((result.b - 1.4).abs() < f32::EPSILON);
+        assert!((result.a - 1.5).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1036,12 +1038,15 @@ mod tests {
             op: BlendOp::Min,
         };
 
-        let src = Colour::new(100, 50, 200, 128);
-        let dst = Colour::new(20, 100, 150, 255);
+        let src = Colour::new(0.5, 0.2, 0.8, 0.5);
+        let dst = Colour::new(0.1, 0.6, 0.6, 1.0);
 
         let result = state.apply(src, dst);
 
-        assert_eq!(result, Colour::new(20, 50, 150, 128));
+        assert!((result.r - 0.1).abs() < f32::EPSILON);
+        assert!((result.g - 0.2).abs() < f32::EPSILON);
+        assert!((result.b - 0.6).abs() < f32::EPSILON);
+        assert!((result.a - 0.5).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1052,18 +1057,21 @@ mod tests {
             op: BlendOp::Max,
         };
 
-        let src = Colour::new(100, 50, 200, 128);
-        let dst = Colour::new(20, 100, 150, 255);
+        let src = Colour::new(0.5, 0.2, 0.8, 0.5);
+        let dst = Colour::new(0.1, 0.6, 0.6, 1.0);
 
         let result = state.apply(src, dst);
 
-        assert_eq!(result, Colour::new(100, 100, 200, 255));
+        assert!((result.r - 0.5).abs() < f32::EPSILON);
+        assert!((result.g - 0.6).abs() < f32::EPSILON);
+        assert!((result.b - 0.8).abs() < f32::EPSILON);
+        assert!((result.a - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn blend_factor_resolve() {
-        let src = Colour::new(100, 150, 200, 128);
-        let dst = Colour::new(20, 40, 60, 64);
+        let src = Colour::new(0.5, 0.6, 0.7, 0.5);
+        let dst = Colour::new(0.2, 0.4, 0.6, 0.25);
 
         assert_eq!(BlendFactor::Zero.resolve(src, dst), Colour::BLACK);
         assert_eq!(BlendFactor::One.resolve(src, dst), Colour::WHITE);
@@ -1072,34 +1080,34 @@ mod tests {
 
         assert_eq!(
             BlendFactor::OneMinusSrcColor.resolve(src, dst),
-            Colour::new(155, 105, 55, 127)
+            Colour::new(0.5, 0.4, 0.3, 0.5)
         );
 
         assert_eq!(BlendFactor::DstColor.resolve(src, dst), dst);
 
         assert_eq!(
             BlendFactor::OneMinusDstColor.resolve(src, dst),
-            Colour::new(235, 215, 195, 191)
+            Colour::new(0.1, 0.4, 0.4, 0.25)
         );
 
         assert_eq!(
             BlendFactor::SrcAlpha.resolve(src, dst),
-            Colour::new(128, 128, 128, 128)
+            Colour::new(0.5, 0.5, 0.5, 0.5)
         );
 
         assert_eq!(
             BlendFactor::OneMinusSrcAlpha.resolve(src, dst),
-            Colour::new(127, 127, 127, 127)
+            Colour::new(0.5, 0.5, 0.5, 0.5)
         );
 
         assert_eq!(
             BlendFactor::DstAlpha.resolve(src, dst),
-            Colour::new(64, 64, 64, 64)
+            Colour::new(0.25, 0.25, 0.25, 0.25)
         );
 
         assert_eq!(
             BlendFactor::OneMinusDstAlpha.resolve(src, dst),
-            Colour::new(191, 191, 191, 191)
+            Colour::new(0.75, 0.75, 0.75, 0.75)
         );
     }
 }

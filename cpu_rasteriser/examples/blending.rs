@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let elapsed = start_time.elapsed().as_secs_f32();
 
-        let background_colour = Colour::from_f32(
+        let background_colour = Colour::new(
             0.3 + 0.3 * (elapsed * 0.5).sin(),
             0.3 + 0.3 * (elapsed * 0.3).cos(),
             0.3 + 0.3 * (elapsed * 0.7).sin(),
@@ -180,7 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &indices,
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms {
-                    colour: Colour::from_u32(0x3399ff),
+                    colour: Colour::new(0.2, 0.6, 1.0, 1.0),
                 },
             ),
             vertex_uniforms_at(-1.65, 0.0, 0.3),
@@ -193,7 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &indices,
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms {
-                    colour: Colour::from_u32(0xff3333),
+                    colour: Colour::new(1.0, 0.2, 0.2, 1.0),
                 },
             ),
             vertex_uniforms_at(-1.50, 0.0, -0.6),
@@ -211,7 +211,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &indices,
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms {
-                    colour: Colour::from_u32(0x303030),
+                    colour: Colour::new(0.2, 0.2, 0.2, 1.0),
                 },
             ),
             vertex_uniforms_at(0.0, 0.0, -0.6),
@@ -224,7 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &indices,
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms {
-                    colour: Colour::from_f32(1.0, 0.2, 0.2, 0.5),
+                    colour: Colour::new(1.0, 0.2, 0.2, 0.5),
                 },
             ),
             vertex_uniforms_at(-0.15, 0.0, 0.2),
@@ -237,7 +237,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &indices,
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms {
-                    colour: Colour::from_f32(0.2, 1.0, 0.2, 0.5),
+                    colour: Colour::new(0.2, 1.0, 0.2, 0.5),
                 },
             ),
             vertex_uniforms_at(0.15, 0.0, 0.4),
@@ -254,7 +254,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &indices,
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms {
-                    colour: Colour::from_f32(1.0, 0.25, 0.0, 0.6),
+                    colour: Colour::new(1.0, 0.25, 0.0, 0.6),
                 },
             ),
             vertex_uniforms_at(1.50, 0.0, 0.2),
@@ -267,7 +267,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &indices,
                 PrimitiveMode::TRIANGLES,
                 FragmentUniforms {
-                    colour: Colour::from_f32(0.0, 0.5, 1.0, 0.6),
+                    colour: Colour::new(0.0, 0.5, 1.0, 0.6),
                 },
             ),
             vertex_uniforms_at(1.70, 0.0, 0.4),
@@ -276,7 +276,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         frame.finish();
 
         window
-            .update_with_buffer(screen_target.pixels(), WIDTH, HEIGHT)
+            .update_with_buffer(&screen_target.pixels_u32(), WIDTH, HEIGHT)
             .unwrap();
     }
 

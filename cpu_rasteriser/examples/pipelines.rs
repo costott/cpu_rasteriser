@@ -153,7 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         frame.finish();
 
         window
-            .update_with_buffer(screen_target.pixels(), WIDTH, HEIGHT)
+            .update_with_buffer(&screen_target.pixels_u32(), WIDTH, HEIGHT)
             .unwrap();
     }
 

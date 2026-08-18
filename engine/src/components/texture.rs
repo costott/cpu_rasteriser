@@ -6,7 +6,7 @@ use std::sync::Arc;
 pub struct Texture {
     pub width: u32,
     pub height: u32,
-    pub pixels: Arc<[u32]>,
+    pub pixels: Arc<[Colour]>,
 }
 impl Texture {
     pub fn from_image(path: impl AsRef<std::path::Path>) -> Result<Self, TextureError> {
@@ -14,7 +14,14 @@ impl Texture {
 
         let pixels = image
             .pixels()
-            .map(|pixel| u32::from_be_bytes([pixel[0], pixel[1], pixel[2], pixel[3]]))
+            .map(|pixel| {
+                Colour::new(
+                    pixel[0] as f32 / 255.0,
+                    pixel[1] as f32 / 255.0,
+                    pixel[2] as f32 / 255.0,
+                    pixel[3] as f32 / 255.0,
+                )
+            })
             .collect::<Vec<_>>()
             .into();
 
@@ -38,7 +45,7 @@ impl Texture {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextureSampler {
-    pixels: Arc<[u32]>,
+    pixels: Arc<[Colour]>,
     width: u32,
     height: u32,
     wrap_mode: WrapMode,
@@ -46,7 +53,7 @@ pub struct TextureSampler {
 }
 impl TextureSampler {
     pub fn new(
-        pixels: Arc<[u32]>,
+        pixels: Arc<[Colour]>,
         width: u32,
         height: u32,
         wrap_mode: WrapMode,
@@ -122,7 +129,7 @@ impl TextureSampler {
         let x = x.min(self.width - 1);
         let y = y.min(self.height - 1);
 
-        Colour::from_u32(self.pixels[(y * self.width + x) as usize])
+        self.pixels[(y * self.width + x) as usize]
     }
 
     #[inline(always)]
@@ -133,54 +140,24 @@ impl TextureSampler {
         let x_f = u * (self.width - 1) as f32;
         let y_f = (1.0 - v) * (self.height - 1) as f32;
 
-        let x0 = x_f as u32;
-        let y0 = y_f as u32;
-
-        let tx = ((x_f - x0 as f32) * 256.0) as u32;
-        let ty = ((y_f - y0 as f32) * 256.0) as u32;
+        let x0 = x_f.floor() as u32;
+        let y0 = y_f.floor() as u32;
 
         let x1 = (x0 + 1).min(self.width - 1);
         let y1 = (y0 + 1).min(self.height - 1);
 
-        let stride = self.width as usize;
-        let c00 = self.pixels[(y0 as usize * stride) + x0 as usize];
-        let c10 = self.pixels[(y0 as usize * stride) + x1 as usize];
-        let c01 = self.pixels[(y1 as usize * stride) + x0 as usize];
-        let c11 = self.pixels[(y1 as usize * stride) + x1 as usize];
+        let tx = x_f - x0 as f32;
+        let ty = y_f - y0 as f32;
 
-        let inv_tx = 256 - tx;
-        let inv_ty = 256 - ty;
+        let c00 = self.get_pixel(x0, y0);
+        let c10 = self.get_pixel(x1, y0);
+        let c01 = self.get_pixel(x0, y1);
+        let c11 = self.get_pixel(x1, y1);
 
-        let w00 = inv_tx * inv_ty;
-        let w10 = tx * inv_ty;
-        let w01 = inv_tx * ty;
-        let w11 = tx * ty;
+        let c0 = Colour::lerp(&c00, &c10, tx);
+        let c1 = Colour::lerp(&c01, &c11, tx);
 
-        #[inline(always)]
-        fn interpolate(
-            c00: u32,
-            c10: u32,
-            c01: u32,
-            c11: u32,
-            shift: u32,
-            w00: u32,
-            w10: u32,
-            w01: u32,
-            w11: u32,
-        ) -> u8 {
-            let c00 = (c00 >> shift) & 0xff;
-            let c10 = (c10 >> shift) & 0xff;
-            let c01 = (c01 >> shift) & 0xff;
-            let c11 = (c11 >> shift) & 0xff;
-            ((c00 * w00 + c10 * w10 + c01 * w01 + c11 * w11) >> 16) as u8
-        }
-
-        Colour::new(
-            interpolate(c00, c10, c01, c11, 16, w00, w10, w01, w11),
-            interpolate(c00, c10, c01, c11, 8, w00, w10, w01, w11),
-            interpolate(c00, c10, c01, c11, 0, w00, w10, w01, w11),
-            interpolate(c00, c10, c01, c11, 24, w00, w10, w01, w11),
-        )
+        Colour::lerp(&c0, &c1, ty)
     }
 
     #[inline(always)]
@@ -191,7 +168,7 @@ impl TextureSampler {
         let x = (u * (self.width - 1) as f32).round() as u32;
         let y = ((1.0 - v) * (self.height - 1) as f32).round() as u32;
 
-        Colour::from_u32(self.pixels[(y * self.width + x) as usize])
+        self.get_pixel(x, y)
     }
 }
 
