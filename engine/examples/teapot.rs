@@ -2,11 +2,6 @@ use engine::prelude::*;
 
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::{
-    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, Pipeline},
-};
-
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
 
@@ -109,21 +104,29 @@ impl Application for TeapotApp {
         }
     }
 
-    fn render<'frame>(
-        &'frame mut self,
-        frame: &mut cpu_rasteriser::renderer::Frame<'_, '_, 'frame>,
-        _viewport: &Viewport,
-    ) {
+    fn render<'frame>(&mut self, context: &'frame mut RenderContext<'frame>) -> PresentedFrame {
+        let extent = context.presentation_target().extent();
+
+        let mut presentation_pass = context.begin_presentation_pass(RenderPassDescriptor {
+            viewport: Viewport::full(&extent),
+            colour_load_op: LoadOp::Clear(Colour::BLACK),
+            depth_load_op: Some(LoadOp::Clear(1.0)),
+        });
+
         let vertex_uniforms = VertexUniforms {
             model_matrix: self.teapot.transform.model_matrix(),
             view_matrix: self.camera.view_matrix(),
             projection_matrix: self.camera.projection_matrix(),
         };
 
-        self.teapot
-            .draw_to_frame(frame, &self.simple_pipeline, vertex_uniforms, |_| {
-                FragmentUniforms
-            });
+        self.teapot.draw_to_render_pass(
+            &mut presentation_pass,
+            &self.simple_pipeline,
+            vertex_uniforms,
+            |_| FragmentUniforms,
+        );
+
+        presentation_pass.finish()
     }
 }
 

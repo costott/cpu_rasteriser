@@ -22,6 +22,10 @@ impl Vec2 {
     pub fn cross(&self, other: &Self) -> f32 {
         self.x * other.y - self.y * other.x
     }
+
+    pub fn length(&self) -> f32 {
+        (self.x * self.x + self.y * self.y).sqrt()
+    }
 }
 impl Add for Vec2 {
     type Output = Self;
@@ -40,6 +44,16 @@ impl Sub for Vec2 {
         Self {
             x: self.x - other.x,
             y: self.y - other.y,
+        }
+    }
+}
+impl Mul for Vec2 {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
+        Self {
+            x: self.x * other.x,
+            y: self.y * other.y,
         }
     }
 }

@@ -3,16 +3,17 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::Instant;
 
-use cpu_rasteriser::{renderer::Renderer, viewport::Viewport};
+use cpu_rasteriser::prelude::*;
+
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::Window;
 
-use crate::AppHandle;
 use crate::app::{AppEvent, Application, CursorGrab};
 use crate::input::{ButtonState, InputEvent, InputKey, InputState, MouseButton};
+use crate::{AppHandle, RenderContext};
 
 pub trait EngineBackend: Sized {
     fn run<A>(self, app: A) -> Result<(), Box<dyn std::error::Error>>
@@ -120,7 +121,7 @@ where
     app_handle: AppHandle,
     context: softbuffer::Context<winit::event_loop::OwnedDisplayHandle>,
     renderer: Renderer,
-    viewport: Viewport,
+    presentation_target: RenderTarget,
     window_attributes: winit::window::WindowAttributes,
     state: AppState,
     last_frame: Instant,
@@ -146,13 +147,12 @@ where
         app: A,
         window_attributes: winit::window::WindowAttributes,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let viewport = Viewport::new(640, 360);
         Ok(Self {
             app,
             app_handle: AppHandle::default(),
             context,
-            renderer: Renderer::new(&viewport)?,
-            viewport,
+            renderer: Renderer::new()?,
+            presentation_target: RenderTarget::new(Extent::new(640, 360)).with_depth(),
             window_attributes,
             state: AppState::Initial,
             last_frame: Instant::now(),
@@ -170,9 +170,8 @@ where
             return;
         }
 
-        let viewport = Viewport::new(width as usize, height as usize);
-        self.viewport = viewport;
-        self.renderer.resize(&self.viewport);
+        self.presentation_target
+            .resize(Extent::new(width as usize, height as usize));
         self.app.resize(width, height);
     }
 
@@ -186,13 +185,12 @@ where
 
         self.app.update(dt);
 
-        let mut frame = self.renderer.begin_frame(&self.viewport);
-        self.app.render(&mut frame, &self.viewport);
-        frame.finish();
+        let mut context = RenderContext::new(&mut self.renderer, &mut self.presentation_target);
+        let _ = self.app.render(&mut context);
 
         let mut buffer = surface.buffer_mut().unwrap();
 
-        buffer.copy_from_slice(self.renderer.pixels());
+        buffer.copy_from_slice(self.presentation_target.pixels());
         buffer.present().unwrap();
     }
 }
@@ -406,7 +404,7 @@ where
     app: A,
     app_handle: AppHandle,
     renderer: Renderer,
-    viewport: Viewport,
+    presentation_target: RenderTarget,
     window: minifb::Window,
     last_frame: Instant,
     input_state: InputState,
@@ -436,12 +434,11 @@ where
 {
     fn new(window: minifb::Window, app: A) -> Result<Self, Box<dyn std::error::Error>> {
         let (width, height) = window.get_size();
-        let viewport = Viewport::new(width, height);
         Ok(Self {
             app,
             app_handle: AppHandle::default(),
-            renderer: Renderer::new(&viewport)?,
-            viewport,
+            renderer: Renderer::new()?,
+            presentation_target: RenderTarget::new(Extent::new(width, height)).with_depth(),
             window,
             last_frame: Instant::now(),
             input_state: InputState::default(),
@@ -539,9 +536,7 @@ where
             return;
         }
 
-        let viewport = Viewport::new(width, height);
-        self.viewport = viewport;
-        self.renderer.resize(&self.viewport);
+        self.presentation_target.resize(Extent::new(width, height));
         self.app.resize(width as u32, height as u32);
         self.app.event(
             AppEvent::Resized {
@@ -562,15 +557,14 @@ where
         self.last_frame = Instant::now();
         self.app.update(dt);
 
-        let mut frame = self.renderer.begin_frame(&self.viewport);
-        self.app.render(&mut frame, &self.viewport);
-        frame.finish();
+        let mut context = RenderContext::new(&mut self.renderer, &mut self.presentation_target);
+        let _ = self.app.render(&mut context);
 
         self.window
             .update_with_buffer(
-                self.renderer.pixels(),
-                self.viewport.width,
-                self.viewport.height,
+                self.presentation_target.pixels(),
+                self.presentation_target.width(),
+                self.presentation_target.height(),
             )
             .map_err(|err| err.into())
     }

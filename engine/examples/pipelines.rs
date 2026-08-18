@@ -2,11 +2,6 @@ use engine::prelude::*;
 
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::{
-    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{BlendState, CullingMode, DepthState, Pipeline},
-};
-
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
 
@@ -189,10 +184,12 @@ struct PipelinesApp {
 impl PipelinesApp {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let gouraud_pipeline = Pipeline::new(GouraudVertexShader, GouraudFragmentShader)
-            .with_culling_mode(CullingMode::None);
+            .with_culling_mode(CullingMode::None)
+            .with_depth_state(DepthState::DEFAULT);
 
         let phong_pipeline = Pipeline::new(PhongVertexShader, PhongFragmentShader)
-            .with_culling_mode(CullingMode::None);
+            .with_culling_mode(CullingMode::None)
+            .with_depth_state(DepthState::DEFAULT);
 
         let alpha_pipeline = Pipeline::new(PhongVertexShader, PhongFragmentShader)
             .with_culling_mode(CullingMode::None)
@@ -324,11 +321,15 @@ impl Application for PipelinesApp {
         }
     }
 
-    fn render<'frame>(
-        &'frame mut self,
-        frame: &mut cpu_rasteriser::renderer::Frame<'_, '_, 'frame>,
-        _viewport: &Viewport,
-    ) {
+    fn render<'frame>(&mut self, context: &'frame mut RenderContext<'frame>) -> PresentedFrame {
+        let extent = context.presentation_target().extent();
+
+        let mut pass = context.begin_presentation_pass(RenderPassDescriptor {
+            viewport: Viewport::full(&extent),
+            colour_load_op: LoadOp::Clear(Colour::BLACK),
+            depth_load_op: Some(LoadOp::Clear(1.0)),
+        });
+
         let scene_uniforms = std::sync::Arc::new(SceneUniforms {
             camera: self.camera.clone(),
             lights: self.lights.clone(),
@@ -344,15 +345,15 @@ impl Application for PipelinesApp {
             scene: scene_uniforms.clone(),
         };
 
-        self.gouraud_teapot.draw_to_frame(
-            frame,
+        self.gouraud_teapot.draw_to_render_pass(
+            &mut pass,
             &self.gouraud_pipeline,
             gouraud_vertex_uniforms.clone(),
             |_| GouraudFragmentUniforms,
         );
 
-        self.phong_teapot.draw_to_frame(
-            frame,
+        self.phong_teapot.draw_to_render_pass(
+            &mut pass,
             &self.phong_pipeline,
             phong_vertex_uniforms.clone(),
             |mesh| PhongFragmentUniforms {
@@ -365,8 +366,8 @@ impl Application for PipelinesApp {
             },
         );
 
-        self.alpha_teapot.draw_to_frame(
-            frame,
+        self.alpha_teapot.draw_to_render_pass(
+            &mut pass,
             &self.alpha_pipeline,
             PhongVertexUniforms {
                 model_matrix: self.alpha_teapot.transform.model_matrix(),
@@ -382,8 +383,8 @@ impl Application for PipelinesApp {
             },
         );
 
-        self.additive_teapot.draw_to_frame(
-            frame,
+        self.additive_teapot.draw_to_render_pass(
+            &mut pass,
             &self.additive_pipeline,
             PhongVertexUniforms {
                 model_matrix: self.additive_teapot.transform.model_matrix(),
@@ -398,6 +399,8 @@ impl Application for PipelinesApp {
                     .cloned(),
             },
         );
+
+        pass.finish()
     }
 }
 

@@ -11,10 +11,10 @@ pub struct Material {
     pub specular: Colour,
     pub shininess: f32,
 
-    pub ambient_texture: Option<Texture>,
-    pub diffuse_texture: Option<Texture>,
-    pub specular_texture: Option<Texture>,
-    pub normal_texture: Option<Texture>,
+    pub ambient_texture: Option<TextureSampler>,
+    pub diffuse_texture: Option<TextureSampler>,
+    pub specular_texture: Option<TextureSampler>,
+    pub normal_texture: Option<TextureSampler>,
 }
 impl Material {
     pub fn new(
@@ -23,10 +23,10 @@ impl Material {
         diffuse: Colour,
         specular: Colour,
         shininess: f32,
-        ambient_texture: Option<Texture>,
-        diffuse_texture: Option<Texture>,
-        specular_texture: Option<Texture>,
-        normal_texture: Option<Texture>,
+        ambient_texture: Option<TextureSampler>,
+        diffuse_texture: Option<TextureSampler>,
+        specular_texture: Option<TextureSampler>,
+        normal_texture: Option<TextureSampler>,
     ) -> Self {
         Self {
             name,

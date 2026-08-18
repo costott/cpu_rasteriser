@@ -11,10 +11,7 @@ struct Vertex {
     pub colour: Vec4,
 }
 
-struct VertexUniforms {
-    pub view_matrix: Mat4,
-    pub projection_matrix: Mat4,
-}
+struct VertexUniforms {}
 
 #[derive(Interpolate)]
 struct Varyings {
@@ -27,9 +24,8 @@ impl VertexShader for BasicVertexShader {
     type Uniforms = VertexUniforms;
     type Varyings = Varyings;
 
-    fn shade(&self, vertex: Self::Vertex, uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
-        let view_position = uniforms.view_matrix * vertex.position.to_point4();
-        let clip_position = uniforms.projection_matrix * view_position;
+    fn shade(&self, vertex: Self::Vertex, _uniforms: &Self::Uniforms) -> (Vec4, Self::Varyings) {
+        let clip_position = vertex.position.to_point4();
 
         let varyings = Varyings {
             colour: vertex.colour,
@@ -62,16 +58,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     window.set_target_fps(60);
 
+    let extent = Extent::new(WIDTH, HEIGHT);
+
     let mut renderer = Renderer::new()?;
 
-    let extent = Extent::new(WIDTH, HEIGHT);
     let mut render_target = RenderTarget::new(extent);
 
     let simple_pipeline = Pipeline::new(BasicVertexShader, BasicFragmentShader);
-
-    let eye = Vec3::new(0.0, 0.0, 1.0);
-    let look_at = Vec3::new(0.0, 0.0, 0.0);
-    let up = Vec3::new(0.0, 1.0, 0.0);
 
     let triangle = vec![
         Vertex {
@@ -89,16 +82,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
     let triangle_indices = vec![0, 1, 2];
 
+    let mut viewport = Viewport::new(0, 0, WIDTH / 5, HEIGHT / 5);
+
+    let start_time = std::time::Instant::now();
+
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let vertex_uniforms = VertexUniforms {
-            view_matrix: Mat4::look_at(eye, look_at, up),
-            projection_matrix: Mat4::perspective(90.0, WIDTH as f32 / HEIGHT as f32, 0.01, 50.0),
-        };
+        let vertex_uniforms = VertexUniforms {};
+
+        let elapsed = start_time.elapsed().as_secs_f32();
+
+        viewport.width = ((WIDTH as f32 * (0.5 - 0.5 * (elapsed * 0.2).sin())) as usize).max(1);
+        viewport.x =
+            ((WIDTH - viewport.width) as f32 * (0.5 + 0.5 * (elapsed * 0.5).sin())) as usize;
+        viewport.y =
+            ((HEIGHT - viewport.height) as f32 * (0.5 + 0.5 * (elapsed * 0.5).cos())) as usize;
 
         let mut frame = renderer.begin_render_pass(
             &mut render_target,
             RenderPassDescriptor {
-                viewport: Viewport::full(&extent),
+                viewport: viewport,
                 colour_load_op: LoadOp::Clear(Colour::BLACK),
                 depth_load_op: None,
             },

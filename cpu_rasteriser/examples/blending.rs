@@ -9,11 +9,6 @@
 
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::{
-    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{BlendState, CullingMode, DepthState, DrawCall, Pipeline, PrimitiveMode, Renderer},
-};
-
 use minifb::{Key, Window, WindowOptions};
 
 const WIDTH: usize = 640;
@@ -89,8 +84,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     window.set_target_fps(60);
 
-    let viewport = Viewport::new(WIDTH, HEIGHT);
-    let mut renderer = Renderer::new(&viewport)?;
+    let mut renderer = Renderer::new()?;
+
+    let extent = Extent::new(WIDTH, HEIGHT);
+    let mut screen_target = RenderTarget::new(extent).with_depth();
 
     // Standard opaque pipeline: depth test AND write enabled, blending off.
     // This matches `Pipeline::new`'s defaults; it's spelled out explicitly
@@ -149,8 +146,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         projection_matrix,
     };
 
+    let start_time = std::time::Instant::now();
+
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let mut frame = renderer.begin_frame(&viewport);
+        let elapsed = start_time.elapsed().as_secs_f32();
+
+        let background_colour = Colour::from_f32(
+            0.3 + 0.3 * (elapsed * 0.5).sin(),
+            0.3 + 0.3 * (elapsed * 0.3).cos(),
+            0.3 + 0.3 * (elapsed * 0.7).sin(),
+            1.0,
+        );
+
+        let mut frame = renderer.begin_render_pass(
+            &mut screen_target,
+            RenderPassDescriptor {
+                viewport: Viewport::full(&extent),
+                colour_load_op: LoadOp::Clear(background_colour),
+                depth_load_op: Some(LoadOp::Clear(1.0)),
+            },
+        );
 
         // --- Left: depth testing -------------------------------------------
         // Both triangles have exactly the same size and almost completely
@@ -261,7 +276,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         frame.finish();
 
         window
-            .update_with_buffer(renderer.pixels(), WIDTH, HEIGHT)
+            .update_with_buffer(screen_target.pixels(), WIDTH, HEIGHT)
             .unwrap();
     }
 
