@@ -1,6 +1,6 @@
 # Rust Software Graphics Engine
 
-> A fully custom 3D rendering framework written in Rust, implementing a modern graphics pipeline from scratch without relying on OpenGL, Vulkan, or DirectX, or existing GPU APIs. All geometry processing, rasterisation, interpolation, and shading are implemented from scratch in Rust.
+> A fully custom 3D rendering framework written in Rust, implementing a modern graphics pipeline from scratch without relying on OpenGL, Vulkan, DirectX, or any GPU APIs. All geometry processing, rasterisation, interpolation, and shading are implemented from scratch in Rust.
 
 > The project explores the fundamentals of real-time rendering by building the core systems behind a traditional GPU pipeline, including vertex processing, clipping, rasterisation, interpolation, lighting, and materials.
 
@@ -46,6 +46,41 @@ The complete example, including the shader implementations, camera setup, lighti
 
 ---
 
+## Multipass Rendering
+
+Render passes write to explicit `RenderTarget`s rather than directly to the screen, and a completed target can be sampled as a texture in a later pass. This makes it possible to build a scene up across multiple passes, then post-process the result:
+
+```rust
+// Pass 1: render the scene into an offscreen target.
+let mut pass = context.begin_render_pass(&mut scene_target, RenderPassDescriptor {
+    viewport: Viewport::full(&extent),
+    colour_load_op: LoadOp::Clear(Colour::BLACK),
+    depth_load_op: Some(LoadOp::Clear(1.0)),
+});
+model.draw_to_render_pass(&mut pass, &model_pipeline, vertex_uniforms, fragment_uniforms);
+pass.finish();
+
+// Convert the finished target into a sampleable texture.
+let scene_texture = Arc::new(render_target_sampler(&scene_target));
+
+// Pass 2: post-process into the presentation target (e.g. chromatic aberration, vignette,
+// greyscale, invert, Gaussian blur, Sobel edge detection).
+let mut pass = context.begin_presentation_pass(RenderPassDescriptor {
+    viewport: Viewport::full(&extent),
+    colour_load_op: LoadOp::Clear(Colour::BLACK),
+    depth_load_op: None,
+});
+fullscreen_quad.draw_to_render_pass(&mut pass, &postprocess_pipeline, vertex_uniforms, |_| FragmentUniforms {
+    source: scene_texture.clone(),
+    // ...
+});
+pass.finish()
+```
+
+`LoadOp::Load` also allows a render pass to accumulate onto an existing target's contents instead of clearing it, so a background pass and a foreground pass can share the same target without either overwriting the other. See [`engine/examples/render_passes.rs`](./engine/examples/render_passes.rs) for the full offscreen-target-to-post-process pipeline, and [`cpu_rasteriser/examples/render_passes.rs`](./cpu_rasteriser/examples/render_passes.rs) for the same idea at the low-level renderer API.
+
+---
+
 ## Architecture
 
 The project is organised as two independent crates:
@@ -58,6 +93,8 @@ software-graphics/
 ```
 
 The `cpu_rasteriser` crate provides a reusable software implementation of a modern graphics pipeline, exposing concepts such as pipelines, shaders, draw calls, render passes, and render targets.
+
+The `rasteriser_macros` crate provides derive macros, most notably `#[derive(Interpolate)]`, which generates per-field interpolation, differencing, and scaling for vertex/varying structs so shader authors don't have to hand-write it.
 
 The `engine` crate builds on top of the renderer, providing higher-level abstractions including cameras, models, materials, lights, scene management, and asset loading.
 
@@ -76,9 +113,9 @@ Vertex Buffers
     ↓
 Render Pass
     ↓
-Draw Calls
-    ↓
 Pipeline Selection
+    ↓
+Draw Calls
     ↓
 Vertex Processing
     ↓
@@ -90,9 +127,9 @@ Tile Binning
     ↓
 Parallel Rasterisation
     ↓
-Fragment Shading
+Fragment Shading (Depth Test → Shade → Blend → Depth Write)
     ↓
-Render Target
+Render Target (Framebuffer + optional Depth Buffer)
 ```
 
 Supported features:
@@ -102,9 +139,11 @@ Supported features:
 - Homogeneous coordinate clipping
 - Near-plane and frustum clipping
 - Backface culling
-- Depth buffering
+- Depth buffering with configurable test/write behaviour
 - Indexed mesh rendering
 - Programmable vertex and fragment shaders
+- Explicit render targets and render passes with configurable load/store operations
+- Multipass rendering: chaining passes, both onto the same target and into offscreen targets sampled as textures by later passes
 
 ---
 
@@ -126,11 +165,11 @@ Perspective correction ensures attributes such as normals, colours, and depth va
 
 To improve rendering performance, the rasteriser uses a tile-based rendering pipeline executed across multiple CPU threads.
 
-After vertex processing and clipping, triangles are converted into rasterisation commands and binned into fixed-size screen-space tiles. Each tile is then rasterised independently by a worker thread.
+After vertex processing and clipping, triangles are converted into rasterisation commands and binned into fixed-size screen-space tiles. Each tile is then rasterised independently by a worker thread. Tiles are seeded from the render pass's load operations, so a `Load` pass correctly rasterises on top of a target's existing contents rather than a blank tile.
 
 The tile system is independent of the active shader pipeline, allowing different vertex and fragment shader combinations to contribute rendering work to the same render pass.
 
-Once all worker threads have completed, the tile framebuffers are merged into the final image.
+Once all worker threads have completed, the tile framebuffers (and depth buffers) are merged back into the render target.
 
 This approach provides:
 
@@ -172,9 +211,9 @@ trait FragmentShader<Varyings> {
 }
 ```
 
-This allows different rendering techniques to share the same underlying pipeline while maintaining compile-time type safety.
+Varying structs implement an `Interpolate` trait (interpolate, difference, scale, add-scaled) so the rasteriser can perspective-correctly interpolate arbitrary user-defined data. `#[derive(Interpolate)]`, provided by the `rasteriser_macros` crate, generates this implementation automatically field-by-field.
 
-The renderer does not need to know the details of a shader implementation. It only executes the generic pipeline stages and processes the resulting geometry and fragments.
+This allows different rendering techniques to share the same underlying pipeline while maintaining compile-time type safety. The renderer does not need to know the details of a shader implementation, it only executes the generic pipeline stages and processes the resulting geometry and fragments.
 
 ---
 
@@ -184,10 +223,10 @@ The renderer uses an explicit pipeline and render pass model inspired by modern 
 
 Rendering is separated into:
 
+- Render targets (colour + optional depth buffer)
 - Pipeline state
-- Render passes
+- Render pass recording (with colour/depth load operations)
 - Draw commands
-- Render targets
 - Rasterisation
 
 A pipeline contains the programmable stages and fixed-function rendering configuration:
@@ -201,8 +240,8 @@ including:
 - Vertex shader
 - Fragment shader
 - Culling mode
-- Colour blending state
-- Depth testing state
+- Colour blending state (blend factors and operation)
+- Depth test/write state
 
 Rendering takes place through explicit render passes. A render pass targets a render target and defines how its existing contents are loaded and how its results are stored.
 
@@ -220,40 +259,72 @@ This separates the lifetime of rendering commands from the lifetime of a frame. 
 
 ---
 
+## Application Framework
+
+The `engine` crate provides an `Application` trait and two interchangeable windowing backends: `WinitEngine` and `MinifbEngine`, behind a common `EngineBackend` trait. Implementing `update`, `render`, `resize`, and `event` is enough to get a running, resizable window with normalised keyboard/mouse input on either backend:
+
+```rust
+impl Application for MyApp {
+    fn update(&mut self, dt: f32) { /* ... */ }
+    fn render<'frame>(&mut self, context: &'frame mut RenderContext<'frame>) -> PresentedFrame { /* ... */ }
+    fn resize(&mut self, width: u32, height: u32) { /* ... */ }
+    fn event(&mut self, event: AppEvent, handle: &mut AppHandle) { /* ... */ }
+}
+
+MinifbEngine::new()
+    .with_title("My App")
+    .with_size(640, 360)
+    .run(MyApp::new()?)
+```
+
+Built-in `OrbitControls` and `FirstPersonControls` camera controllers consume this normalised input to drive a `Camera` without any backend-specific code.
+
+---
+
 ## Supported Features
 
 ### Rasteriser
 
-| Feature                           | Status |
-| --------------------------------- | ------ |
-| 3D transformations                | ✅     |
-| Triangle rasterisation            | ✅     |
-| Depth buffering                   | ✅     |
-| Backface culling                  | ✅     |
-| Frustum clipping                  | ✅     |
-| Perspective-correct interpolation | ✅     |
-| Tile-based rendering              | ✅     |
-| Multithreaded rasterisation       | ✅     |
-| Generic shader pipelines          | ✅     |
-| Pipeline state abstraction        | ✅     |
-| Render pass architecture          | ✅     |
-| Multiple render passes            | ✅     |
-| Multiple pipelines per pass       | ✅     |
-| Render target load/store          | ✅     |
+| Feature                                          | Status |
+| ------------------------------------------------ | ------ |
+| 3D transformations                               | ✅     |
+| Triangle rasterisation                           | ✅     |
+| Line and circle rasterisation                    | ✅     |
+| Depth buffering                                  | ✅     |
+| Configurable depth test/write state              | ✅     |
+| Backface culling                                 | ✅     |
+| Frustum clipping                                 | ✅     |
+| Perspective-correct interpolation                | ✅     |
+| Tile-based rendering                             | ✅     |
+| Multithreaded rasterisation                      | ✅     |
+| Generic shader pipelines                         | ✅     |
+| Pipeline state abstraction                       | ✅     |
+| Explicit render targets                          | ✅     |
+| Render passes with load/store operations         | ✅     |
+| Multipass rendering (offscreen targets)          | ✅     |
+| Multiple pipelines per render pass               | ✅     |
+| Configurable colour blending (5 ops, 10 factors) | ✅     |
+| `#[derive(Interpolate)]` macro                   | ✅     |
 
 ### Engine
 
-| Feature              | Status |
-| -------------------- | ------ |
-| Perspective camera   | ✅     |
-| Orthographic camera  | ✅     |
-| Indexed meshes       | ✅     |
-| Multiple materials   | ✅     |
-| Directional lighting | ✅     |
-| Gouraud shading      | ✅     |
-| Phong shading        | ✅     |
-| OBJ loading          | ✅     |
-| Textures             | ✅     |
+| Feature                                                      | Status |
+| ------------------------------------------------------------ | ------ |
+| Perspective camera                                           | ✅     |
+| Orthographic camera                                          | ✅     |
+| Orbit and first-person camera controllers                    | ✅     |
+| Indexed meshes                                               | ✅     |
+| Multiple materials                                           | ✅     |
+| Directional lighting                                         | ✅     |
+| Gouraud shading                                              | ✅     |
+| Phong shading                                                | ✅     |
+| OBJ / MTL loading                                            | ✅     |
+| Textures (bilinear/nearest filtering, repeat/clamp wrapping) | ✅     |
+| Render-to-texture / offscreen render targets                 | ✅     |
+| Post-processing pipeline                                     | ✅     |
+| Application framework (winit + minifb backends)              | ✅     |
+| Unified input handling across backends                       | ✅     |
+| Window resizing                                              | ✅     |
 
 ---
 
@@ -272,7 +343,11 @@ This project demonstrates experience with:
 - Performance optimisation and cache-aware rendering
 - Trait-based extensible rendering architecture
 - Rendering API architecture inspired by modern graphics APIs
-- Command-based rendering architecture
+- Render-target and render-pass based rendering, including multipass and render-to-texture compositing
+- Post-processing effects driven by fragment shaders sampling a previous pass's output
+- Cross-backend windowing and input abstraction (winit / minifb)
+- Procedural noise and ray-marched fractal fragment shaders
+- Procedural macros for reducing shader boilerplate
 
 ---
 
@@ -287,7 +362,8 @@ Potential extensions:
 - MSAA
 - More advanced blending modes
 - Additional primitive types
-- More flexible render target attachments
+- More flexible render target
+- Point and spot lights (currently directional lighting only)
 
 ---
 
@@ -295,6 +371,7 @@ Potential extensions:
 
 - **Language:** Rust
 - **Rendering:** Custom CPU rasterisation pipeline
+- **Windowing:** [`winit`](https://crates.io/crates/winit) and [`minifb`](https://crates.io/crates/minifb), behind a common backend abstraction
 - **Math:** Custom vector and matrix mathematics
 
 ---

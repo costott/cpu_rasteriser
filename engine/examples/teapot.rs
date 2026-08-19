@@ -131,8 +131,14 @@ impl Application for TeapotApp {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    MinifbEngine::new()
-        .with_title("Teapot Demo - ESC to exit")
-        .with_size(WIDTH, HEIGHT)
+    WinitEngine::new()
+        .with_window_attributes(
+            winit::window::Window::default_attributes()
+                .with_title("Teapot Demo - ESC to exit")
+                .with_inner_size(winit::dpi::Size::Physical(winit::dpi::PhysicalSize::new(
+                    WIDTH as u32,
+                    HEIGHT as u32,
+                ))),
+        )
         .run(TeapotApp::new()?)
 }

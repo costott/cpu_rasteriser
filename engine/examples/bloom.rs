@@ -221,11 +221,12 @@ impl FragmentShader<PostProcessVaryings> for BrightPassFragmentShader {
     fn shade(&self, varyings: PostProcessVaryings, uniforms: &Self::Uniforms) -> Colour {
         let colour = uniforms.source.sample_linear_clamp(varyings.uv);
 
-        if colour.luminance() > uniforms.threshold {
-            colour
-        } else {
-            Colour::BLACK
-        }
+        let brightness = colour.luminance();
+
+        let knee = 0.5;
+        let contribution = ((brightness - uniforms.threshold) / knee).clamp(0.0, 1.0);
+
+        colour * contribution
     }
 }
 
@@ -233,62 +234,51 @@ impl FragmentShader<PostProcessVaryings> for BrightPassFragmentShader {
 // Gaussian blur
 // -----------------------------------------------------------------------------
 
-#[derive(Clone)]
-struct BlurUniforms {
-    source: Arc<TextureSampler>,
+#[derive(Clone, Copy)]
+enum BloomScale {
+    Downsample,
+    Upsample,
 }
 
-struct GaussianBlurFragmentShader;
+#[derive(Clone)]
+struct BloomScaleUniforms {
+    source: Arc<TextureSampler>,
+    scale: BloomScale,
+}
 
-impl FragmentShader<PostProcessVaryings> for GaussianBlurFragmentShader {
-    type Uniforms = BlurUniforms;
+struct BloomScaleFragmentShader;
+
+impl FragmentShader<PostProcessVaryings> for BloomScaleFragmentShader {
+    type Uniforms = BloomScaleUniforms;
 
     fn shade(&self, varyings: PostProcessVaryings, uniforms: &Self::Uniforms) -> Colour {
-        let uv = varyings.uv;
+        match uniforms.scale {
+            BloomScale::Downsample => {
+                let texel = Vec2::new(
+                    1.0 / uniforms.source.width() as f32,
+                    1.0 / uniforms.source.height() as f32,
+                );
 
-        let offsets = [
-            Vec2::new(-1.0, -1.0),
-            Vec2::new(0.0, -1.0),
-            Vec2::new(1.0, -1.0),
-            Vec2::new(-1.0, 0.0),
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(-1.0, 1.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 1.0),
-        ];
+                let offsets = [
+                    Vec2::new(-1.0, -1.0),
+                    Vec2::new(1.0, -1.0),
+                    Vec2::new(-1.0, 1.0),
+                    Vec2::new(1.0, 1.0),
+                ];
 
-        let weights = [
-            1.0 / 16.0,
-            2.0 / 16.0,
-            1.0 / 16.0,
-            2.0 / 16.0,
-            4.0 / 16.0,
-            2.0 / 16.0,
-            1.0 / 16.0,
-            2.0 / 16.0,
-            1.0 / 16.0,
-        ];
+                let mut colour = Colour::BLACK;
 
-        let mut r = 0.0;
-        let mut g = 0.0;
-        let mut b = 0.0;
+                for offset in offsets {
+                    colour += uniforms
+                        .source
+                        .sample_linear_clamp(varyings.uv + offset * texel);
+                }
 
-        let texel_size = Vec2::new(
-            1.0 / uniforms.source.width() as f32,
-            1.0 / uniforms.source.height() as f32,
-        );
+                colour * 0.25
+            }
 
-        for (offset, weight) in offsets.iter().zip(weights.iter()) {
-            let sample_uv = uv + *offset * texel_size;
-            let sample_colour = uniforms.source.sample_nearest_clamp(sample_uv);
-
-            r += sample_colour.r as f32 * weight;
-            g += sample_colour.g as f32 * weight;
-            b += sample_colour.b as f32 * weight;
+            BloomScale::Upsample => uniforms.source.sample_linear_clamp(varyings.uv),
         }
-
-        Colour::new(r, g, b, 1.0)
     }
 }
 
@@ -358,19 +348,23 @@ struct BloomApp {
     // bright_target:
     //     only pixels bright enough to bloom
     //
-    // blur_a / blur_b:
-    //     ping-pong buffers for separable Gaussian blur
+    // bloom_half:
+    //     downsampled + blurred bright_target
+    //
+    // bloom_quarter:
+    //     downsampled + blurred bloom_half
     // -------------------------------------------------------------------------
     scene_target: RenderTarget,
     bright_target: RenderTarget,
-    blur_target: RenderTarget,
+    bloom_half: RenderTarget,
+    bloom_quarter: RenderTarget,
 
     background_pipeline: Pipeline<BackgroundVertexShader, BackgroundFragmentShader>,
     teapot_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
     glass_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
 
     bright_pipeline: Pipeline<PostProcessVertexShader, BrightPassFragmentShader>,
-    blur_pipeline: Pipeline<PostProcessVertexShader, GaussianBlurFragmentShader>,
+    bloom_scale_pipeline: Pipeline<PostProcessVertexShader, BloomScaleFragmentShader>,
     composite_pipeline: Pipeline<PostProcessVertexShader, BloomCompositeFragmentShader>,
 
     elapsed: f32,
@@ -456,7 +450,12 @@ impl BloomApp {
 
         let scene_target = RenderTarget::new(extent).with_depth();
         let bright_target = RenderTarget::new(extent);
-        let blur_target = RenderTarget::new(extent);
+
+        let half_extent = Extent::new(WIDTH / 2, HEIGHT / 2);
+        let quarter_extent = Extent::new(WIDTH / 4, HEIGHT / 4);
+
+        let bloom_half = RenderTarget::new(half_extent);
+        let bloom_quarter = RenderTarget::new(quarter_extent);
 
         // ---------------------------------------------------------------------
         // Pipelines
@@ -479,7 +478,7 @@ impl BloomApp {
             .with_culling_mode(CullingMode::None)
             .with_depth_state(DepthState::DISABLED);
 
-        let blur_pipeline = Pipeline::new(PostProcessVertexShader, GaussianBlurFragmentShader)
+        let bloom_scale_pipeline = Pipeline::new(PostProcessVertexShader, BloomScaleFragmentShader)
             .with_culling_mode(CullingMode::None)
             .with_depth_state(DepthState::DISABLED);
 
@@ -499,13 +498,14 @@ impl BloomApp {
 
             scene_target,
             bright_target,
-            blur_target,
+            bloom_half,
+            bloom_quarter,
 
             background_pipeline,
             teapot_pipeline,
             glass_pipeline,
             bright_pipeline,
-            blur_pipeline,
+            bloom_scale_pipeline,
             composite_pipeline,
 
             elapsed: 0.0,
@@ -530,7 +530,11 @@ impl Application for BloomApp {
 
         self.scene_target.resize(extent);
         self.bright_target.resize(extent);
-        self.blur_target.resize(extent);
+
+        self.bloom_half
+            .resize(Extent::new(width as usize / 2, height as usize / 2));
+        self.bloom_quarter
+            .resize(Extent::new(width as usize / 4, height as usize / 4));
     }
 
     fn event(&mut self, event: AppEvent, handle: &mut AppHandle) {
@@ -668,17 +672,17 @@ impl Application for BloomApp {
         pass.finish();
 
         // =====================================================================
-        // PASS 4: Gaussian blur
+        // PASS 4: Downsample + blur to half resolution
         //
-        // bright_target -> blur
+        // bright_target 640×360 -> bloom_half 320×180
         // =====================================================================
 
         let bright_texture = Arc::new(render_target_sampler(&self.bright_target));
 
-        let extent = self.blur_target.extent();
+        let extent = self.bloom_half.extent();
 
         let mut pass = context.begin_render_pass(
-            &mut self.blur_target,
+            &mut self.bloom_half,
             RenderPassDescriptor {
                 viewport: Viewport::full(&extent),
                 colour_load_op: LoadOp::Clear(Colour::BLACK),
@@ -688,20 +692,85 @@ impl Application for BloomApp {
 
         self.fullscreen_quad.draw_to_render_pass(
             &mut pass,
-            &self.blur_pipeline,
+            &self.bloom_scale_pipeline,
             PostProcessVertexUniforms,
-            |_| BlurUniforms {
+            |_| BloomScaleUniforms {
                 source: bright_texture.clone(),
+                scale: BloomScale::Downsample,
             },
         );
 
         pass.finish();
 
         // =====================================================================
-        // PASS 5: Composite bloom + tone mapping -> presentation target
+        // PASS 5: Downsample + blur to quarter resolution
+        //
+        // bloom_half 320×180 -> bloom_quarter 160×90
         // =====================================================================
 
-        let blur_target_texture = Arc::new(render_target_sampler(&self.blur_target));
+        let bloom_half_texture = Arc::new(render_target_sampler(&self.bloom_half));
+
+        let extent = self.bloom_quarter.extent();
+
+        let mut pass = context.begin_render_pass(
+            &mut self.bloom_quarter,
+            RenderPassDescriptor {
+                viewport: Viewport::full(&extent),
+                colour_load_op: LoadOp::Clear(Colour::BLACK),
+                depth_load_op: None,
+            },
+        );
+
+        self.fullscreen_quad.draw_to_render_pass(
+            &mut pass,
+            &self.bloom_scale_pipeline,
+            PostProcessVertexUniforms,
+            |_| BloomScaleUniforms {
+                source: bloom_half_texture.clone(),
+                scale: BloomScale::Downsample,
+            },
+        );
+
+        pass.finish();
+
+        // =====================================================================
+        // PASS 6: Upsample quarter -> half
+        //
+        // bloom_quarter 160×90 -> bloom_half 320×180
+        // =====================================================================
+
+        let bloom_quarter_texture = Arc::new(render_target_sampler(&self.bloom_quarter));
+
+        let extent = self.bloom_half.extent();
+
+        let mut pass = context.begin_render_pass(
+            &mut self.bloom_half,
+            RenderPassDescriptor {
+                viewport: Viewport::full(&extent),
+                colour_load_op: LoadOp::Clear(Colour::BLACK),
+                depth_load_op: None,
+            },
+        );
+
+        self.fullscreen_quad.draw_to_render_pass(
+            &mut pass,
+            &self.bloom_scale_pipeline,
+            PostProcessVertexUniforms,
+            |_| BloomScaleUniforms {
+                source: bloom_quarter_texture.clone(),
+                scale: BloomScale::Upsample,
+            },
+        );
+
+        pass.finish();
+
+        // =====================================================================
+        // PASS 7: Upsample + composite bloom + tone mapping
+        //
+        // bloom_half 320×180 + scene 640×360 -> presentation 640×360
+        // =====================================================================
+
+        let bloom_half_texture = Arc::new(render_target_sampler(&self.bloom_half));
 
         let extent = context.presentation_target().extent();
 
@@ -717,7 +786,7 @@ impl Application for BloomApp {
             PostProcessVertexUniforms,
             |_| BloomCompositeUniforms {
                 scene: scene_texture.clone(),
-                bloom: blur_target_texture.clone(),
+                bloom: bloom_half_texture.clone(),
                 bloom_strength: 5.0,
                 exposure: 3.0,
             },
