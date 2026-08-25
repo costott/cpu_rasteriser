@@ -141,7 +141,7 @@ impl OrbitControls {
     pub fn new(camera: &Camera) -> Self {
         Self {
             radius: camera.eye.length(),
-            azimuth: camera.eye.z.atan2(camera.eye.x),
+            azimuth: camera.eye.x.atan2(camera.eye.z), // match update_camera: x~sin(az), z~cos(az)
             elevation: (camera.eye.y / camera.eye.length()).asin(),
             input_state: InputState::default(),
         }
@@ -345,5 +345,33 @@ impl FirstPersonControls {
                 self.pitch.sin(),
                 self.yaw.sin() * self.pitch.cos(),
             );
+    }
+}
+
+#[cfg(test)]
+mod orbit_init_tests {
+    use super::*;
+
+    #[test]
+    fn orbit_controls_preserve_eye_axes_on_init() {
+        // +Z eye must not flip onto +X when controls are constructed then applied.
+        let mut camera = Camera::new(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Projection::Perspective(PerspectiveProjection::new(std::f32::consts::FRAC_PI_2, 1.0, 0.1, 100.0)),
+        );
+        let controls = OrbitControls::new(&camera);
+        controls.update_camera(&mut camera);
+        assert!(
+            camera.eye.x.abs() < 1e-4,
+            "x/z swapped on init? got {:?}",
+            camera.eye
+        );
+        assert!(
+            (camera.eye.z - 5.0).abs() < 1e-3,
+            "expected +Z eye preserved, got {:?}",
+            camera.eye
+        );
     }
 }
