@@ -473,6 +473,7 @@ dependencies = [
 name = "cpu_rasteriser"
 version = "0.5.0"
 dependencies = [
+ "criterion",
  "minifb",
  "rasteriser_macros",
  "softbuffer",
