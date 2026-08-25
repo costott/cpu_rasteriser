@@ -202,7 +202,7 @@ impl PipelinesApp {
             .with_blend_state(BlendState::ADDITIVE);
 
         let camera = Camera::new(
-            Vec3::new(-0.01, 1.0, 0.8),
+            Vec3::new(0.8, 1.0, -0.01),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
             Projection::Perspective(PerspectiveProjection::new(

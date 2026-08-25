@@ -126,7 +126,7 @@ impl TexturedCubeApp {
             .with_depth_state(DepthState::DEFAULT);
 
         let camera = Camera::new(
-            Vec3::new(0.0, 0.75, 1.25),
+            Vec3::new(1.25, 0.75, 0.0),
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
             Projection::Perspective(PerspectiveProjection::new(

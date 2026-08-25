@@ -74,7 +74,6 @@ impl TeapotApp {
 
         let mut teapot = load_obj(std::path::Path::new("assets/utah_teapot.obj"))?;
         teapot.transform.scale = Vec3::ONE * 0.3;
-        teapot.transform.rotation.y = 90_f32.to_radians();
 
         Ok(Self {
             camera,
