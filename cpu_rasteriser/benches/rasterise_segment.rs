@@ -2,7 +2,10 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-use cpu_rasteriser::{depthbuffer::DepthBuffer, framebuffer::FrameBuffer, prelude::*};
+use cpu_rasteriser::{
+    depthbuffer::DepthBuffer, framebuffer::FrameBuffer, graphics::fragment::FragmentSimd,
+    prelude::*,
+};
 use wide::f32x8;
 
 // -----------------------------------------------------------------------------
@@ -161,6 +164,92 @@ fn small_bounds() -> Rect {
         min_y: 140,
         max_x: 360,
         max_y: 220,
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Shaders
+// -----------------------------------------------------------------------------
+#[derive(Clone, Copy, Debug, Default)]
+struct TestUniforms;
+
+struct TestShader;
+
+impl FragmentShader<TestVaryings> for TestShader {
+    type Uniforms = TestUniforms;
+
+    #[inline(always)]
+    fn shade(&self, varyings: TestVaryings, _uniforms: &Self::Uniforms) -> Colour {
+        let mut r = varyings.colour.x;
+        let mut g = varyings.colour.y;
+        let mut b = varyings.colour.z;
+
+        for _ in 0..16 {
+            r = (r * 1.37 + g * 0.21).max(0.0);
+            g = (g * 0.91 + b * 0.34).max(0.0);
+            b = (b * 1.13 + r * 0.17).max(0.0);
+        }
+
+        Colour::new(r, g, b, 1.0)
+    }
+}
+
+// impl FragmentShader<TestVaryingsSimd> for TestShader {
+//     type Uniforms = TestUniforms;
+
+//     #[inline(always)]
+//     fn shade(&self, varyings: TestVaryingsSimd, uniforms: &Self::Uniforms) -> Colour {
+//         let mut r = varyings.colour[0];
+//         let mut g = varyings.colour[1];
+//         let mut b = varyings.colour[2];
+
+//         for _ in 0..16 {
+//             r = (r * 1.37 + g * 0.21).max(0.0);
+//             g = (g * 0.91 + b * 0.34).max(0.0);
+//             b = (b * 1.13 + r * 0.17).max(0.0);
+//         }
+
+//         Colour::new(r, g, b, 1.0)
+//     }
+// }
+
+#[derive(Clone, Copy)]
+struct TestColourSimd {
+    r: f32x8,
+    g: f32x8,
+    b: f32x8,
+    a: f32x8,
+}
+
+impl FragmentShaderSimd<TestVaryings> for TestShader {
+    type SimdColour = TestColourSimd;
+
+    #[inline(always)]
+    fn shade_simd(&self, varyings: TestVaryingsSimd, _uniforms: &TestUniforms) -> Self::SimdColour {
+        let mut r = varyings.colour[0];
+        let mut g = varyings.colour[1];
+        let mut b = varyings.colour[2];
+
+        let c137 = f32x8::splat(1.37);
+        let c021 = f32x8::splat(0.21);
+        let c091 = f32x8::splat(0.91);
+        let c034 = f32x8::splat(0.34);
+        let c113 = f32x8::splat(1.13);
+        let c017 = f32x8::splat(0.17);
+        let zero = f32x8::splat(0.0);
+
+        for _ in 0..16 {
+            r = (r * c137 + g * c021).fast_max(zero);
+            g = (g * c091 + b * c034).fast_max(zero);
+            b = (b * c113 + r * c017).fast_max(zero);
+        }
+
+        Self::SimdColour {
+            r,
+            g,
+            b,
+            a: f32x8::splat(1.0),
+        }
     }
 }
 
@@ -559,6 +648,91 @@ fn bench_callback_bounds(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_callback_depthwrite(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rasterise_segment/callback_depthwrite");
+
+    let bounds = full_bounds();
+
+    let mut framebuffer = FrameBuffer::new(640, 360);
+    let mut depthbuffer = DepthBuffer::new(640, 360);
+
+    for (name, triangle) in size_cases() {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &triangle,
+            |b, triangle| {
+                b.iter(|| {
+                    depthbuffer.clear(1.0);
+
+                    triangle.rasterise_segment(bounds, |mut fragment| {
+                        fragment.position.x -= bounds.min_x as f32;
+                        fragment.position.y -= bounds.min_y as f32;
+
+                        if fragment.depth >= depthbuffer.get(fragment.position) {
+                            return;
+                        }
+
+                        let src = shade(&fragment.varyings);
+
+                        framebuffer.set_pixel(fragment.position, src);
+
+                        depthbuffer.set_depth(fragment.position, fragment.depth);
+                    });
+
+                    black_box(framebuffer.pixels());
+                    black_box(&depthbuffer);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_callback_full(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rasterise_segment/callback_full");
+
+    let bounds = full_bounds();
+
+    let mut framebuffer = FrameBuffer::new(640, 360);
+    let mut depthbuffer = DepthBuffer::new(640, 360);
+
+    let shader = TestShader;
+    let uniforms = TestUniforms;
+
+    for (name, triangle) in size_cases() {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &triangle,
+            |b, triangle| {
+                b.iter(|| {
+                    depthbuffer.clear(1.0);
+
+                    triangle.rasterise_segment(bounds, |mut fragment| {
+                        fragment.position.x -= bounds.min_x as f32;
+                        fragment.position.y -= bounds.min_y as f32;
+
+                        if fragment.depth >= depthbuffer.get(fragment.position) {
+                            return;
+                        }
+
+                        let src = shader.shade(fragment.varyings, &uniforms);
+
+                        framebuffer.set_pixel(fragment.position, src);
+
+                        depthbuffer.set_depth(fragment.position, fragment.depth);
+                    });
+
+                    black_box(framebuffer.pixels());
+                    black_box(&depthbuffer);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 // -----------------------------------------------------------------------------
 // Throughput
 // -----------------------------------------------------------------------------
@@ -644,16 +818,13 @@ fn bench_rasteriser_simd_compute(c: &mut Criterion) {
 
                     triangle.rasterise_segment_simd(
                         black_box(bounds),
-                        |_, _, depth, inv_w, varyings| {
-                            let perspective = inv_w.recip();
-                            let varyings = TestVaryings::simd_perspective(varyings, perspective);
-
+                        |fragment_simd| {
                             checksum.set(
                                 checksum.get()
-                                    + depth.reduce_add()
-                                    + varyings.colour[0].reduce_add()
-                                    + varyings.colour[1].reduce_add()
-                                    + varyings.colour[2].reduce_add(),
+                                    + fragment_simd.depth.reduce_add()
+                                    + fragment_simd.varyings.colour[0].reduce_add()
+                                    + fragment_simd.varyings.colour[1].reduce_add()
+                                    + fragment_simd.varyings.colour[2].reduce_add(),
                             );
                         },
                         |fragment| {
@@ -676,23 +847,294 @@ fn bench_rasteriser_simd_compute(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_rasteriser_simd_callback(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rasterise_segment/simd_callback");
+
+    let bounds = full_bounds();
+
+    let mut framebuffer = FrameBuffer::new(640, 360);
+    let mut depthbuffer = DepthBuffer::new(640, 360);
+
+    depthbuffer.clear(1.0);
+
+    for (name, triangle) in size_cases() {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &triangle,
+            |b, triangle| {
+                b.iter(|| {
+                    triangle.rasterise_segment_simd(
+                        black_box(bounds),
+                        |fragment_simd| {
+                            let index = (fragment_simd.y as usize) * depthbuffer.width()
+                                + (fragment_simd.x_start as usize);
+
+                            let stored = unsafe { depthbuffer.get8_unchecked(index) };
+
+                            let pass = fragment_simd.depth.simd_lt(stored);
+
+                            let mask = pass.to_bitmask();
+
+                            if mask == 0 {
+                                return;
+                            }
+
+                            let base = (fragment_simd.y - bounds.min_y) as usize
+                                * framebuffer.width()
+                                + (fragment_simd.x_start - bounds.min_x) as usize;
+
+                            let r = fragment_simd.varyings.colour[0].to_array();
+                            let g = fragment_simd.varyings.colour[1].to_array();
+                            let b = fragment_simd.varyings.colour[2].to_array();
+
+                            for lane in 0..8 {
+                                if mask & (1 << lane) == 0 {
+                                    continue;
+                                }
+
+                                let src = Colour::new(r[lane], g[lane], b[lane], 1.0);
+
+                                unsafe {
+                                    framebuffer.set_pixel_index_unchecked(base + lane, src);
+                                }
+                            }
+                        },
+                        |_fragment| {},
+                    );
+
+                    black_box(framebuffer.pixels());
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_rasteriser_simd_depthwrite(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rasterise_segment/simd_depthwrite");
+
+    let bounds = full_bounds();
+
+    let mut framebuffer = FrameBuffer::new(640, 360);
+    let mut depthbuffer = DepthBuffer::new(640, 360);
+
+    for (name, triangle) in size_cases() {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &triangle,
+            |b, triangle| {
+                b.iter(|| {
+                    depthbuffer.clear(1.0);
+
+                    triangle.rasterise_segment_simd(
+                        black_box(bounds),
+                        |fragment_simd| {
+                            let index = fragment_simd.y as usize * depthbuffer.width()
+                                + fragment_simd.x_start as usize;
+
+                            let stored = unsafe { depthbuffer.get8_unchecked(index) };
+
+                            let pass = fragment_simd.depth.simd_lt(stored);
+
+                            if !pass.any() {
+                                return;
+                            }
+
+                            let mask = pass.to_bitmask();
+
+                            let base = (fragment_simd.y - bounds.min_y) as usize
+                                * framebuffer.width()
+                                + (fragment_simd.x_start - bounds.min_x) as usize;
+
+                            let r = fragment_simd.varyings.colour[0].to_array();
+                            let g = fragment_simd.varyings.colour[1].to_array();
+                            let b = fragment_simd.varyings.colour[2].to_array();
+
+                            for lane in 0..8 {
+                                if mask & (1 << lane) == 0 {
+                                    continue;
+                                }
+
+                                let colour = Colour::new(r[lane], g[lane], b[lane], 1.0);
+
+                                unsafe {
+                                    framebuffer.set_pixel_index_unchecked(base + lane, colour);
+                                }
+                            }
+
+                            unsafe {
+                                depthbuffer.set8_unchecked_with_mask(
+                                    index,
+                                    fragment_simd.depth,
+                                    pass,
+                                );
+                            }
+                        },
+                        |_fragment| {},
+                    );
+
+                    black_box(framebuffer.pixels());
+                    black_box(&depthbuffer);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_rasteriser_simd_full(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rasterise_segment/simd_full");
+
+    let bounds = full_bounds();
+
+    let mut framebuffer = FrameBuffer::new(640, 360);
+    let mut depthbuffer = DepthBuffer::new(640, 360);
+
+    let shader = TestShader;
+    let uniforms = TestUniforms;
+
+    for (name, triangle) in size_cases() {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &triangle,
+            |b, triangle| {
+                b.iter(|| {
+                    depthbuffer.clear(1.0);
+
+                    triangle.rasterise_segment_simd(
+                        black_box(bounds),
+                        |fragment_simd| {
+                            let index = fragment_simd.y as usize * depthbuffer.width()
+                                + fragment_simd.x_start as usize;
+
+                            let stored = unsafe { depthbuffer.get8_unchecked(index) };
+
+                            let pass = fragment_simd.depth.simd_lt(stored);
+
+                            if !pass.any() {
+                                return;
+                            }
+
+                            let mask = pass.to_bitmask();
+
+                            let base = (fragment_simd.y - bounds.min_y) as usize
+                                * framebuffer.width()
+                                + (fragment_simd.x_start - bounds.min_x) as usize;
+
+                            let colour = shader.shade_simd(fragment_simd.varyings, &uniforms);
+
+                            let r = colour.r.to_array();
+                            let g = colour.g.to_array();
+                            let b = colour.b.to_array();
+
+                            for lane in 0..8 {
+                                if mask & (1 << lane) == 0 {
+                                    continue;
+                                }
+
+                                let frag_colour = Colour::new(r[lane], g[lane], b[lane], 1.0);
+
+                                unsafe {
+                                    framebuffer.set_pixel_index_unchecked(base + lane, frag_colour);
+                                }
+                            }
+
+                            unsafe {
+                                depthbuffer.set8_unchecked_with_mask(
+                                    index,
+                                    fragment_simd.depth,
+                                    pass,
+                                );
+                            }
+                        },
+                        |_fragment| {},
+                    );
+
+                    black_box(framebuffer.pixels());
+                    black_box(&depthbuffer);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_shader(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rasterise_segment/shader");
+
+    let shader = TestShader;
+    let uniforms = TestUniforms;
+
+    let mut input = 0.1234567f32;
+
+    group.bench_function("scalar", |b| {
+        b.iter(|| {
+            input = input.mul_add(1.000001, 0.12345);
+
+            let varyings = TestVaryings {
+                colour: Vec3::new(input, input * 0.73, input * 1.17),
+            };
+
+            let colour = shader.shade(varyings, &uniforms);
+
+            black_box(colour.r + colour.g + colour.b + colour.a);
+        });
+    });
+
+    group.bench_function("simd", |b| {
+        b.iter(|| {
+            input = input.mul_add(1.000001, 0.12345);
+
+            let value = f32x8::splat(input);
+
+            let varyings = TestVaryingsSimd {
+                colour: [
+                    value,
+                    value * f32x8::splat(0.73),
+                    value * f32x8::splat(1.17),
+                ],
+            };
+
+            let colour = shader.shade_simd(varyings, &uniforms);
+
+            black_box(
+                colour.r.reduce_add()
+                    + colour.g.reduce_add()
+                    + colour.b.reduce_add()
+                    + colour.a.reduce_add(),
+            );
+        });
+    });
+
+    group.finish();
+}
+
 // -----------------------------------------------------------------------------
 // Criterion
 // -----------------------------------------------------------------------------
 
 criterion_group!(
     benches,
-    bench_rasteriser_overhead,
-    bench_rasteriser_compute,
-    bench_rasteriser_overhead_shape,
-    bench_rasteriser_compute_shape,
-    bench_rasteriser_overhead_bounds,
-    bench_rasteriser_compute_bounds,
-    bench_callback_size,
-    bench_callback_shape,
-    bench_callback_bounds,
-    bench_throughput,
-    bench_rasteriser_simd_compute
+    // bench_rasteriser_overhead,
+    // bench_rasteriser_compute,
+    // bench_rasteriser_overhead_shape,
+    // bench_rasteriser_compute_shape,
+    // bench_rasteriser_overhead_bounds,
+    // bench_rasteriser_compute_bounds,
+    // bench_callback_size,
+    // bench_callback_depthwrite,
+    // bench_callback_shape,
+    // bench_callback_bounds,
+    bench_callback_full,
+    // bench_throughput,
+    // bench_rasteriser_simd_compute,
+    // bench_rasteriser_simd_callback,
+    // bench_rasteriser_simd_depthwrite,
+    bench_rasteriser_simd_full,
+    // bench_shader,
 );
 
 criterion_main!(benches);

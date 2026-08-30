@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-use crate::graphics::fragment::Fragment;
+use crate::graphics::fragment::{Fragment, FragmentSimd};
 
 use wide::f32x8;
 
@@ -167,7 +167,7 @@ where
         mut simd_callback: F,
         mut scalar_callback: G,
     ) where
-        F: FnMut(i32, i32, f32x8, f32x8, V::Simd),
+        F: FnMut(FragmentSimd<V>),
         G: FnMut(Fragment<V>),
     {
         let mut vertices = [self.a.clone(), self.b.clone(), self.c.clone()];
@@ -240,8 +240,6 @@ where
             let mut varyings = left.varyings.interpolate(&right.varyings, t);
             let varyings_step = right.varyings.difference(&left.varyings).scale(x_step);
 
-            let lanes = f32x8::new([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
-
             let step8 = f32x8::splat(8.0);
 
             let depth_step8 = f32x8::splat(depth_step);
@@ -256,7 +254,11 @@ where
             let mut x = x_start;
 
             while x + 8 <= x_end {
-                simd_callback(x, y, depth8, inv_w8, varyings8);
+                let perspective8 = inv_w8.recip();
+
+                varyings8 = V::simd_perspective(varyings8, perspective8);
+
+                simd_callback(FragmentSimd::new(x, y, depth8, varyings8));
 
                 depth8 += depth_step8 * step8;
                 inv_w8 += inv_w_step8 * step8;
@@ -265,6 +267,13 @@ where
 
                 x += 8;
             }
+
+            let consumed = (x - x_start) as f32;
+
+            depth += depth_step * consumed;
+            inv_w += inv_w_step * consumed;
+
+            varyings = varyings.add_scaled(&varyings_step, consumed);
 
             // The tail is literally the original scalar loop.
             while x < x_end {
@@ -650,16 +659,13 @@ mod tests {
         let simd = std::cell::Cell::new(0.0f32);
         triangle.rasterise_segment_simd(
             bounds,
-            |_, _, depth, inv_w, varyings| {
-                let perspective = inv_w.recip();
-                let varyings = TestVaryings::simd_perspective(varyings, perspective);
-
+            |fragmentsimd| {
                 simd.set(
                     simd.get()
-                        + depth.reduce_add()
-                        + varyings.colour[0].reduce_add()
-                        + varyings.colour[1].reduce_add()
-                        + varyings.colour[2].reduce_add(),
+                        + fragmentsimd.depth.reduce_add()
+                        + fragmentsimd.varyings.colour[0].reduce_add()
+                        + fragmentsimd.varyings.colour[1].reduce_add()
+                        + fragmentsimd.varyings.colour[2].reduce_add(),
                 )
             },
             |fragment| {
