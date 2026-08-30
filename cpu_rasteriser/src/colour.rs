@@ -108,6 +108,7 @@ impl Colour {
         0.2126 * self.r + 0.7152 * self.g + 0.0722 * self.b
     }
 
+    #[inline(always)]
     pub fn lerp(&self, other: &Self, t: f32) -> Self {
         Self::new(
             self.r + (other.r - self.r) * t,

@@ -9,6 +9,7 @@ softbuffer = "0.4.8"
 winit = "0.30.13"
 threadpool = "1.8.1"
 rasteriser_macros = { path = "../rasteriser_macros" }
+wide = "1.6.1"
 
 [dev-dependencies]
 criterion = "0.7"
@@ -16,3 +17,4 @@ criterion = "0.7"
 [[bench]]
 name = "rasterise_segment"
 harness = false
+

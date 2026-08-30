@@ -29,11 +29,7 @@ impl FrameBuffer {
     }
 
     pub fn pixels_u32(&self) -> Vec<u32> {
-        self.pixels
-            .iter()
-            .copied()
-            .map(Colour::to_u32)
-            .collect()
+        self.pixels.iter().copied().map(Colour::to_u32).collect()
     }
 
     pub fn clear(&mut self, colour: Colour) {

@@ -133,6 +133,11 @@ impl TextureSampler {
     }
 
     #[inline(always)]
+    unsafe fn get_pixel_unchecked(&self, x: u32, y: u32) -> Colour {
+        unsafe { *self.pixels.get_unchecked((y * self.width + x) as usize) }
+    }
+
+    #[inline(always)]
     pub fn sample_linear_clamp(&self, uv: Vec2) -> Colour {
         let u = uv.x.clamp(0.0, 1.0);
         let v = uv.y.clamp(0.0, 1.0);
@@ -140,8 +145,8 @@ impl TextureSampler {
         let x_f = u * (self.width - 1) as f32;
         let y_f = (1.0 - v) * (self.height - 1) as f32;
 
-        let x0 = x_f.floor() as u32;
-        let y0 = y_f.floor() as u32;
+        let x0 = x_f as u32;
+        let y0 = y_f as u32;
 
         let x1 = (x0 + 1).min(self.width - 1);
         let y1 = (y0 + 1).min(self.height - 1);
@@ -149,10 +154,10 @@ impl TextureSampler {
         let tx = x_f - x0 as f32;
         let ty = y_f - y0 as f32;
 
-        let c00 = self.get_pixel(x0, y0);
-        let c10 = self.get_pixel(x1, y0);
-        let c01 = self.get_pixel(x0, y1);
-        let c11 = self.get_pixel(x1, y1);
+        let c00 = unsafe { self.get_pixel_unchecked(x0, y0) };
+        let c10 = unsafe { self.get_pixel_unchecked(x1, y0) };
+        let c01 = unsafe { self.get_pixel_unchecked(x0, y1) };
+        let c11 = unsafe { self.get_pixel_unchecked(x1, y1) };
 
         let c0 = Colour::lerp(&c00, &c10, tx);
         let c1 = Colour::lerp(&c01, &c11, tx);
