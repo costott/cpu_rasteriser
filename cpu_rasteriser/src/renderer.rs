@@ -400,7 +400,8 @@ impl BlendState {
     };
 
     /// Applies this blend state to a source and destination colour.
-    fn apply(&self, src: Colour, dst: Colour) -> Colour {
+    pub fn apply(&self, src: Colour, dst: Colour) -> Colour {
+        // TODO: need to decide if this should be public
         let src_term = src * self.src_factor.resolve(src, dst);
         let dst_term = dst * self.dst_factor.resolve(src, dst);
 

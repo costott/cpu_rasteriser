@@ -34,6 +34,14 @@ impl DepthBuffer {
         self.buffer[index] = depth;
     }
 
+    pub unsafe fn set_depth_unchecked(&mut self, p: Vec2, depth: f32) {
+        let index = (p.y as usize) * self.width + (p.x as usize);
+
+        unsafe {
+            *self.buffer.get_unchecked_mut(index) = depth;
+        }
+    }
+
     pub fn get(&self, p: Vec2) -> f32 {
         let x = p.x as i32;
         let y = p.y as i32;
@@ -42,5 +50,11 @@ impl DepthBuffer {
         }
         let index = (y as usize) * self.width + (x as usize);
         self.buffer[index]
+    }
+
+    pub unsafe fn get_unchecked(&self, p: Vec2) -> f32 {
+        let index = (p.y as usize) * self.width + (p.x as usize);
+
+        unsafe { *self.buffer.get_unchecked(index) }
     }
 }
