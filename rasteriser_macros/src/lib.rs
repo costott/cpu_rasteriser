@@ -202,7 +202,7 @@ pub fn derive_simd_interpolate(input: TokenStream) -> TokenStream {
             fn simd_step(
                 value: &Self,
                 step: &Self,
-                lanes: f32x8,
+                lanes: ::cpu_rasteriser::wide::f32x8,
             ) -> Self::Simd {
                 #simd_name {
                     #(
@@ -215,7 +215,7 @@ pub fn derive_simd_interpolate(input: TokenStream) -> TokenStream {
             fn simd_add_scaled(
                 value: &Self::Simd,
                 step: &Self,
-                scale: f32x8,
+                scale: ::cpu_rasteriser::wide::f32x8,
             ) -> Self::Simd {
                 #simd_name {
                     #(
@@ -227,7 +227,7 @@ pub fn derive_simd_interpolate(input: TokenStream) -> TokenStream {
             #[inline(always)]
             fn simd_perspective(
                 value: Self::Simd,
-                perspective: f32x8,
+                perspective: ::cpu_rasteriser::wide::f32x8,
             ) -> Self::Simd {
                 #simd_name {
                     #(
@@ -275,10 +275,10 @@ fn type_name(ty: &Type) -> syn::Result<String> {
 
 fn simd_type(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
     match type_name(ty)?.as_str() {
-        "f32" => Ok(quote! { f32x8 }),
-        "Vec2" => Ok(quote! { [f32x8; 2] }),
-        "Vec3" => Ok(quote! { [f32x8; 3] }),
-        "Vec4" => Ok(quote! { [f32x8; 4] }),
+        "f32" => Ok(quote! { ::cpu_rasteriser::wide::f32x8 }),
+        "Vec2" => Ok(quote! { [::cpu_rasteriser::wide::f32x8; 2] }),
+        "Vec3" => Ok(quote! { [::cpu_rasteriser::wide::f32x8; 3] }),
+        "Vec4" => Ok(quote! { [::cpu_rasteriser::wide::f32x8; 4] }),
 
         _ => Err(syn::Error::new_spanned(
             ty,
@@ -290,40 +290,40 @@ fn simd_type(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
 fn simd_step_expr(ty: &Type, field: &syn::Ident) -> syn::Result<proc_macro2::TokenStream> {
     match type_name(ty)?.as_str() {
         "f32" => Ok(quote! {
-            f32x8::splat(value.#field)
-                + lanes * f32x8::splat(step.#field)
+            ::cpu_rasteriser::wide::f32x8::splat(value.#field)
+                + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field)
         }),
 
         "Vec2" => Ok(quote! {
             [
-                f32x8::splat(value.#field.x)
-                    + lanes * f32x8::splat(step.#field.x),
-                f32x8::splat(value.#field.y)
-                    + lanes * f32x8::splat(step.#field.y),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.x)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.x),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.y)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.y),
             ]
         }),
 
         "Vec3" => Ok(quote! {
             [
-                f32x8::splat(value.#field.x)
-                    + lanes * f32x8::splat(step.#field.x),
-                f32x8::splat(value.#field.y)
-                    + lanes * f32x8::splat(step.#field.y),
-                f32x8::splat(value.#field.z)
-                    + lanes * f32x8::splat(step.#field.z),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.x)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.x),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.y)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.y),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.z)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.z),
             ]
         }),
 
         "Vec4" => Ok(quote! {
             [
-                f32x8::splat(value.#field.x)
-                    + lanes * f32x8::splat(step.#field.x),
-                f32x8::splat(value.#field.y)
-                    + lanes * f32x8::splat(step.#field.y),
-                f32x8::splat(value.#field.z)
-                    + lanes * f32x8::splat(step.#field.z),
-                f32x8::splat(value.#field.w)
-                    + lanes * f32x8::splat(step.#field.w),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.x)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.x),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.y)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.y),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.z)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.z),
+                ::cpu_rasteriser::wide::f32x8::splat(value.#field.w)
+                    + lanes * ::cpu_rasteriser::wide::f32x8::splat(step.#field.w),
             ]
         }),
 
@@ -338,39 +338,39 @@ fn simd_add_scaled_expr(ty: &Type, field: &syn::Ident) -> syn::Result<proc_macro
     match type_name(ty)?.as_str() {
         "f32" => Ok(quote! {
             value.#field
-                + f32x8::splat(step.#field) * scale
+                + ::cpu_rasteriser::wide::f32x8::splat(step.#field) * scale
         }),
 
         "Vec2" => Ok(quote! {
             [
                 value.#field[0]
-                    + f32x8::splat(step.#field.x) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.x) * scale,
                 value.#field[1]
-                    + f32x8::splat(step.#field.y) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.y) * scale,
             ]
         }),
 
         "Vec3" => Ok(quote! {
             [
                 value.#field[0]
-                    + f32x8::splat(step.#field.x) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.x) * scale,
                 value.#field[1]
-                    + f32x8::splat(step.#field.y) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.y) * scale,
                 value.#field[2]
-                    + f32x8::splat(step.#field.z) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.z) * scale,
             ]
         }),
 
         "Vec4" => Ok(quote! {
             [
                 value.#field[0]
-                    + f32x8::splat(step.#field.x) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.x) * scale,
                 value.#field[1]
-                    + f32x8::splat(step.#field.y) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.y) * scale,
                 value.#field[2]
-                    + f32x8::splat(step.#field.z) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.z) * scale,
                 value.#field[3]
-                    + f32x8::splat(step.#field.w) * scale,
+                    + ::cpu_rasteriser::wide::f32x8::splat(step.#field.w) * scale,
             ]
         }),
 

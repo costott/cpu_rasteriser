@@ -7,3 +7,5 @@ pub mod maths;
 pub mod prelude;
 pub mod renderer;
 pub mod viewport;
+
+pub use wide;
