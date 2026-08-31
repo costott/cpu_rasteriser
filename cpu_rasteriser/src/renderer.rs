@@ -358,6 +358,82 @@ impl BlendFactor {
             }
         }
     }
+
+    #[inline(always)]
+    fn resolve_simd(&self, src: ColourSimd, dst: ColourSimd) -> ColourSimd {
+        let one = f32x8::splat(1.0);
+        let zero = f32x8::splat(0.0);
+
+        match self {
+            BlendFactor::Zero => ColourSimd {
+                r: zero,
+                g: zero,
+                b: zero,
+                a: zero,
+            },
+
+            BlendFactor::One => ColourSimd {
+                r: one,
+                g: one,
+                b: one,
+                a: one,
+            },
+
+            BlendFactor::SrcColor => src,
+
+            BlendFactor::OneMinusSrcColor => ColourSimd {
+                r: one - src.r,
+                g: one - src.g,
+                b: one - src.b,
+                a: one - src.a,
+            },
+
+            BlendFactor::DstColor => dst,
+
+            BlendFactor::OneMinusDstColor => ColourSimd {
+                r: one - dst.r,
+                g: one - dst.g,
+                b: one - dst.b,
+                a: one - dst.a,
+            },
+
+            BlendFactor::SrcAlpha => ColourSimd {
+                r: src.a,
+                g: src.a,
+                b: src.a,
+                a: src.a,
+            },
+
+            BlendFactor::OneMinusSrcAlpha => {
+                let alpha = one - src.a;
+
+                ColourSimd {
+                    r: alpha,
+                    g: alpha,
+                    b: alpha,
+                    a: alpha,
+                }
+            }
+
+            BlendFactor::DstAlpha => ColourSimd {
+                r: dst.a,
+                g: dst.a,
+                b: dst.a,
+                a: dst.a,
+            },
+
+            BlendFactor::OneMinusDstAlpha => {
+                let alpha = one - dst.a;
+
+                ColourSimd {
+                    r: alpha,
+                    g: alpha,
+                    b: alpha,
+                    a: alpha,
+                }
+            }
+        }
+    }
 }
 
 /// Determines the arithmetic operation used to combine the scaled source and destination colours.
@@ -422,6 +498,63 @@ impl BlendState {
                 src_term.b.max(dst_term.b),
                 src_term.a.max(dst_term.a),
             ),
+        }
+    }
+
+    #[inline(always)]
+    pub fn apply_simd(&self, src: ColourSimd, dst: ColourSimd) -> ColourSimd {
+        let src_factor = self.src_factor.resolve_simd(src, dst);
+        let dst_factor = self.dst_factor.resolve_simd(src, dst);
+
+        let src_term = ColourSimd {
+            r: src.r * src_factor.r,
+            g: src.g * src_factor.g,
+            b: src.b * src_factor.b,
+            a: src.a * src_factor.a,
+        };
+
+        let dst_term = ColourSimd {
+            r: dst.r * dst_factor.r,
+            g: dst.g * dst_factor.g,
+            b: dst.b * dst_factor.b,
+            a: dst.a * dst_factor.a,
+        };
+
+        match self.op {
+            BlendOp::Add => ColourSimd {
+                r: src_term.r + dst_term.r,
+                g: src_term.g + dst_term.g,
+                b: src_term.b + dst_term.b,
+                a: src_term.a + dst_term.a,
+            },
+
+            BlendOp::Subtract => ColourSimd {
+                r: src_term.r - dst_term.r,
+                g: src_term.g - dst_term.g,
+                b: src_term.b - dst_term.b,
+                a: src_term.a - dst_term.a,
+            },
+
+            BlendOp::ReverseSubtract => ColourSimd {
+                r: dst_term.r - src_term.r,
+                g: dst_term.g - src_term.g,
+                b: dst_term.b - src_term.b,
+                a: dst_term.a - src_term.a,
+            },
+
+            BlendOp::Min => ColourSimd {
+                r: src_term.r.fast_min(dst_term.r),
+                g: src_term.g.fast_min(dst_term.g),
+                b: src_term.b.fast_min(dst_term.b),
+                a: src_term.a.fast_min(dst_term.a),
+            },
+
+            BlendOp::Max => ColourSimd {
+                r: src_term.r.fast_max(dst_term.r),
+                g: src_term.g.fast_max(dst_term.g),
+                b: src_term.b.fast_max(dst_term.b),
+                a: src_term.a.fast_max(dst_term.a),
+            },
         }
     }
 }
@@ -950,9 +1083,17 @@ where
                 let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
                     + (fragment_simd.x_start - bounds.min_x) as usize;
 
-                let colour = self
+                let src = self
                     .shader
                     .shade_simd(fragment_simd.varyings, self.uniforms.as_ref());
+
+                let colour = if let Some(blend_state) = self.blend_state {
+                    let dst = unsafe { framebuffer.get8_unchecked(base) };
+
+                    blend_state.apply_simd(src, dst)
+                } else {
+                    src
+                };
 
                 let r = colour.r.to_array();
                 let g = colour.g.to_array();

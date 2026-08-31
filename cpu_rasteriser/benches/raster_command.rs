@@ -410,9 +410,17 @@ where
                 let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
                     + (fragment_simd.x_start - bounds.min_x) as usize;
 
-                let colour = self
+                let src = self
                     .shader
                     .shade_simd(fragment_simd.varyings, self.uniforms.as_ref());
+
+                let colour = if let Some(blend_state) = self.blend_state {
+                    let dst = unsafe { framebuffer.get8_unchecked(base) };
+
+                    blend_state.apply_simd(src, dst)
+                } else {
+                    src
+                };
 
                 let r = colour.r.to_array();
                 let g = colour.g.to_array();
@@ -479,14 +487,6 @@ where
             }
         }
     }
-
-    fn bounding_box(&self) -> (Vec2, Vec2) {
-        self.triangle.bounding_box()
-    }
-
-    fn intersects(&self, rect: Rect) -> bool {
-        self.triangle.intersects_rect(rect)
-    }
 }
 
 // -----------------------------------------------------------------------------
@@ -502,23 +502,44 @@ fn bench_pre_simd_command(c: &mut Criterion) {
     let shader = Arc::new(TestShader);
     let uniforms = Arc::new(TestUniforms);
 
-    let command = PreSimdTriangleRasterCommand {
-        triangle,
-        uniforms,
-        shader,
-        blend_state: None,
-        depth_state: DepthState {
-            test_enabled: true,
-            write_enabled: true,
-        },
-    };
+    let cases = [
+        (
+            "no_depth_no_blend",
+            DepthState {
+                test_enabled: false,
+                write_enabled: false,
+            },
+            None,
+        ),
+        (
+            "depth_no_blend",
+            DepthState {
+                test_enabled: true,
+                write_enabled: true,
+            },
+            None,
+        ),
+        (
+            "depth_blend",
+            DepthState {
+                test_enabled: true,
+                write_enabled: true,
+            },
+            Some(BlendState::ALPHA_BLEND),
+        ),
+    ];
 
-    group.bench_with_input(
-        BenchmarkId::from_parameter("large"),
-        &command,
-        |b, command| {
+    for (name, depth_state, blend_state) in cases {
+        let command = PreSimdTriangleRasterCommand {
+            triangle: triangle.clone(),
+            uniforms: uniforms.clone(),
+            shader: shader.clone(),
+            blend_state,
+            depth_state,
+        };
+
+        group.bench_with_input(BenchmarkId::from_parameter(name), &command, |b, command| {
             let mut framebuffer = FrameBuffer::new(640, 360);
-
             let mut depthbuffer = DepthBuffer::new(640, 360);
 
             b.iter(|| {
@@ -529,8 +550,8 @@ fn bench_pre_simd_command(c: &mut Criterion) {
                 black_box(framebuffer.pixels());
                 black_box(&depthbuffer);
             });
-        },
-    );
+        });
+    }
 
     group.finish();
 }
@@ -544,21 +565,43 @@ fn bench_simd_scalar_shader_command(c: &mut Criterion) {
     let shader = Arc::new(TestShader);
     let uniforms = Arc::new(TestUniforms);
 
-    let command = TriangleRasterCommand {
-        triangle,
-        uniforms,
-        shader,
-        blend_state: None,
-        depth_state: DepthState {
-            test_enabled: true,
-            write_enabled: true,
-        },
-    };
+    let cases = [
+        (
+            "no_depth_no_blend",
+            DepthState {
+                test_enabled: false,
+                write_enabled: false,
+            },
+            None,
+        ),
+        (
+            "depth_no_blend",
+            DepthState {
+                test_enabled: true,
+                write_enabled: true,
+            },
+            None,
+        ),
+        (
+            "depth_blend",
+            DepthState {
+                test_enabled: true,
+                write_enabled: true,
+            },
+            Some(BlendState::ALPHA_BLEND),
+        ),
+    ];
 
-    group.bench_with_input(
-        BenchmarkId::from_parameter("large"),
-        &command,
-        |b, command| {
+    for (name, depth_state, blend_state) in cases {
+        let command = TriangleRasterCommand {
+            triangle: triangle.clone(),
+            uniforms: uniforms.clone(),
+            shader: shader.clone(),
+            blend_state,
+            depth_state,
+        };
+
+        group.bench_with_input(BenchmarkId::from_parameter(name), &command, |b, command| {
             let mut framebuffer = FrameBuffer::new(640, 360);
             let mut depthbuffer = DepthBuffer::new(640, 360);
 
@@ -570,8 +613,8 @@ fn bench_simd_scalar_shader_command(c: &mut Criterion) {
                 black_box(framebuffer.pixels());
                 black_box(&depthbuffer);
             });
-        },
-    );
+        });
+    }
 
     group.finish();
 }
@@ -585,21 +628,43 @@ fn bench_simd_shader_command(c: &mut Criterion) {
     let shader = Arc::new(TestShader);
     let uniforms = Arc::new(TestUniforms);
 
-    let command = TriangleRasterCommandSimd {
-        triangle,
-        uniforms,
-        shader,
-        blend_state: None,
-        depth_state: DepthState {
-            test_enabled: true,
-            write_enabled: true,
-        },
-    };
+    let cases = [
+        (
+            "no_depth_no_blend",
+            DepthState {
+                test_enabled: false,
+                write_enabled: false,
+            },
+            None,
+        ),
+        (
+            "depth_no_blend",
+            DepthState {
+                test_enabled: true,
+                write_enabled: true,
+            },
+            None,
+        ),
+        (
+            "depth_blend",
+            DepthState {
+                test_enabled: true,
+                write_enabled: true,
+            },
+            Some(BlendState::ALPHA_BLEND),
+        ),
+    ];
 
-    group.bench_with_input(
-        BenchmarkId::from_parameter("large"),
-        &command,
-        |b, command| {
+    for (name, depth_state, blend_state) in cases {
+        let command = TriangleRasterCommandSimd {
+            triangle: triangle.clone(),
+            uniforms: uniforms.clone(),
+            shader: shader.clone(),
+            blend_state,
+            depth_state,
+        };
+
+        group.bench_with_input(BenchmarkId::from_parameter(name), &command, |b, command| {
             let mut framebuffer = FrameBuffer::new(640, 360);
             let mut depthbuffer = DepthBuffer::new(640, 360);
 
@@ -611,8 +676,8 @@ fn bench_simd_shader_command(c: &mut Criterion) {
                 black_box(framebuffer.pixels());
                 black_box(&depthbuffer);
             });
-        },
-    );
+        });
+    }
 
     group.finish();
 }
