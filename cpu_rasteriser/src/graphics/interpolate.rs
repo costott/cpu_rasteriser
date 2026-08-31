@@ -38,6 +38,9 @@ pub trait SimdInterpolate: Interpolate {
     /// Apply perspective correction to every component.
     fn simd_perspective(value: Self::Simd, perspective: f32x8) -> Self::Simd;
 
-    /// Extract one SIMD lane back into the scalar varying type.
-    fn simd_extract(value: &Self::Simd, lane: usize) -> Self;
+    // /// Extract one SIMD lane back into the scalar varying type.
+    // fn simd_extract(value: &Self::Simd, lane: usize) -> Self;
+
+    /// Extract all SIMD lanes back into an array of scalar varying types.
+    fn simd_extract_all(value: &Self::Simd) -> [Self; 8];
 }

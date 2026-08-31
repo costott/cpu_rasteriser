@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use threadpool::ThreadPool;
+use wide::f32x8;
 
 use crate::prelude::*;
 
@@ -581,7 +582,7 @@ where
             );
 
             for triangle in triangles {
-                let command = Arc::new(TriangleRasterCommand {
+                let command = Arc::new(PreSimdTriangleRasterCommand {
                     triangle: triangle.clone(),
                     uniforms: uniforms.clone(),
                     shader: self.pipeline.fragment_shader.clone(),
@@ -696,21 +697,18 @@ trait RasterCommand: Send + Sync {
     fn intersects(&self, rect: Rect) -> bool;
 }
 
-struct TriangleRasterCommand<V, FS>
+struct PreSimdTriangleRasterCommand<V, FS>
 where
     V: Interpolate,
     FS: FragmentShader<V>,
 {
     triangle: Triangle2D<V>,
-
     uniforms: Arc<FS::Uniforms>,
-
     shader: Arc<FS>,
-
     blend_state: Option<BlendState>,
     depth_state: DepthState,
 }
-impl<V, FS> RasterCommand for TriangleRasterCommand<V, FS>
+impl<V, FS> RasterCommand for PreSimdTriangleRasterCommand<V, FS>
 where
     V: Interpolate + Send + Sync + 'static,
     FS: FragmentShader<V> + Send + Sync + 'static,
@@ -754,6 +752,272 @@ where
                 depthbuffer.set_depth(fragment.position, fragment.depth);
             }
         });
+    }
+
+    fn bounding_box(&self) -> (Vec2, Vec2) {
+        self.triangle.bounding_box()
+    }
+
+    fn intersects(&self, rect: Rect) -> bool {
+        self.triangle.intersects_rect(rect)
+    }
+}
+
+struct TriangleRasterCommand<V, FS>
+where
+    V: SimdInterpolate,
+    FS: FragmentShader<V>,
+{
+    triangle: Triangle2D<V>,
+
+    uniforms: Arc<FS::Uniforms>,
+
+    shader: Arc<FS>,
+
+    blend_state: Option<BlendState>,
+    depth_state: DepthState,
+}
+impl<V, FS> TriangleRasterCommand<V, FS>
+where
+    V: SimdInterpolate + Send + Sync + 'static,
+    FS: FragmentShader<V> + Send + Sync + 'static,
+{
+    // consts are used to avoid runtime branching in the inner rasterisation loop
+    fn rasterise_impl<const TEST_DEPTH: bool, const WRITE_DEPTH: bool>(
+        &self,
+        framebuffer: &mut FrameBuffer,
+        mut depthbuffer: Option<&mut DepthBuffer>,
+        bounds: Rect,
+    ) {
+        self.triangle
+            .rasterise_segment_simd(bounds, |fragment_simd| {
+                let pass = if TEST_DEPTH {
+                    let depthbuffer = depthbuffer
+                        .as_deref_mut()
+                        .expect("depth testing enabled but no depth buffer");
+
+                    let index = fragment_simd.y as usize * depthbuffer.width()
+                        + fragment_simd.x_start as usize;
+
+                    let stored = unsafe { depthbuffer.get8_unchecked(index) };
+
+                    // Only covered lanes can pass.
+                    fragment_simd.mask & fragment_simd.depth.simd_lt(stored)
+                } else {
+                    // No depth test: the rasteriser's coverage mask is the
+                    // complete set of valid lanes.
+                    fragment_simd.mask
+                };
+
+                if !pass.any() {
+                    return;
+                }
+
+                let mask = pass.to_bitmask();
+
+                let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
+                    + (fragment_simd.x_start - bounds.min_x) as usize;
+
+                let varyings = V::simd_extract_all(&fragment_simd.varyings);
+
+                for lane in 0..8 {
+                    if mask & (1 << lane) == 0 {
+                        continue;
+                    }
+
+                    let src = self
+                        .shader
+                        .shade(varyings[lane].clone(), self.uniforms.as_ref());
+
+                    let colour = match self.blend_state {
+                        Some(blend_state) => {
+                            let dst = unsafe { framebuffer.get_pixel_index_unchecked(base + lane) };
+
+                            blend_state.apply(src, dst)
+                        }
+
+                        None => src,
+                    };
+
+                    unsafe {
+                        framebuffer.set_pixel_index_unchecked(base + lane, colour);
+                    }
+                }
+
+                if WRITE_DEPTH {
+                    let depthbuffer = depthbuffer
+                        .as_deref_mut()
+                        .expect("depth writing enabled but no depth buffer");
+
+                    let index = fragment_simd.y as usize * depthbuffer.width()
+                        + fragment_simd.x_start as usize;
+
+                    unsafe {
+                        depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
+                    }
+                }
+            });
+    }
+}
+impl<V, FS> RasterCommand for TriangleRasterCommand<V, FS>
+where
+    V: SimdInterpolate + Send + Sync + 'static,
+    FS: FragmentShader<V> + Send + Sync + 'static,
+{
+    fn rasterise(
+        &self,
+        framebuffer: &mut FrameBuffer,
+        depthbuffer: Option<&mut DepthBuffer>,
+        bounds: Rect,
+    ) {
+        match (
+            self.depth_state.test_enabled,
+            self.depth_state.write_enabled,
+        ) {
+            (false, false) => {
+                self.rasterise_impl::<false, false>(framebuffer, depthbuffer, bounds);
+            }
+
+            (false, true) => {
+                self.rasterise_impl::<false, true>(framebuffer, depthbuffer, bounds);
+            }
+
+            (true, false) => {
+                self.rasterise_impl::<true, false>(framebuffer, depthbuffer, bounds);
+            }
+
+            (true, true) => {
+                self.rasterise_impl::<true, true>(framebuffer, depthbuffer, bounds);
+            }
+        }
+    }
+
+    fn bounding_box(&self) -> (Vec2, Vec2) {
+        self.triangle.bounding_box()
+    }
+
+    fn intersects(&self, rect: Rect) -> bool {
+        self.triangle.intersects_rect(rect)
+    }
+}
+
+struct TriangleRasterCommandSimd<V, FS>
+where
+    V: SimdInterpolate,
+    FS: FragmentShaderSimd<V>,
+{
+    triangle: Triangle2D<V>,
+    uniforms: Arc<FS::Uniforms>,
+    shader: Arc<FS>,
+    blend_state: Option<BlendState>,
+    depth_state: DepthState,
+}
+
+impl<V, FS> TriangleRasterCommandSimd<V, FS>
+where
+    V: SimdInterpolate + Send + Sync + 'static,
+    FS: FragmentShaderSimd<V> + Send + Sync + 'static,
+{
+    fn rasterise_impl<const TEST_DEPTH: bool, const WRITE_DEPTH: bool>(
+        &self,
+        framebuffer: &mut FrameBuffer,
+        mut depthbuffer: Option<&mut DepthBuffer>,
+        bounds: Rect,
+    ) {
+        self.triangle
+            .rasterise_segment_simd(bounds, |fragment_simd| {
+                let pass = if TEST_DEPTH {
+                    let depthbuffer = depthbuffer
+                        .as_deref_mut()
+                        .expect("depth testing enabled but no depth buffer");
+
+                    let index = fragment_simd.y as usize * depthbuffer.width()
+                        + fragment_simd.x_start as usize;
+
+                    let stored = unsafe { depthbuffer.get8_unchecked(index) };
+
+                    fragment_simd.mask & fragment_simd.depth.simd_lt(stored)
+                } else {
+                    fragment_simd.mask
+                };
+
+                if !pass.any() {
+                    return;
+                }
+
+                let mask = pass.to_bitmask();
+
+                let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
+                    + (fragment_simd.x_start - bounds.min_x) as usize;
+
+                let colour = self
+                    .shader
+                    .shade_simd(fragment_simd.varyings, self.uniforms.as_ref());
+
+                let r = colour.r.to_array();
+                let g = colour.g.to_array();
+                let b = colour.b.to_array();
+                let a = colour.a.to_array();
+
+                for lane in 0..8 {
+                    if mask & (1 << lane) == 0 {
+                        continue;
+                    }
+
+                    let frag_colour = Colour::new(r[lane], g[lane], b[lane], a[lane]);
+
+                    unsafe {
+                        framebuffer.set_pixel_index_unchecked(base + lane, frag_colour);
+                    }
+                }
+
+                if WRITE_DEPTH {
+                    let depthbuffer = depthbuffer
+                        .as_deref_mut()
+                        .expect("depth writing enabled but no depth buffer");
+
+                    let index = fragment_simd.y as usize * depthbuffer.width()
+                        + fragment_simd.x_start as usize;
+
+                    unsafe {
+                        depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
+                    }
+                }
+            });
+    }
+}
+
+impl<V, FS> RasterCommand for TriangleRasterCommandSimd<V, FS>
+where
+    V: SimdInterpolate + Send + Sync + 'static,
+    FS: FragmentShaderSimd<V> + Send + Sync + 'static,
+{
+    fn rasterise(
+        &self,
+        framebuffer: &mut FrameBuffer,
+        depthbuffer: Option<&mut DepthBuffer>,
+        bounds: Rect,
+    ) {
+        match (
+            self.depth_state.test_enabled,
+            self.depth_state.write_enabled,
+        ) {
+            (false, false) => {
+                self.rasterise_impl::<false, false>(framebuffer, depthbuffer, bounds);
+            }
+
+            (false, true) => {
+                self.rasterise_impl::<false, true>(framebuffer, depthbuffer, bounds);
+            }
+
+            (true, false) => {
+                self.rasterise_impl::<true, false>(framebuffer, depthbuffer, bounds);
+            }
+
+            (true, true) => {
+                self.rasterise_impl::<true, true>(framebuffer, depthbuffer, bounds);
+            }
+        }
     }
 
     fn bounding_box(&self) -> (Vec2, Vec2) {

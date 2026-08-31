@@ -73,7 +73,5 @@ pub trait FragmentShaderSimd<V>: FragmentShader<V>
 where
     V: SimdInterpolate,
 {
-    type SimdColour;
-
-    fn shade_simd(&self, varyings: V::Simd, uniforms: &Self::Uniforms) -> Self::SimdColour;
+    fn shade_simd(&self, varyings: V::Simd, uniforms: &Self::Uniforms) -> ColourSimd;
 }

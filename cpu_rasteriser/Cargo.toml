@@ -18,3 +18,6 @@ criterion = "0.7"
 name = "rasterise_segment"
 harness = false
 
+[[bench]]
+name = "raster_command"
+harness = false

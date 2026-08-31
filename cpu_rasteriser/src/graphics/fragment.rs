@@ -22,14 +22,17 @@ pub struct FragmentSimd<V: SimdInterpolate> {
     pub y: i32,
     pub depth: f32x8,
     pub varyings: V::Simd,
+    /// The mask indicates which lanes are valid (1) and which are not (0).
+    pub mask: f32x8,
 }
 impl<V: SimdInterpolate> FragmentSimd<V> {
-    pub fn new(x_start: i32, y: i32, depth: f32x8, varyings: V::Simd) -> Self {
+    pub fn new(x_start: i32, y: i32, depth: f32x8, varyings: V::Simd, mask: f32x8) -> Self {
         Self {
             x_start,
             y,
             depth,
             varyings,
+            mask,
         }
     }
 }
