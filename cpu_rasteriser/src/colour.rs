@@ -1,3 +1,5 @@
+use wide::f32x8;
+
 use crate::prelude::*;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub};
 
@@ -214,4 +216,12 @@ impl From<Vec3> for Colour {
     fn from(vec: Vec3) -> Self {
         Self::new(vec.x, vec.y, vec.z, 1.0)
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ColourSimd {
+    pub r: f32x8,
+    pub g: f32x8,
+    pub b: f32x8,
+    pub a: f32x8,
 }

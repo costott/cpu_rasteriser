@@ -2,10 +2,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-use cpu_rasteriser::{
-    depthbuffer::DepthBuffer, framebuffer::FrameBuffer, graphics::fragment::FragmentSimd,
-    prelude::*,
-};
+use cpu_rasteriser::{depthbuffer::DepthBuffer, framebuffer::FrameBuffer, prelude::*};
 use wide::f32x8;
 
 // -----------------------------------------------------------------------------
@@ -50,14 +47,37 @@ impl SimdInterpolate for TestVaryings {
         }
     }
 
-    fn simd_extract(value: &Self::Simd, lane: usize) -> Self {
+    fn simd_extract_all(value: &Self::Simd) -> [Self; 8] {
         let r = value.colour[0].to_array();
         let g = value.colour[1].to_array();
         let b = value.colour[2].to_array();
 
-        Self {
-            colour: Vec3::new(r[lane], g[lane], b[lane]),
-        }
+        [
+            Self {
+                colour: Vec3::new(r[0], g[0], b[0]),
+            },
+            Self {
+                colour: Vec3::new(r[1], g[1], b[1]),
+            },
+            Self {
+                colour: Vec3::new(r[2], g[2], b[2]),
+            },
+            Self {
+                colour: Vec3::new(r[3], g[3], b[3]),
+            },
+            Self {
+                colour: Vec3::new(r[4], g[4], b[4]),
+            },
+            Self {
+                colour: Vec3::new(r[5], g[5], b[5]),
+            },
+            Self {
+                colour: Vec3::new(r[6], g[6], b[6]),
+            },
+            Self {
+                colour: Vec3::new(r[7], g[7], b[7]),
+            },
+        ]
     }
 }
 
@@ -194,38 +214,9 @@ impl FragmentShader<TestVaryings> for TestShader {
     }
 }
 
-// impl FragmentShader<TestVaryingsSimd> for TestShader {
-//     type Uniforms = TestUniforms;
-
-//     #[inline(always)]
-//     fn shade(&self, varyings: TestVaryingsSimd, uniforms: &Self::Uniforms) -> Colour {
-//         let mut r = varyings.colour[0];
-//         let mut g = varyings.colour[1];
-//         let mut b = varyings.colour[2];
-
-//         for _ in 0..16 {
-//             r = (r * 1.37 + g * 0.21).max(0.0);
-//             g = (g * 0.91 + b * 0.34).max(0.0);
-//             b = (b * 1.13 + r * 0.17).max(0.0);
-//         }
-
-//         Colour::new(r, g, b, 1.0)
-//     }
-// }
-
-#[derive(Clone, Copy)]
-struct TestColourSimd {
-    r: f32x8,
-    g: f32x8,
-    b: f32x8,
-    a: f32x8,
-}
-
 impl FragmentShaderSimd<TestVaryings> for TestShader {
-    type SimdColour = TestColourSimd;
-
     #[inline(always)]
-    fn shade_simd(&self, varyings: TestVaryingsSimd, _uniforms: &TestUniforms) -> Self::SimdColour {
+    fn shade_simd(&self, varyings: TestVaryingsSimd, _uniforms: &TestUniforms) -> ColourSimd {
         let mut r = varyings.colour[0];
         let mut g = varyings.colour[1];
         let mut b = varyings.colour[2];
@@ -244,7 +235,7 @@ impl FragmentShaderSimd<TestVaryings> for TestShader {
             b = (b * c113 + r * c017).fast_max(zero);
         }
 
-        Self::SimdColour {
+        ColourSimd {
             r,
             g,
             b,
@@ -816,27 +807,15 @@ fn bench_rasteriser_simd_compute(c: &mut Criterion) {
                 b.iter(|| {
                     let checksum = std::cell::Cell::new(0.0f32);
 
-                    triangle.rasterise_segment_simd(
-                        black_box(bounds),
-                        |fragment_simd| {
-                            checksum.set(
-                                checksum.get()
-                                    + fragment_simd.depth.reduce_add()
-                                    + fragment_simd.varyings.colour[0].reduce_add()
-                                    + fragment_simd.varyings.colour[1].reduce_add()
-                                    + fragment_simd.varyings.colour[2].reduce_add(),
-                            );
-                        },
-                        |fragment| {
-                            checksum.set(
-                                checksum.get()
-                                    + fragment.depth
-                                    + fragment.varyings.colour.x
-                                    + fragment.varyings.colour.y
-                                    + fragment.varyings.colour.z,
-                            );
-                        },
-                    );
+                    triangle.rasterise_segment_simd(black_box(bounds), |fragment_simd| {
+                        checksum.set(
+                            checksum.get()
+                                + fragment_simd.depth.reduce_add()
+                                + fragment_simd.varyings.colour[0].reduce_add()
+                                + fragment_simd.varyings.colour[1].reduce_add()
+                                + fragment_simd.varyings.colour[2].reduce_add(),
+                        );
+                    });
 
                     black_box(checksum);
                 });
@@ -863,44 +842,39 @@ fn bench_rasteriser_simd_callback(c: &mut Criterion) {
             &triangle,
             |b, triangle| {
                 b.iter(|| {
-                    triangle.rasterise_segment_simd(
-                        black_box(bounds),
-                        |fragment_simd| {
-                            let index = (fragment_simd.y as usize) * depthbuffer.width()
-                                + (fragment_simd.x_start as usize);
+                    triangle.rasterise_segment_simd(black_box(bounds), |fragment_simd| {
+                        let index = (fragment_simd.y as usize) * depthbuffer.width()
+                            + (fragment_simd.x_start as usize);
 
-                            let stored = unsafe { depthbuffer.get8_unchecked(index) };
+                        let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
-                            let pass = fragment_simd.depth.simd_lt(stored);
+                        let pass = fragment_simd.depth.simd_lt(stored);
 
-                            let mask = pass.to_bitmask();
+                        let mask = pass.to_bitmask();
 
-                            if mask == 0 {
-                                return;
+                        if mask == 0 {
+                            return;
+                        }
+
+                        let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
+                            + (fragment_simd.x_start - bounds.min_x) as usize;
+
+                        let r = fragment_simd.varyings.colour[0].to_array();
+                        let g = fragment_simd.varyings.colour[1].to_array();
+                        let b = fragment_simd.varyings.colour[2].to_array();
+
+                        for lane in 0..8 {
+                            if mask & (1 << lane) == 0 {
+                                continue;
                             }
 
-                            let base = (fragment_simd.y - bounds.min_y) as usize
-                                * framebuffer.width()
-                                + (fragment_simd.x_start - bounds.min_x) as usize;
+                            let src = Colour::new(r[lane], g[lane], b[lane], 1.0);
 
-                            let r = fragment_simd.varyings.colour[0].to_array();
-                            let g = fragment_simd.varyings.colour[1].to_array();
-                            let b = fragment_simd.varyings.colour[2].to_array();
-
-                            for lane in 0..8 {
-                                if mask & (1 << lane) == 0 {
-                                    continue;
-                                }
-
-                                let src = Colour::new(r[lane], g[lane], b[lane], 1.0);
-
-                                unsafe {
-                                    framebuffer.set_pixel_index_unchecked(base + lane, src);
-                                }
+                            unsafe {
+                                framebuffer.set_pixel_index_unchecked(base + lane, src);
                             }
-                        },
-                        |_fragment| {},
-                    );
+                        }
+                    });
 
                     black_box(framebuffer.pixels());
                 });
@@ -927,52 +901,43 @@ fn bench_rasteriser_simd_depthwrite(c: &mut Criterion) {
                 b.iter(|| {
                     depthbuffer.clear(1.0);
 
-                    triangle.rasterise_segment_simd(
-                        black_box(bounds),
-                        |fragment_simd| {
-                            let index = fragment_simd.y as usize * depthbuffer.width()
-                                + fragment_simd.x_start as usize;
+                    triangle.rasterise_segment_simd(black_box(bounds), |fragment_simd| {
+                        let index = fragment_simd.y as usize * depthbuffer.width()
+                            + fragment_simd.x_start as usize;
 
-                            let stored = unsafe { depthbuffer.get8_unchecked(index) };
+                        let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
-                            let pass = fragment_simd.depth.simd_lt(stored);
+                        let pass = fragment_simd.depth.simd_lt(stored);
 
-                            if !pass.any() {
-                                return;
+                        if !pass.any() {
+                            return;
+                        }
+
+                        let mask = pass.to_bitmask();
+
+                        let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
+                            + (fragment_simd.x_start - bounds.min_x) as usize;
+
+                        let r = fragment_simd.varyings.colour[0].to_array();
+                        let g = fragment_simd.varyings.colour[1].to_array();
+                        let b = fragment_simd.varyings.colour[2].to_array();
+
+                        for lane in 0..8 {
+                            if mask & (1 << lane) == 0 {
+                                continue;
                             }
 
-                            let mask = pass.to_bitmask();
-
-                            let base = (fragment_simd.y - bounds.min_y) as usize
-                                * framebuffer.width()
-                                + (fragment_simd.x_start - bounds.min_x) as usize;
-
-                            let r = fragment_simd.varyings.colour[0].to_array();
-                            let g = fragment_simd.varyings.colour[1].to_array();
-                            let b = fragment_simd.varyings.colour[2].to_array();
-
-                            for lane in 0..8 {
-                                if mask & (1 << lane) == 0 {
-                                    continue;
-                                }
-
-                                let colour = Colour::new(r[lane], g[lane], b[lane], 1.0);
-
-                                unsafe {
-                                    framebuffer.set_pixel_index_unchecked(base + lane, colour);
-                                }
-                            }
+                            let colour = Colour::new(r[lane], g[lane], b[lane], 1.0);
 
                             unsafe {
-                                depthbuffer.set8_unchecked_with_mask(
-                                    index,
-                                    fragment_simd.depth,
-                                    pass,
-                                );
+                                framebuffer.set_pixel_index_unchecked(base + lane, colour);
                             }
-                        },
-                        |_fragment| {},
-                    );
+                        }
+
+                        unsafe {
+                            depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
+                        }
+                    });
 
                     black_box(framebuffer.pixels());
                     black_box(&depthbuffer);
@@ -1003,54 +968,48 @@ fn bench_rasteriser_simd_full(c: &mut Criterion) {
                 b.iter(|| {
                     depthbuffer.clear(1.0);
 
-                    triangle.rasterise_segment_simd(
-                        black_box(bounds),
-                        |fragment_simd| {
-                            let index = fragment_simd.y as usize * depthbuffer.width()
-                                + fragment_simd.x_start as usize;
+                    triangle.rasterise_segment_simd(black_box(bounds), |fragment_simd| {
+                        let index = fragment_simd.y as usize * depthbuffer.width()
+                            + fragment_simd.x_start as usize;
 
-                            let stored = unsafe { depthbuffer.get8_unchecked(index) };
+                        let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
-                            let pass = fragment_simd.depth.simd_lt(stored);
+                        let depth_mask = fragment_simd.depth.simd_lt(stored);
 
-                            if !pass.any() {
-                                return;
+                        // Only lanes that are both covered and pass depth.
+                        let mask = fragment_simd.mask & depth_mask;
+
+                        if !mask.any() {
+                            return;
+                        }
+
+                        let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
+                            + (fragment_simd.x_start - bounds.min_x) as usize;
+
+                        let colour = shader.shade_simd(fragment_simd.varyings, &uniforms);
+
+                        let r = colour.r.to_array();
+                        let g = colour.g.to_array();
+                        let b = colour.b.to_array();
+
+                        let mask_bits = mask.to_bitmask();
+
+                        for lane in 0..8 {
+                            if mask_bits & (1 << lane) == 0 {
+                                continue;
                             }
 
-                            let mask = pass.to_bitmask();
-
-                            let base = (fragment_simd.y - bounds.min_y) as usize
-                                * framebuffer.width()
-                                + (fragment_simd.x_start - bounds.min_x) as usize;
-
-                            let colour = shader.shade_simd(fragment_simd.varyings, &uniforms);
-
-                            let r = colour.r.to_array();
-                            let g = colour.g.to_array();
-                            let b = colour.b.to_array();
-
-                            for lane in 0..8 {
-                                if mask & (1 << lane) == 0 {
-                                    continue;
-                                }
-
-                                let frag_colour = Colour::new(r[lane], g[lane], b[lane], 1.0);
-
-                                unsafe {
-                                    framebuffer.set_pixel_index_unchecked(base + lane, frag_colour);
-                                }
-                            }
+                            let frag_colour = Colour::new(r[lane], g[lane], b[lane], 1.0);
 
                             unsafe {
-                                depthbuffer.set8_unchecked_with_mask(
-                                    index,
-                                    fragment_simd.depth,
-                                    pass,
-                                );
+                                framebuffer.set_pixel_index_unchecked(base + lane, frag_colour);
                             }
-                        },
-                        |_fragment| {},
-                    );
+                        }
+
+                        unsafe {
+                            depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, mask);
+                        }
+                    });
 
                     black_box(framebuffer.pixels());
                     black_box(&depthbuffer);
@@ -1112,29 +1071,78 @@ fn bench_shader(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_framebuffer_set(c: &mut Criterion) {
+    let mut group = c.benchmark_group("framebuffer/set");
+
+    let mut framebuffer = FrameBuffer::new(640, 360);
+
+    let colours = [
+        Colour::new(0.1, 0.2, 0.3, 1.0),
+        Colour::new(0.2, 0.3, 0.4, 1.0),
+        Colour::new(0.3, 0.4, 0.5, 1.0),
+        Colour::new(0.4, 0.5, 0.6, 1.0),
+        Colour::new(0.5, 0.6, 0.7, 1.0),
+        Colour::new(0.6, 0.7, 0.8, 1.0),
+        Colour::new(0.7, 0.8, 0.9, 1.0),
+        Colour::new(0.8, 0.9, 1.0, 1.0),
+    ];
+
+    group.throughput(criterion::Throughput::Elements(8));
+
+    group.bench_function("8_scalar_indexed", |b| {
+        b.iter(|| {
+            let index = 100_000;
+
+            for lane in 0..8 {
+                unsafe {
+                    framebuffer.set_pixel_index_unchecked(index + lane, colours[lane]);
+                }
+            }
+
+            black_box(framebuffer.pixels());
+        });
+    });
+
+    group.bench_function("8_scalar_checked", |b| {
+        b.iter(|| {
+            let x = 100;
+            let y = 150;
+
+            for lane in 0..8 {
+                framebuffer.set_pixel(Vec2::new((x + lane) as f32, y as f32), colours[lane]);
+            }
+
+            black_box(framebuffer.pixels());
+        });
+    });
+
+    group.finish();
+}
+
 // -----------------------------------------------------------------------------
 // Criterion
 // -----------------------------------------------------------------------------
 
 criterion_group!(
     benches,
-    // bench_rasteriser_overhead,
-    // bench_rasteriser_compute,
-    // bench_rasteriser_overhead_shape,
-    // bench_rasteriser_compute_shape,
-    // bench_rasteriser_overhead_bounds,
-    // bench_rasteriser_compute_bounds,
-    // bench_callback_size,
-    // bench_callback_depthwrite,
-    // bench_callback_shape,
-    // bench_callback_bounds,
+    bench_rasteriser_overhead,
+    bench_rasteriser_compute,
+    bench_rasteriser_overhead_shape,
+    bench_rasteriser_compute_shape,
+    bench_rasteriser_overhead_bounds,
+    bench_rasteriser_compute_bounds,
+    bench_callback_size,
+    bench_callback_depthwrite,
+    bench_callback_shape,
+    bench_callback_bounds,
     bench_callback_full,
-    // bench_throughput,
-    // bench_rasteriser_simd_compute,
-    // bench_rasteriser_simd_callback,
-    // bench_rasteriser_simd_depthwrite,
+    bench_throughput,
+    bench_rasteriser_simd_compute,
+    bench_rasteriser_simd_callback,
+    bench_rasteriser_simd_depthwrite,
     bench_rasteriser_simd_full,
-    // bench_shader,
+    bench_shader,
+    bench_framebuffer_set
 );
 
 criterion_main!(benches);

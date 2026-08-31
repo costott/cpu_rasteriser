@@ -165,6 +165,11 @@ impl FrameBuffer {
     }
 
     #[inline(always)]
+    pub unsafe fn get_pixel_index_unchecked(&self, index: usize) -> Colour {
+        unsafe { *self.pixels.get_unchecked(index) }
+    }
+
+    #[inline(always)]
     pub unsafe fn get8_r_unchecked(&self, index: usize) -> f32x8 {
         debug_assert!(index + 8 <= self.pixels.len());
 
