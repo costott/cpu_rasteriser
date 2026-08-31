@@ -106,7 +106,9 @@ struct TestVaryingsSimd {
 }
 
 impl FragmentShaderSimd<TestVaryings> for TestShader {
-    fn shade_simd(&self, varyings: TestVaryingsSimd, _uniforms: &TestUniforms) -> ColourSimd {
+    type Uniforms = TestUniforms;
+
+    fn shade_simd(&self, varyings: TestVaryingsSimd, _uniforms: &Self::Uniforms) -> ColourSimd {
         let mut r = varyings.colour[0];
         let mut g = varyings.colour[1];
         let mut b = varyings.colour[2];

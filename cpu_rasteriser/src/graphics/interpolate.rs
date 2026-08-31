@@ -22,6 +22,13 @@ impl Interpolate for f32 {
     }
 }
 
+/// Provides SIMD interpolation support for fragment varyings.
+///
+/// [`SimdPipeline`] uses this trait to interpolate varyings across multiple
+/// fragments simultaneously during rasterisation.
+///
+/// Implementations should produce the same values as the corresponding scalar
+/// [`Interpolate`] operations, represented in SIMD form.
 pub trait SimdInterpolate: Interpolate {
     type Simd: Copy;
 
