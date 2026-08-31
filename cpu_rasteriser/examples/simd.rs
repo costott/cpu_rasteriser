@@ -17,58 +17,9 @@ struct VertexUniforms {
     pub projection_matrix: Mat4,
 }
 
-#[derive(Interpolate)]
+#[derive(Interpolate, SimdInterpolate)]
 struct Varyings {
     pub colour: Vec4,
-}
-
-#[derive(Clone, Copy)]
-struct VaryingsSimd {
-    colour: [f32x8; 3],
-}
-
-impl SimdInterpolate for Varyings {
-    type Simd = VaryingsSimd;
-
-    fn simd_step(value: &Self, step: &Self, lanes: f32x8) -> Self::Simd {
-        VaryingsSimd {
-            colour: [
-                f32x8::splat(value.colour.x) + f32x8::splat(step.colour.x) * lanes,
-                f32x8::splat(value.colour.y) + f32x8::splat(step.colour.y) * lanes,
-                f32x8::splat(value.colour.z) + f32x8::splat(step.colour.z) * lanes,
-            ],
-        }
-    }
-
-    fn simd_add_scaled(value: &Self::Simd, step: &Self, scale: f32x8) -> Self::Simd {
-        VaryingsSimd {
-            colour: [
-                value.colour[0] + f32x8::splat(step.colour.x) * scale,
-                value.colour[1] + f32x8::splat(step.colour.y) * scale,
-                value.colour[2] + f32x8::splat(step.colour.z) * scale,
-            ],
-        }
-    }
-
-    fn simd_perspective(value: Self::Simd, perspective: f32x8) -> Self::Simd {
-        VaryingsSimd {
-            colour: [
-                value.colour[0] * perspective,
-                value.colour[1] * perspective,
-                value.colour[2] * perspective,
-            ],
-        }
-    }
-
-    fn simd_extract_all(value: &Self::Simd) -> [Self; 8] {
-        let r = value.colour[0].to_array();
-        let g = value.colour[1].to_array();
-        let b = value.colour[2].to_array();
-
-        std::array::from_fn(|i| Self {
-            colour: Vec4::new(r[i], g[i], b[i], 1.0),
-        })
-    }
 }
 
 struct BasicVertexShader;

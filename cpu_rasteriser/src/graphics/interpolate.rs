@@ -51,3 +51,36 @@ pub trait SimdInterpolate: Interpolate {
     /// Extract all SIMD lanes back into an array of scalar varying types.
     fn simd_extract_all(value: &Self::Simd) -> [Self; 8];
 }
+
+pub trait SimdInterpolateField {
+    type Simd;
+
+    fn simd_step(value: &Self, step: &Self, lanes: f32x8) -> Self::Simd;
+    fn simd_add_scaled(value: &Self::Simd, step: &Self, scale: f32x8) -> Self::Simd;
+    fn simd_perspective(value: Self::Simd, perspective: f32x8) -> Self::Simd;
+    fn simd_extract(value: &Self::Simd, lane: usize) -> Self;
+}
+
+impl SimdInterpolateField for f32 {
+    type Simd = f32x8;
+
+    #[inline(always)]
+    fn simd_step(value: &Self, step: &Self, lanes: f32x8) -> Self::Simd {
+        f32x8::splat(*value) + lanes * f32x8::splat(*step)
+    }
+
+    #[inline(always)]
+    fn simd_add_scaled(value: &Self::Simd, step: &Self, scale: f32x8) -> Self::Simd {
+        *value + f32x8::splat(*step) * scale
+    }
+
+    #[inline(always)]
+    fn simd_perspective(value: Self::Simd, perspective: f32x8) -> Self::Simd {
+        value * perspective
+    }
+
+    #[inline(always)]
+    fn simd_extract(value: &Self::Simd, lane: usize) -> Self {
+        value.to_array()[lane]
+    }
+}
