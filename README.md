@@ -89,8 +89,8 @@ SIMD rendering is exposed through `SimdPipeline` and `RenderPass::draw_simd`. SI
 let pipeline = SimdPipeline::new(
     vertex_shader,
     fragment_shader,
-    )
-    .with_depth_state(DepthState::DEFAULT);
+)
+.with_depth_state(DepthState::DEFAULT);
 
 render_pass.draw_simd(
     &pipeline,
@@ -103,7 +103,7 @@ A shader used with `SimdPipeline` implements `FragmentShaderSimd`. SIMD support 
 
 The full SIMD rendering example can be found in the engine examples. See [`engine/examples/bloom.rs`](./engine/examples/bloom.rs)
 
---
+---
 
 ## Architecture
 
