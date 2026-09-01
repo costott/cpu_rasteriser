@@ -4,20 +4,28 @@ use crate::prelude::*;
 
 pub struct FrameBuffer {
     extent: Extent,
-    pixels: Vec<Colour>,
+    stride: usize,       // physical row stride, including SIMD padding
+    pixels: Vec<Colour>, // TODO: change to SoA layout for better SIMD performance - separate Vec<f32> for each channel, as rn profiling shows performance is dominated by branch misprediction in scalar loop of rasteriser callback, so need a set8_unchecked_with_mask
 }
 impl FrameBuffer {
+    const SIMD_WIDTH: usize = 8;
+
     pub fn new(width: usize, height: usize) -> Self {
+        let stride = (width + Self::SIMD_WIDTH - 1).next_multiple_of(Self::SIMD_WIDTH);
+
         Self {
             extent: Extent::new(width, height),
-            pixels: vec![Colour::BLACK; width * height],
+            stride,
+            pixels: vec![Colour::BLACK; stride * height],
         }
     }
 
+    #[inline(always)]
     pub fn width(&self) -> usize {
         self.extent.width
     }
 
+    #[inline(always)]
     pub fn height(&self) -> usize {
         self.extent.height
     }
@@ -30,8 +38,31 @@ impl FrameBuffer {
         &self.pixels
     }
 
+    pub fn pixels_compact(&self) -> Vec<Colour> {
+        let mut pixels = Vec::with_capacity(self.width() * self.height());
+
+        for y in 0..self.height() {
+            let start = y * self.stride;
+            let end = start + self.width();
+
+            pixels.extend_from_slice(&self.pixels[start..end]);
+        }
+
+        pixels
+    }
+
     pub fn pixels_u32(&self) -> Vec<u32> {
-        self.pixels.iter().copied().map(Colour::to_u32).collect()
+        // Returns only the logical pixels of the framebuffer, not the padded pixels at the end of each row
+        let mut pixels = Vec::with_capacity(self.width() * self.height());
+
+        for y in 0..self.height() {
+            let start = y * self.stride;
+            let end = start + self.width();
+
+            pixels.extend(self.pixels[start..end].iter().copied().map(Colour::to_u32));
+        }
+
+        pixels
     }
 
     pub fn clear(&mut self, colour: Colour) {
@@ -40,27 +71,46 @@ impl FrameBuffer {
 
     pub fn resize(&mut self, width: usize, height: usize) {
         self.extent = Extent::new(width, height);
-        self.pixels.resize(width * height, Colour::BLACK);
+        self.stride = (width + Self::SIMD_WIDTH - 1).next_multiple_of(Self::SIMD_WIDTH);
+        self.pixels.resize(self.stride * height, Colour::BLACK);
+    }
+
+    #[inline(always)]
+    fn index(&self, x: usize, y: usize) -> usize {
+        debug_assert!(x < self.extent.width);
+        debug_assert!(y < self.extent.height);
+
+        y * self.stride + x
+    }
+
+    #[inline(always)]
+    pub fn index_unchecked(&self, x: usize, y: usize) -> usize {
+        y * self.stride + x
     }
 
     pub fn set_pixel(&mut self, p: Vec2, colour: Colour) {
-        let x = p.x as i32;
-        let y = p.y as i32;
-        if x < 0 || x >= self.width() as i32 || y < 0 || y >= self.height() as i32 {
+        let x = p.x as usize;
+        let y = p.y as usize;
+
+        if x >= self.width() || y >= self.height() {
             return;
         }
-        let index = (y as usize) * self.width() + (x as usize);
+
+        let index = self.index(x, y);
         self.pixels[index] = colour;
     }
 
+    #[inline(always)]
     pub unsafe fn set_pixel_unchecked(&mut self, p: Vec2, colour: Colour) {
-        let index = (p.y as usize) * self.width() + (p.x as usize);
+        let index = self.index(p.x as usize, p.y as usize);
         unsafe {
             *self.pixels.get_unchecked_mut(index) = colour;
         }
     }
 
     pub unsafe fn set_pixel_index_unchecked(&mut self, index: usize, colour: Colour) {
+        debug_assert!(index < self.pixels.len());
+
         unsafe {
             *self.pixels.get_unchecked_mut(index) = colour;
         }
@@ -148,18 +198,22 @@ impl FrameBuffer {
         unsafe { self.set8_b_unchecked(index, new_pixels) };
     }
 
+    #[inline(always)]
     pub fn get_pixel(&self, p: Vec2) -> Option<Colour> {
-        let x = p.x as i32;
-        let y = p.y as i32;
-        if x < 0 || x >= self.width() as i32 || y < 0 || y >= self.height() as i32 {
+        let x = p.x as usize;
+        let y = p.y as usize;
+
+        if x >= self.width() || y >= self.height() {
             return None;
         }
-        let index = (y as usize) * self.width() + (x as usize);
+
+        let index = self.index(x, y);
         Some(self.pixels[index])
     }
 
+    #[inline(always)]
     pub unsafe fn get_pixel_unchecked(&self, p: Vec2) -> Colour {
-        let index = (p.y as usize) * self.width() + (p.x as usize);
+        let index = self.index(p.x as usize, p.y as usize);
 
         unsafe { *self.pixels.get_unchecked(index) }
     }
@@ -192,7 +246,7 @@ impl FrameBuffer {
 
         // check if loads auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD load
         let values = [
-            unsafe { self.pixels.get_unchecked(index).r },
+            unsafe { self.pixels.get_unchecked(index).g },
             unsafe { self.pixels.get_unchecked(index + 1).g },
             unsafe { self.pixels.get_unchecked(index + 2).g },
             unsafe { self.pixels.get_unchecked(index + 3).g },
@@ -209,7 +263,7 @@ impl FrameBuffer {
 
         // check if loads auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD load
         let values = [
-            unsafe { self.pixels.get_unchecked(index).r },
+            unsafe { self.pixels.get_unchecked(index).b },
             unsafe { self.pixels.get_unchecked(index + 1).b },
             unsafe { self.pixels.get_unchecked(index + 2).b },
             unsafe { self.pixels.get_unchecked(index + 3).b },

@@ -845,8 +845,10 @@ fn bench_rasteriser_simd_callback(c: &mut Criterion) {
             |b, triangle| {
                 b.iter(|| {
                     triangle.rasterise_segment_simd(black_box(bounds), |fragment_simd| {
-                        let index = (fragment_simd.y as usize) * depthbuffer.width()
-                            + (fragment_simd.x_start as usize);
+                        let index = depthbuffer.index_unchecked(
+                            (fragment_simd.x_start - bounds.min_x) as usize,
+                            (fragment_simd.y - bounds.min_y) as usize,
+                        );
 
                         let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
@@ -858,8 +860,10 @@ fn bench_rasteriser_simd_callback(c: &mut Criterion) {
                             return;
                         }
 
-                        let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
-                            + (fragment_simd.x_start - bounds.min_x) as usize;
+                        let base = framebuffer.index_unchecked(
+                            (fragment_simd.x_start - bounds.min_x) as usize,
+                            (fragment_simd.y - bounds.min_y) as usize,
+                        );
 
                         let r = fragment_simd.varyings.colour[0].to_array();
                         let g = fragment_simd.varyings.colour[1].to_array();
@@ -904,8 +908,10 @@ fn bench_rasteriser_simd_depthwrite(c: &mut Criterion) {
                     depthbuffer.clear(1.0);
 
                     triangle.rasterise_segment_simd(black_box(bounds), |fragment_simd| {
-                        let index = fragment_simd.y as usize * depthbuffer.width()
-                            + fragment_simd.x_start as usize;
+                        let index = depthbuffer.index_unchecked(
+                            (fragment_simd.x_start - bounds.min_x) as usize,
+                            (fragment_simd.y - bounds.min_y) as usize,
+                        );
 
                         let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
@@ -917,8 +923,10 @@ fn bench_rasteriser_simd_depthwrite(c: &mut Criterion) {
 
                         let mask = pass.to_bitmask();
 
-                        let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
-                            + (fragment_simd.x_start - bounds.min_x) as usize;
+                        let base = framebuffer.index_unchecked(
+                            (fragment_simd.x_start - bounds.min_x) as usize,
+                            (fragment_simd.y - bounds.min_y) as usize,
+                        );
 
                         let r = fragment_simd.varyings.colour[0].to_array();
                         let g = fragment_simd.varyings.colour[1].to_array();
@@ -971,8 +979,10 @@ fn bench_rasteriser_simd_full(c: &mut Criterion) {
                     depthbuffer.clear(1.0);
 
                     triangle.rasterise_segment_simd(black_box(bounds), |fragment_simd| {
-                        let index = fragment_simd.y as usize * depthbuffer.width()
-                            + fragment_simd.x_start as usize;
+                        let index = depthbuffer.index_unchecked(
+                            (fragment_simd.x_start - bounds.min_x) as usize,
+                            (fragment_simd.y - bounds.min_y) as usize,
+                        );
 
                         let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
@@ -985,8 +995,10 @@ fn bench_rasteriser_simd_full(c: &mut Criterion) {
                             return;
                         }
 
-                        let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
-                            + (fragment_simd.x_start - bounds.min_x) as usize;
+                        let base = framebuffer.index_unchecked(
+                            (fragment_simd.x_start - bounds.min_x) as usize,
+                            (fragment_simd.y - bounds.min_y) as usize,
+                        );
 
                         let colour = shader.shade_simd(fragment_simd.varyings, &uniforms);
 

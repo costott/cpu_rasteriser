@@ -266,8 +266,8 @@ where
                         .as_deref_mut()
                         .expect("depth testing enabled but no depth buffer");
 
-                    let index = fragment_simd.y as usize * depthbuffer.width()
-                        + fragment_simd.x_start as usize;
+                    let index = depthbuffer
+                        .index_unchecked(fragment_simd.x_start as usize, fragment_simd.y as usize);
 
                     let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
@@ -285,8 +285,10 @@ where
 
                 let mask = pass.to_bitmask();
 
-                let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
-                    + (fragment_simd.x_start - bounds.min_x) as usize;
+                let base = framebuffer.index_unchecked(
+                    (fragment_simd.x_start - bounds.min_x) as usize,
+                    (fragment_simd.y - bounds.min_y) as usize,
+                );
 
                 let varyings = V::simd_extract_all(&fragment_simd.varyings);
 
@@ -319,8 +321,8 @@ where
                         .as_deref_mut()
                         .expect("depth writing enabled but no depth buffer");
 
-                    let index = fragment_simd.y as usize * depthbuffer.width()
-                        + fragment_simd.x_start as usize;
+                    let index = depthbuffer
+                        .index_unchecked(fragment_simd.x_start as usize, fragment_simd.y as usize);
 
                     unsafe {
                         depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
@@ -393,8 +395,8 @@ where
                         .as_deref_mut()
                         .expect("depth testing enabled but no depth buffer");
 
-                    let index = fragment_simd.y as usize * depthbuffer.width()
-                        + fragment_simd.x_start as usize;
+                    let index = depthbuffer
+                        .index_unchecked(fragment_simd.x_start as usize, fragment_simd.y as usize);
 
                     let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
@@ -409,8 +411,10 @@ where
 
                 let mask = pass.to_bitmask();
 
-                let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
-                    + (fragment_simd.x_start - bounds.min_x) as usize;
+                let base = framebuffer.index_unchecked(
+                    (fragment_simd.x_start - bounds.min_x) as usize,
+                    (fragment_simd.y - bounds.min_y) as usize,
+                );
 
                 let src = self
                     .shader
@@ -446,8 +450,8 @@ where
                         .as_deref_mut()
                         .expect("depth writing enabled but no depth buffer");
 
-                    let index = fragment_simd.y as usize * depthbuffer.width()
-                        + fragment_simd.x_start as usize;
+                    let index = depthbuffer
+                        .index_unchecked(fragment_simd.x_start as usize, fragment_simd.y as usize);
 
                     unsafe {
                         depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);

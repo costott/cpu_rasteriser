@@ -65,6 +65,24 @@ impl<V: Clone> Model<V> {
             render_pass.draw(pipeline, draw_call, vertex_uniforms.clone());
         }
     }
+
+    pub fn draw_to_render_pass_simd<'pass, VS, FS, F>(
+        &'pass self,
+        render_pass: &mut RenderPass<'_, 'pass>,
+        pipeline: &'pass SimdPipeline<VS, FS>,
+        vertex_uniforms: VS::Uniforms,
+        make_fragment_uniforms: F,
+    ) where
+        VS: VertexShader<Vertex = V>,
+        VS::Varyings: SimdInterpolate,
+        FS: FragmentShaderSimd<VS::Varyings> + Send + Sync + 'static,
+        VS::Uniforms: Clone,
+        F: Fn(&Mesh<V>) -> FS::Uniforms,
+    {
+        for draw_call in self.draw_calls(make_fragment_uniforms) {
+            render_pass.draw_simd(pipeline, draw_call, vertex_uniforms.clone());
+        }
+    }
 }
 impl Model<ObjVertex> {
     pub fn calculate_vertex_normals(&mut self) {

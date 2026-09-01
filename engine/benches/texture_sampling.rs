@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-use cpu_rasteriser::prelude::*;
+use cpu_rasteriser::{prelude::*, wide::f32x8};
 
 use engine::components::texture::{FilterMode, TextureSampler, WrapMode};
 
@@ -255,11 +255,157 @@ fn benchmark_uv_patterns(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_simd_sampling(c: &mut Criterion) {
+    let mut group = c.benchmark_group("texture_sampling_simd");
+
+    let uvs = make_fullscreen_uvs(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    let sampler_512_linear = make_sampler(512, 512, WrapMode::Clamp, FilterMode::Linear);
+
+    let sampler_1024_linear = make_sampler(1024, 1024, WrapMode::Clamp, FilterMode::Linear);
+
+    let sampler_2048_linear = make_sampler(2048, 2048, WrapMode::Clamp, FilterMode::Linear);
+
+    for (name, sampler) in [
+        ("linear_512", &sampler_512_linear),
+        ("linear_1024", &sampler_1024_linear),
+        ("linear_2048", &sampler_2048_linear),
+    ] {
+        group.bench_with_input(BenchmarkId::from_parameter(name), sampler, |b, sampler| {
+            b.iter(|| {
+                let mut checksum = ColourSimd::splat(Colour::BLACK);
+
+                for uvs in uvs.chunks_exact(8) {
+                    let uv_x = f32x8::new([
+                        uvs[0].x, uvs[1].x, uvs[2].x, uvs[3].x, uvs[4].x, uvs[5].x, uvs[6].x,
+                        uvs[7].x,
+                    ]);
+
+                    let uv_y = f32x8::new([
+                        uvs[0].y, uvs[1].y, uvs[2].y, uvs[3].y, uvs[4].y, uvs[5].y, uvs[6].y,
+                        uvs[7].y,
+                    ]);
+
+                    let colour = sampler.sample_linear_clamp_simd([uv_x, uv_y]);
+
+                    checksum.r += colour.r;
+                    checksum.g += colour.g;
+                    checksum.b += colour.b;
+                    checksum.a += colour.a;
+                }
+
+                black_box(checksum);
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn benchmark_simd_linear_implementations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("linear_implementation_simd");
+
+    let sampler = make_sampler(1920, 1080, WrapMode::Clamp, FilterMode::Linear);
+
+    let uvs = make_fullscreen_uvs(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    group.bench_function("scalar", |b| {
+        b.iter(|| {
+            let mut checksum = Colour::BLACK;
+
+            for &uv in &uvs {
+                let colour = sampler.sample_linear_clamp(black_box(uv));
+
+                checksum.r += colour.r;
+                checksum.g += colour.g;
+                checksum.b += colour.b;
+                checksum.a += colour.a;
+            }
+
+            black_box(checksum);
+        });
+    });
+
+    group.bench_function("simd", |b| {
+        b.iter(|| {
+            let mut checksum = ColourSimd::splat(Colour::BLACK);
+
+            for uvs in uvs.chunks_exact(8) {
+                let uv_x = f32x8::new([
+                    uvs[0].x, uvs[1].x, uvs[2].x, uvs[3].x, uvs[4].x, uvs[5].x, uvs[6].x, uvs[7].x,
+                ]);
+
+                let uv_y = f32x8::new([
+                    uvs[0].y, uvs[1].y, uvs[2].y, uvs[3].y, uvs[4].y, uvs[5].y, uvs[6].y, uvs[7].y,
+                ]);
+
+                let colour = sampler.sample_linear_clamp_simd([uv_x, uv_y]);
+
+                checksum.r += colour.r;
+                checksum.g += colour.g;
+                checksum.b += colour.b;
+                checksum.a += colour.a;
+            }
+
+            black_box(checksum);
+        });
+    });
+
+    group.finish();
+}
+
+fn benchmark_simd_uv_patterns(c: &mut Criterion) {
+    let mut group = c.benchmark_group("uv_pattern_simd");
+
+    let sampler = make_sampler(2048, 2048, WrapMode::Clamp, FilterMode::Linear);
+
+    let fullscreen_uvs = make_fullscreen_uvs(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    let random_uvs = make_random_uvs(SCREEN_WIDTH * SCREEN_HEIGHT);
+
+    for (name, uvs) in [
+        ("fullscreen_coherent", &fullscreen_uvs),
+        ("random", &random_uvs),
+    ] {
+        group.bench_with_input(BenchmarkId::from_parameter(name), uvs, |b, uvs| {
+            b.iter(|| {
+                let mut checksum = ColourSimd::splat(Colour::BLACK);
+
+                for uvs in uvs.chunks_exact(8) {
+                    let uv_x = f32x8::new([
+                        uvs[0].x, uvs[1].x, uvs[2].x, uvs[3].x, uvs[4].x, uvs[5].x, uvs[6].x,
+                        uvs[7].x,
+                    ]);
+
+                    let uv_y = f32x8::new([
+                        uvs[0].y, uvs[1].y, uvs[2].y, uvs[3].y, uvs[4].y, uvs[5].y, uvs[6].y,
+                        uvs[7].y,
+                    ]);
+
+                    let colour = sampler.sample_linear_clamp_simd([uv_x, uv_y]);
+
+                    checksum.r += colour.r;
+                    checksum.g += colour.g;
+                    checksum.b += colour.b;
+                    checksum.a += colour.a;
+                }
+
+                black_box(checksum);
+            });
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
-    benchmark_sampling,
-    benchmark_linear_implementations,
-    benchmark_uv_patterns,
+    // benchmark_sampling,
+    // benchmark_linear_implementations,
+    // benchmark_uv_patterns,
+    benchmark_simd_sampling,
+    benchmark_simd_linear_implementations,
+    benchmark_simd_uv_patterns,
 );
 
 criterion_main!(benches);

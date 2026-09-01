@@ -225,3 +225,24 @@ pub struct ColourSimd {
     pub b: f32x8,
     pub a: f32x8,
 }
+impl ColourSimd {
+    #[inline(always)]
+    pub fn splat(colour: Colour) -> Self {
+        Self {
+            r: f32x8::splat(colour.r),
+            g: f32x8::splat(colour.g),
+            b: f32x8::splat(colour.b),
+            a: f32x8::splat(colour.a),
+        }
+    }
+
+    #[inline(always)]
+    pub fn lerp(self, other: Self, t: f32x8) -> Self {
+        Self {
+            r: self.r + (other.r - self.r) * t,
+            g: self.g + (other.g - self.g) * t,
+            b: self.b + (other.b - self.b) * t,
+            a: self.a + (other.a - self.a) * t,
+        }
+    }
+}

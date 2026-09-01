@@ -250,14 +250,13 @@ where
 
             while x + 8 <= x_end {
                 let perspective8 = inv_w8.recip();
-
-                varyings8 = V::simd_perspective(varyings8, perspective8);
+                let corrected_varyings8 = V::simd_perspective(varyings8, perspective8);
 
                 simd_callback(FragmentSimd::new(
                     x,
                     y,
                     depth8,
-                    varyings8,
+                    corrected_varyings8,
                     f32x8::splat(f32::from_bits(u32::MAX)),
                 ));
 
@@ -272,11 +271,14 @@ where
             let remaining = (x_end - x) as usize;
 
             if remaining != 0 {
+                let perspective8 = inv_w8.recip();
+                let corrected_varyings8 = V::simd_perspective(varyings8, perspective8);
+
                 simd_callback(FragmentSimd::new(
                     x,
                     y,
                     depth8,
-                    varyings8,
+                    corrected_varyings8,
                     mask_for_lanes(remaining),
                 ));
             }
