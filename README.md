@@ -2,7 +2,7 @@
 
 > A fully custom 3D rendering framework written in Rust, implementing a modern graphics pipeline from scratch without relying on OpenGL, Vulkan, DirectX, or any GPU APIs. All geometry processing, rasterisation, interpolation, and shading are implemented from scratch in Rust.
 
-> The project explores the fundamentals of real-time rendering by building the core systems behind a traditional GPU pipeline, including vertex processing, clipping, rasterisation, interpolation, lighting, and materials.
+> The project explores the fundamentals of real-time rendering by building the core systems behind a traditional GPU pipeline, including vertex processing, clipping, rasterisation, interpolation, lighting, materials, and SIMD-accelerated rendering.
 
 ![Rust](https://img.shields.io/badge/Rust-Programming%20Language-orange)
 
@@ -81,6 +81,30 @@ pass.finish()
 
 ---
 
+## SIMD Rendering
+
+SIMD rendering is exposed through `SimdPipeline` and `RenderPass::draw_simd`. SIMD-capable shaders process multiple fragments at once using the SIMD varying representation.
+
+```rust
+let pipeline = SimdPipeline::new(
+    vertex_shader,
+    fragment_shader,
+)
+.with_depth_state(DepthState::DEFAULT);
+
+render_pass.draw_simd(
+    &pipeline,
+    draw_call,
+    vertex_uniforms,
+);
+```
+
+A shader used with `SimdPipeline` implements `FragmentShaderSimd`. SIMD support is independent of the scalar `FragmentShader` trait, so shaders can provide whichever rendering paths they require.
+
+The full SIMD rendering example can be found in the engine examples. See [`engine/examples/bloom.rs`](./engine/examples/bloom.rs)
+
+---
+
 ## Architecture
 
 The project is organised as two independent crates:
@@ -94,7 +118,7 @@ software-graphics/
 
 The `cpu_rasteriser` crate provides a reusable software implementation of a modern graphics pipeline, exposing concepts such as pipelines, shaders, draw calls, render passes, and render targets.
 
-The `rasteriser_macros` crate provides derive macros, most notably `#[derive(Interpolate)]`, which generates per-field interpolation, differencing, and scaling for vertex/varying structs so shader authors don't have to hand-write it.
+The `rasteriser_macros` crate provides derive macros including `#[derive(Interpolate)]` and `#[derive(SimdInterpolate)]`. These generate scalar and SIMD interpolation implementations for user-defined vertex/varying structs, reducing the amount of shader and rasterisation boilerplate.
 
 The `engine` crate builds on top of the renderer, providing higher-level abstractions including cameras, models, materials, lights, scene management, and asset loading.
 
@@ -209,9 +233,31 @@ trait FragmentShader<Varyings> {
         uniforms: &Self::Uniforms,
     ) -> Colour;
 }
+
+trait FragmentShaderSimd<Varyings>
+where
+    Varyings: SimdInterpolate
+{
+    type Uniforms;
+
+    fn shade_simd(
+        &self,
+        varyings: Varyings::Simd,
+        uniforms: &Self::Uniforms,
+    ) -> ColourSimd;
+}
 ```
 
-Varying structs implement an `Interpolate` trait (interpolate, difference, scale, add-scaled) so the rasteriser can perspective-correctly interpolate arbitrary user-defined data. `#[derive(Interpolate)]`, provided by the `rasteriser_macros` crate, generates this implementation automatically field-by-field.
+Varying structs implement `Interpolate` for scalar interpolation and `SimdInterpolate` for SIMD interpolation. Both can be generated automatically using `#[derive(Interpolate, SimdInterpolate)]`.
+
+The two pipeline types provide separate execution paths:
+
+```rust
+Pipeline<VertexShader, FragmentShader>
+SimdPipeline<VertexShader, FragmentShaderSimd>
+```
+
+A scalar `Pipeline` uses scalar rasterisation and fragment shading, while a `SimdPipeline` processes fragments in SIMD batches. This allows SIMD-capable shaders to operate on multiple fragments simultaneously without requiring every shader to provide a scalar implementation.
 
 This allows different rendering techniques to share the same underlying pipeline while maintaining compile-time type safety. The renderer does not need to know the details of a shader implementation, it only executes the generic pipeline stages and processes the resulting geometry and fragments.
 
@@ -229,13 +275,16 @@ Rendering is separated into:
 - Draw commands
 - Rasterisation
 
-A pipeline contains the programmable stages and fixed-function rendering configuration:
+The renderer provides two pipeline types:
 
 ```rust
 Pipeline<VertexShader, FragmentShader>
+SimdPipeline<VertexShader, FragmentShaderSimd>
 ```
 
-including:
+`Pipeline` selects the scalar rendering path. `SimdPipeline` selects the SIMD rendering path and requires a SIMD-capable fragment shader.
+
+Both pipelines contain:
 
 - Vertex shader
 - Fragment shader
@@ -243,9 +292,9 @@ including:
 - Colour blending state (blend factors and operation)
 - Depth test/write state
 
-Rendering takes place through explicit render passes. A render pass targets a render target and defines how its existing contents are loaded and how its results are stored.
+A render pass can contain both scalar and SIMD draw calls. Scalar pipelines are submitted with `RenderPass::draw`, while SIMD pipelines are submitted with `RenderPass::draw_simd`.
 
-Draw calls are recorded and executed within the render pass, allowing multiple pipelines and rendering techniques to contribute to the same target.
+This keeps the public API explicit about the rendering path while allowing both types of work to share the same tile-based scheduling and render-pass infrastructure.
 
 Multiple render passes can be chained together, allowing the renderer to support techniques such as:
 
@@ -305,6 +354,12 @@ Built-in `OrbitControls` and `FirstPersonControls` camera controllers consume th
 | Multiple pipelines per render pass               | ✅     |
 | Configurable colour blending (5 ops, 10 factors) | ✅     |
 | `#[derive(Interpolate)]` macro                   | ✅     |
+| SIMD rasterisation                               | ✅     |
+| SIMD fragment shading                            | ✅     |
+| SIMD depth testing and writing                   | ✅     |
+| SIMD colour blending                             | ✅     |
+| SIMD texture sampling                            | ✅     |
+| `#[derive(SimdInterpolate)]` macro               | ✅     |
 
 ### Engine
 
@@ -348,6 +403,10 @@ This project demonstrates experience with:
 - Cross-backend windowing and input abstraction (winit / minifb)
 - Procedural noise and ray-marched fractal fragment shaders
 - Procedural macros for reducing shader boilerplate
+- SIMD-accelerated CPU rasterisation and fragment shading
+- SIMD depth testing, blending, and texture sampling
+- Compile-time scalar and SIMD shader pipeline selection
+- Procedural macros for generating SIMD interpolation implementations
 
 ---
 
@@ -358,7 +417,7 @@ Potential extensions:
 - Normal mapping
 - Shadow mapping
 - Physically based rendering
-- SIMD optimisation
+- SIMD performance optimisation and wider SIMD support
 - MSAA
 - More advanced blending modes
 - Additional primitive types

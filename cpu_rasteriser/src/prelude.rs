@@ -12,3 +12,4 @@ pub use crate::renderer::*;
 pub use crate::viewport::*;
 
 pub use rasteriser_macros::Interpolate;
+pub use rasteriser_macros::SimdInterpolate;

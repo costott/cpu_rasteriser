@@ -1,6 +1,6 @@
 [package]
 name = "cpu_rasteriser"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 
 [dependencies]
@@ -9,3 +9,15 @@ softbuffer = "0.4.8"
 winit = "0.30.13"
 threadpool = "1.8.1"
 rasteriser_macros = { path = "../rasteriser_macros" }
+wide = "1.6.1"
+
+[dev-dependencies]
+criterion = "0.7"
+
+[[bench]]
+name = "rasterise_segment"
+harness = false
+
+[[bench]]
+name = "raster_command"
+harness = false

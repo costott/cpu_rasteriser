@@ -7,6 +7,10 @@ The renderer provides a low-level rendering API inspired by modern graphics APIs
 ## Features
 
 - Generic vertex and fragment shader pipelines
+- Separate scalar and SIMD rendering pipelines (`Pipeline` and `SimdPipeline`)
+- SIMD rasterisation and fragment shading
+- SIMD depth testing, depth writing, and colour blending
+- SIMD texture sampling
 - Perspective-correct interpolation
 - Homogeneous clipping
 - Triangle rasterisation
@@ -18,7 +22,7 @@ The renderer provides a low-level rendering API inspired by modern graphics APIs
 - Multipass rendering — chain passes onto the same target, or render into an offscreen target and sample it in a later pass
 - Tile-based multithreaded rendering
 - Strongly typed shader interfaces
-- `#[derive(Interpolate)]` macro (via the `rasteriser_macros` crate) for perspective-correct interpolation of custom vertex/varying types
+- `#[derive(Interpolate)]` and `#[derive(SimdInterpolate)]` macros (via the `rasteriser_macros` crate) for generating scalar and SIMD interpolation implementations for custom vertex/varying types
 
 ## Examples
 
@@ -31,6 +35,7 @@ cargo run --release -p cpu_rasteriser --example render_passes
 cargo run --release -p cpu_rasteriser --example mandelbrot_shader
 cargo run --release -p cpu_rasteriser --example mandelbulb
 cargo run --release -p cpu_rasteriser --example winit
+cargo run --release -p cpu_rasteriser --example simd
 ```
 
 - `triangle` — minimal single-triangle draw call.
@@ -41,5 +46,6 @@ cargo run --release -p cpu_rasteriser --example winit
 - `mandelbrot_shader` — a fullscreen Mandelbrot set rendered entirely in a fragment shader.
 - `mandelbulb` — a ray-marched Mandelbulb fractal, shaded per-fragment.
 - `winit` — running the renderer on the `winit` windowing backend directly (without the `engine` crate).
+- `simd` — minimal single-triangle SIMD rendering example using `SimdPipeline`, SIMD interpolation, and a SIMD fragment shader.
 
 The higher-level engine built on top of this renderer can be found in the `engine` crate.

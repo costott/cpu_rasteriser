@@ -1,3 +1,5 @@
+use wide::f32x8;
+
 use crate::prelude::*;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub};
 
@@ -108,6 +110,7 @@ impl Colour {
         0.2126 * self.r + 0.7152 * self.g + 0.0722 * self.b
     }
 
+    #[inline(always)]
     pub fn lerp(&self, other: &Self, t: f32) -> Self {
         Self::new(
             self.r + (other.r - self.r) * t,
@@ -212,5 +215,34 @@ impl From<Colour> for Vec4 {
 impl From<Vec3> for Colour {
     fn from(vec: Vec3) -> Self {
         Self::new(vec.x, vec.y, vec.z, 1.0)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ColourSimd {
+    pub r: f32x8,
+    pub g: f32x8,
+    pub b: f32x8,
+    pub a: f32x8,
+}
+impl ColourSimd {
+    #[inline(always)]
+    pub fn splat(colour: Colour) -> Self {
+        Self {
+            r: f32x8::splat(colour.r),
+            g: f32x8::splat(colour.g),
+            b: f32x8::splat(colour.b),
+            a: f32x8::splat(colour.a),
+        }
+    }
+
+    #[inline(always)]
+    pub fn lerp(self, other: Self, t: f32x8) -> Self {
+        Self {
+            r: self.r + (other.r - self.r) * t,
+            g: self.g + (other.g - self.g) * t,
+            b: self.b + (other.b - self.b) * t,
+            a: self.a + (other.a - self.a) * t,
+        }
     }
 }

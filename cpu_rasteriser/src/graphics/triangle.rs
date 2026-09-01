@@ -1,6 +1,8 @@
 use crate::prelude::*;
 
-use crate::graphics::fragment::Fragment;
+use crate::graphics::fragment::{Fragment, FragmentSimd};
+
+use wide::f32x8;
 
 #[derive(Clone)]
 pub struct Triangle2D<V>
@@ -155,6 +157,186 @@ impl<V: Interpolate> Triangle2D<V> {
     }
 }
 
+impl<V> Triangle2D<V>
+where
+    V: Interpolate + SimdInterpolate,
+{
+    pub fn rasterise_segment_simd<F>(&self, bounds: crate::renderer::Rect, mut simd_callback: F)
+    where
+        F: FnMut(FragmentSimd<V>),
+    {
+        let mut vertices = [self.a.clone(), self.b.clone(), self.c.clone()];
+
+        vertices.sort_by(|a, b| a.position.y.partial_cmp(&b.position.y).unwrap());
+
+        let v0 = vertices[0].clone();
+        let v1 = vertices[1].clone();
+        let v2 = vertices[2].clone();
+
+        if (v0.position.y - v2.position.y).abs() < f32::EPSILON {
+            return;
+        }
+
+        let y_start = ((v0.position.y - 0.5).ceil() as i32).max(bounds.min_y);
+
+        let y_end = ((v2.position.y - 0.5).ceil() as i32).min(bounds.max_y);
+
+        let mut edge_long = Edge::new(v0.clone(), v2.clone(), y_start as f32 + 0.5);
+
+        let mut using_second_half = y_start as f32 + 0.5 > v1.position.y;
+
+        let mut edge_short = if using_second_half {
+            Edge::new(v1.clone(), v2.clone(), y_start as f32 + 0.5)
+        } else {
+            Edge::new(v0.clone(), v1.clone(), y_start as f32 + 0.5)
+        };
+
+        let lanes = f32x8::new([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+
+        for y in y_start..y_end {
+            if !using_second_half && y as f32 + 0.5 > v1.position.y {
+                using_second_half = true;
+
+                edge_short = Edge::new(v1.clone(), v2.clone(), y as f32 + 0.5);
+            }
+
+            let (left, right) = if edge_long.x < edge_short.x {
+                (&edge_long, &edge_short)
+            } else {
+                (&edge_short, &edge_long)
+            };
+
+            let x_start = ((left.x - 0.5).ceil() as i32).max(bounds.min_x);
+
+            let x_end = ((right.x - 0.5).ceil() as i32).min(bounds.max_x);
+
+            if x_start >= x_end {
+                edge_long.step();
+                edge_short.step();
+                continue;
+            }
+
+            let width = right.x - left.x;
+
+            let x_step = if width.abs() < f32::EPSILON {
+                0.0
+            } else {
+                1.0 / width
+            };
+
+            let t = (x_start as f32 + 0.5 - left.x) * x_step;
+
+            let depth = left.depth + (right.depth - left.depth) * t;
+            let depth_step = (right.depth - left.depth) * x_step;
+
+            let inv_w = left.inv_w + (right.inv_w - left.inv_w) * t;
+            let inv_w_step = (right.inv_w - left.inv_w) * x_step;
+
+            let varyings = left.varyings.interpolate(&right.varyings, t);
+            let varyings_step = right.varyings.difference(&left.varyings).scale(x_step);
+
+            let step8 = f32x8::splat(8.0);
+
+            let depth_step8 = f32x8::splat(depth_step);
+            let inv_w_step8 = f32x8::splat(inv_w_step);
+
+            let mut depth8 = f32x8::splat(depth) + lanes * depth_step8;
+
+            let mut inv_w8 = f32x8::splat(inv_w) + lanes * inv_w_step8;
+
+            let mut varyings8 = V::simd_step(&varyings, &varyings_step, lanes);
+
+            let mut x = x_start;
+
+            while x + 8 <= x_end {
+                let perspective8 = inv_w8.recip();
+                let corrected_varyings8 = V::simd_perspective(varyings8, perspective8);
+
+                simd_callback(FragmentSimd::new(
+                    x,
+                    y,
+                    depth8,
+                    corrected_varyings8,
+                    f32x8::splat(f32::from_bits(u32::MAX)),
+                ));
+
+                depth8 += depth_step8 * step8;
+                inv_w8 += inv_w_step8 * step8;
+
+                varyings8 = V::simd_add_scaled(&varyings8, &varyings_step, step8);
+
+                x += 8;
+            }
+
+            let remaining = (x_end - x) as usize;
+
+            if remaining != 0 {
+                let perspective8 = inv_w8.recip();
+                let corrected_varyings8 = V::simd_perspective(varyings8, perspective8);
+
+                simd_callback(FragmentSimd::new(
+                    x,
+                    y,
+                    depth8,
+                    corrected_varyings8,
+                    mask_for_lanes(remaining),
+                ));
+            }
+
+            edge_long.step();
+            edge_short.step();
+        }
+    }
+}
+
+#[inline(always)]
+fn mask_for_lanes(lanes: usize) -> f32x8 {
+    debug_assert!(lanes <= 8);
+
+    f32x8::new([
+        if lanes > 0 {
+            f32::from_bits(u32::MAX)
+        } else {
+            0.0
+        },
+        if lanes > 1 {
+            f32::from_bits(u32::MAX)
+        } else {
+            0.0
+        },
+        if lanes > 2 {
+            f32::from_bits(u32::MAX)
+        } else {
+            0.0
+        },
+        if lanes > 3 {
+            f32::from_bits(u32::MAX)
+        } else {
+            0.0
+        },
+        if lanes > 4 {
+            f32::from_bits(u32::MAX)
+        } else {
+            0.0
+        },
+        if lanes > 5 {
+            f32::from_bits(u32::MAX)
+        } else {
+            0.0
+        },
+        if lanes > 6 {
+            f32::from_bits(u32::MAX)
+        } else {
+            0.0
+        },
+        if lanes > 7 {
+            f32::from_bits(u32::MAX)
+        } else {
+            0.0
+        },
+    ])
+}
+
 /// Represents an edge of a triangle in 2D space, used for scanline rasterization.
 #[derive(Clone)]
 struct Edge<V>
@@ -255,6 +437,78 @@ mod tests {
     #[derive(Debug, PartialEq, Interpolate)]
     struct TestVaryings {
         colour: Vec3,
+    }
+
+    impl SimdInterpolate for TestVaryings {
+        type Simd = TestVaryingsSimd;
+
+        fn simd_step(value: &Self, step: &Self, lanes: f32x8) -> Self::Simd {
+            TestVaryingsSimd {
+                colour: [
+                    f32x8::splat(value.colour.x) + f32x8::splat(step.colour.x) * lanes,
+                    f32x8::splat(value.colour.y) + f32x8::splat(step.colour.y) * lanes,
+                    f32x8::splat(value.colour.z) + f32x8::splat(step.colour.z) * lanes,
+                ],
+            }
+        }
+
+        fn simd_add_scaled(value: &Self::Simd, step: &Self, scale: f32x8) -> Self::Simd {
+            TestVaryingsSimd {
+                colour: [
+                    value.colour[0] + f32x8::splat(step.colour.x) * scale,
+                    value.colour[1] + f32x8::splat(step.colour.y) * scale,
+                    value.colour[2] + f32x8::splat(step.colour.z) * scale,
+                ],
+            }
+        }
+
+        fn simd_perspective(value: Self::Simd, perspective: f32x8) -> Self::Simd {
+            TestVaryingsSimd {
+                colour: [
+                    value.colour[0] * perspective,
+                    value.colour[1] * perspective,
+                    value.colour[2] * perspective,
+                ],
+            }
+        }
+
+        fn simd_extract_all(value: &Self::Simd) -> [Self; 8] {
+            let r = value.colour[0].to_array();
+            let g = value.colour[1].to_array();
+            let b = value.colour[2].to_array();
+
+            [
+                Self {
+                    colour: Vec3::new(r[0], g[0], b[0]),
+                },
+                Self {
+                    colour: Vec3::new(r[1], g[1], b[1]),
+                },
+                Self {
+                    colour: Vec3::new(r[2], g[2], b[2]),
+                },
+                Self {
+                    colour: Vec3::new(r[3], g[3], b[3]),
+                },
+                Self {
+                    colour: Vec3::new(r[4], g[4], b[4]),
+                },
+                Self {
+                    colour: Vec3::new(r[5], g[5], b[5]),
+                },
+                Self {
+                    colour: Vec3::new(r[6], g[6], b[6]),
+                },
+                Self {
+                    colour: Vec3::new(r[7], g[7], b[7]),
+                },
+            ]
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct TestVaryingsSimd {
+        colour: [f32x8; 3],
     }
 
     fn vertex(x: f32, y: f32, colour: Vec3) -> RasterVertex<TestVaryings> {
@@ -435,5 +689,69 @@ mod tests {
         edge.step();
 
         assert_eq!(edge.varyings.colour, Vec3::new(0.75, 0.25, 0.0));
+    }
+
+    #[test]
+    fn rasterise_simd_matches_scalar() {
+        let triangle = Triangle2D::new(
+            vertex(0.5, 0.5, Vec3::new(1.0, 0.0, 0.0)),
+            vertex(3.5, 0.5, Vec3::new(0.0, 1.0, 0.0)),
+            vertex(0.5, 3.5, Vec3::new(1.0, 0.0, 0.0)),
+        );
+
+        let bounds = crate::renderer::Rect {
+            min_x: 0,
+            min_y: 0,
+            max_x: 4,
+            max_y: 4,
+        };
+
+        let mut scalar_fragments = Vec::new();
+
+        triangle.rasterise_segment(bounds, |fragment| {
+            scalar_fragments.push(fragment);
+        });
+
+        let mut simd_fragments = Vec::new();
+
+        triangle.rasterise_segment_simd(bounds, |fragment_simd| {
+            let depth = fragment_simd.depth.to_array();
+            let r = fragment_simd.varyings.colour[0].to_array();
+            let g = fragment_simd.varyings.colour[1].to_array();
+            let b = fragment_simd.varyings.colour[2].to_array();
+
+            let mask_bits = fragment_simd.mask.to_bitmask();
+
+            for lane in 0..8 {
+                if mask_bits & (1 << lane) == 0 {
+                    continue;
+                }
+
+                simd_fragments.push((
+                    fragment_simd.x_start + lane as i32,
+                    fragment_simd.y,
+                    depth[lane],
+                    r[lane],
+                    g[lane],
+                    b[lane],
+                ));
+            }
+        });
+
+        assert_eq!(scalar_fragments.len(), simd_fragments.len(),);
+
+        for (scalar, simd) in scalar_fragments.iter().zip(&simd_fragments) {
+            assert_eq!(scalar.position.x as i32, simd.0,);
+
+            assert_eq!(scalar.position.y as i32, simd.1,);
+
+            assert!((scalar.depth - simd.2).abs() < 1e-5);
+
+            assert!((scalar.varyings.colour.x - simd.3).abs() < 1e-5);
+
+            assert!((scalar.varyings.colour.y - simd.4).abs() < 1e-5);
+
+            assert!((scalar.varyings.colour.z - simd.5).abs() < 1e-5);
+        }
     }
 }

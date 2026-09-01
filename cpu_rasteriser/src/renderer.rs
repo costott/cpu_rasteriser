@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use threadpool::ThreadPool;
+use wide::f32x8;
 
 use crate::prelude::*;
 
@@ -52,6 +53,9 @@ use crate::graphics::geometry_processing::GeometryProcessor;
 ///
 /// let pixels = screen_target.pixels();
 /// ```
+///
+/// For SIMD rendering, construct a [`SimdPipeline`] and submit it with
+/// [`RenderPass::draw_simd`].
 ///
 /// The renderer is not thread-safe and should only be accessed from the thread performing
 /// rendering. Internal rasterisation work is dispatched across worker threads automatically.
@@ -165,8 +169,8 @@ impl RenderTarget {
         self
     }
 
-    pub fn pixels(&self) -> &[Colour] {
-        self.framebuffer.pixels()
+    pub fn pixels(&self) -> Vec<Colour> {
+        self.framebuffer.pixels_compact()
     }
 
     pub fn pixels_u32(&self) -> Vec<u32> {
@@ -209,23 +213,7 @@ pub enum LoadOp<T> {
     Clear(T),
 }
 
-/// A collection of shader stages and fixed-function rendering state used to process draw calls.
-///
-/// A pipeline defines how vertices are transformed and how fragments are shaded. It contains:
-///
-/// - A vertex shader, responsible for transforming input vertices and producing interpolated data.
-/// - A fragment shader, responsible for calculating the final colour of each rasterised fragment.
-/// - Rasterisation state such as back-face culling, blending, and depth testing.
-///
-/// Pipelines are intended to be created once and reused across multiple render passes.
-pub struct Pipeline<VS, FS>
-where
-    VS: VertexShader,
-    FS: FragmentShader<VS::Varyings>,
-{
-    vertex_shader: VS,
-    fragment_shader: Arc<FS>,
-
+struct PipelineState {
     culling_mode: CullingMode,
     /// Optional blending configuration.
     ///
@@ -234,24 +222,55 @@ where
     blend_state: Option<BlendState>,
     depth_state: DepthState,
 }
+
+/// A collection of shader stages and fixed-function rendering state used to process draw calls.
+///
+/// `Pipeline` uses the scalar fragment-shading path. Fragment shaders only need to implement
+/// [`FragmentShader`].
+///
+/// A pipeline contains:
+///
+/// - A vertex shader, responsible for transforming input vertices and producing interpolated data.
+/// - A fragment shader, responsible for calculating the final colour of each rasterised fragment.
+/// - Rasterisation state such as back-face culling, blending, and depth testing.
+///
+/// Pipelines are intended to be created once and reused across multiple render passes.
+///
+/// For SIMD rasterisation and fragment shading, use [`SimdPipeline`] instead.
+pub struct Pipeline<VS, FS>
+where
+    VS: VertexShader,
+    FS: FragmentShader<VS::Varyings>,
+{
+    vertex_shader: VS,
+    fragment_shader: Arc<FS>,
+    state: PipelineState,
+}
 impl<VS, FS> Pipeline<VS, FS>
 where
     VS: VertexShader,
     FS: FragmentShader<VS::Varyings>,
 {
+    /// Creates a new scalar rendering pipeline.
+    ///
+    /// The pipeline uses scalar fragment shading and the scalar rasterisation path.
+    ///
+    /// SIMD rendering is available through [`SimdPipeline`].
     pub fn new(vertex_shader: VS, fragment_shader: FS) -> Self {
         Self {
             vertex_shader,
             fragment_shader: Arc::new(fragment_shader),
-            culling_mode: CullingMode::BackFace,
-            blend_state: None,
-            depth_state: DepthState::DISABLED,
+            state: PipelineState {
+                culling_mode: CullingMode::BackFace,
+                blend_state: None,
+                depth_state: DepthState::DISABLED,
+            },
         }
     }
 
     /// Configures the back-face culling mode used by the pipeline.
     pub fn with_culling_mode(mut self, culling_mode: CullingMode) -> Self {
-        self.culling_mode = culling_mode;
+        self.state.culling_mode = culling_mode;
         self
     }
 
@@ -260,19 +279,94 @@ where
     /// When set, fragment colours are combined with the existing framebuffer colour
     /// according to the provided [`BlendState`].
     pub fn with_blend_state(mut self, blend_state: BlendState) -> Self {
-        self.blend_state = Some(blend_state);
+        self.state.blend_state = Some(blend_state);
         self
     }
 
     /// Removes any blending state from the pipeline, causing fragment colours to replace
     /// the existing framebuffer colour.
     pub fn without_blend_state(mut self) -> Self {
-        self.blend_state = None;
+        self.state.blend_state = None;
         self
     }
 
     pub fn with_depth_state(mut self, depth_state: DepthState) -> Self {
-        self.depth_state = depth_state;
+        self.state.depth_state = depth_state;
+        self
+    }
+}
+
+/// A rendering pipeline that uses SIMD rasterisation and fragment shading.
+///
+/// `SimdPipeline` requires the fragment shader to implement [`FragmentShaderSimd`].
+/// Unlike [`Pipeline`], it does not require a scalar [`FragmentShader`]
+/// implementation.
+///
+/// Rendering is performed in batches of SIMD lanes, with the rasteriser,
+/// depth operations, and fragment shader operating on multiple fragments at once.
+///
+/// A SIMD pipeline contains the same fixed-function state as [`Pipeline`]:
+///
+/// - A vertex shader, responsible for transforming input vertices and producing interpolated data.
+/// - A SIMD-capable fragment shader, responsible for calculating colours for multiple fragments.
+/// - Rasterisation state such as back-face culling, blending, and depth testing.
+///
+/// Pipelines are intended to be created once and reused across multiple render passes.
+///
+/// # SIMD shader requirements
+///
+/// The fragment shader must implement both [`FragmentShader`] and [`FragmentShaderSimd`].
+/// [`FragmentShader`] remains available for scalar use, while [`FragmentShaderSimd`] provides
+/// the SIMD implementation used by this pipeline.
+pub struct SimdPipeline<VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: SimdInterpolate,
+    FS: FragmentShaderSimd<VS::Varyings>,
+{
+    vertex_shader: VS,
+    fragment_shader: Arc<FS>,
+    state: PipelineState,
+}
+impl<VS, FS> SimdPipeline<VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: SimdInterpolate,
+    FS: FragmentShaderSimd<VS::Varyings>,
+{
+    /// Creates a new SIMD rendering pipeline.
+    ///
+    /// The fragment shader must implement [`FragmentShaderSimd`].
+    /// The resulting pipeline uses SIMD rasterisation and SIMD fragment shading.
+    pub fn new(vertex_shader: VS, fragment_shader: FS) -> Self {
+        Self {
+            vertex_shader,
+            fragment_shader: Arc::new(fragment_shader),
+            state: PipelineState {
+                culling_mode: CullingMode::BackFace,
+                blend_state: None,
+                depth_state: DepthState::DISABLED,
+            },
+        }
+    }
+
+    pub fn with_culling_mode(mut self, culling_mode: CullingMode) -> Self {
+        self.state.culling_mode = culling_mode;
+        self
+    }
+
+    pub fn with_blend_state(mut self, blend_state: BlendState) -> Self {
+        self.state.blend_state = Some(blend_state);
+        self
+    }
+
+    pub fn without_blend_state(mut self) -> Self {
+        self.state.blend_state = None;
+        self
+    }
+
+    pub fn with_depth_state(mut self, depth_state: DepthState) -> Self {
+        self.state.depth_state = depth_state;
         self
     }
 }
@@ -357,6 +451,82 @@ impl BlendFactor {
             }
         }
     }
+
+    #[inline(always)]
+    fn resolve_simd(&self, src: ColourSimd, dst: ColourSimd) -> ColourSimd {
+        let one = f32x8::splat(1.0);
+        let zero = f32x8::splat(0.0);
+
+        match self {
+            BlendFactor::Zero => ColourSimd {
+                r: zero,
+                g: zero,
+                b: zero,
+                a: zero,
+            },
+
+            BlendFactor::One => ColourSimd {
+                r: one,
+                g: one,
+                b: one,
+                a: one,
+            },
+
+            BlendFactor::SrcColor => src,
+
+            BlendFactor::OneMinusSrcColor => ColourSimd {
+                r: one - src.r,
+                g: one - src.g,
+                b: one - src.b,
+                a: one - src.a,
+            },
+
+            BlendFactor::DstColor => dst,
+
+            BlendFactor::OneMinusDstColor => ColourSimd {
+                r: one - dst.r,
+                g: one - dst.g,
+                b: one - dst.b,
+                a: one - dst.a,
+            },
+
+            BlendFactor::SrcAlpha => ColourSimd {
+                r: src.a,
+                g: src.a,
+                b: src.a,
+                a: src.a,
+            },
+
+            BlendFactor::OneMinusSrcAlpha => {
+                let alpha = one - src.a;
+
+                ColourSimd {
+                    r: alpha,
+                    g: alpha,
+                    b: alpha,
+                    a: alpha,
+                }
+            }
+
+            BlendFactor::DstAlpha => ColourSimd {
+                r: dst.a,
+                g: dst.a,
+                b: dst.a,
+                a: dst.a,
+            },
+
+            BlendFactor::OneMinusDstAlpha => {
+                let alpha = one - dst.a;
+
+                ColourSimd {
+                    r: alpha,
+                    g: alpha,
+                    b: alpha,
+                    a: alpha,
+                }
+            }
+        }
+    }
 }
 
 /// Determines the arithmetic operation used to combine the scaled source and destination colours.
@@ -385,6 +555,7 @@ impl BlendState {
     /// Uses source alpha for the source factor and one minus source alpha for
     /// the destination factor.
     pub const ALPHA_BLEND: BlendState = BlendState {
+        // TODO: currently broken
         src_factor: BlendFactor::SrcAlpha,
         dst_factor: BlendFactor::OneMinusSrcAlpha,
         op: BlendOp::Add,
@@ -400,7 +571,8 @@ impl BlendState {
     };
 
     /// Applies this blend state to a source and destination colour.
-    fn apply(&self, src: Colour, dst: Colour) -> Colour {
+    pub fn apply(&self, src: Colour, dst: Colour) -> Colour {
+        // TODO: need to decide if this should be public
         let src_term = src * self.src_factor.resolve(src, dst);
         let dst_term = dst * self.dst_factor.resolve(src, dst);
 
@@ -422,13 +594,73 @@ impl BlendState {
             ),
         }
     }
+
+    #[inline(always)]
+    pub fn apply_simd(&self, src: ColourSimd, dst: ColourSimd) -> ColourSimd {
+        let src_factor = self.src_factor.resolve_simd(src, dst);
+        let dst_factor = self.dst_factor.resolve_simd(src, dst);
+
+        let src_term = ColourSimd {
+            r: src.r * src_factor.r,
+            g: src.g * src_factor.g,
+            b: src.b * src_factor.b,
+            a: src.a * src_factor.a,
+        };
+
+        let dst_term = ColourSimd {
+            r: dst.r * dst_factor.r,
+            g: dst.g * dst_factor.g,
+            b: dst.b * dst_factor.b,
+            a: dst.a * dst_factor.a,
+        };
+
+        match self.op {
+            BlendOp::Add => ColourSimd {
+                r: src_term.r + dst_term.r,
+                g: src_term.g + dst_term.g,
+                b: src_term.b + dst_term.b,
+                a: src_term.a + dst_term.a,
+            },
+
+            BlendOp::Subtract => ColourSimd {
+                r: src_term.r - dst_term.r,
+                g: src_term.g - dst_term.g,
+                b: src_term.b - dst_term.b,
+                a: src_term.a - dst_term.a,
+            },
+
+            BlendOp::ReverseSubtract => ColourSimd {
+                r: dst_term.r - src_term.r,
+                g: dst_term.g - src_term.g,
+                b: dst_term.b - src_term.b,
+                a: dst_term.a - src_term.a,
+            },
+
+            BlendOp::Min => ColourSimd {
+                r: src_term.r.fast_min(dst_term.r),
+                g: src_term.g.fast_min(dst_term.g),
+                b: src_term.b.fast_min(dst_term.b),
+                a: src_term.a.fast_min(dst_term.a),
+            },
+
+            BlendOp::Max => ColourSimd {
+                r: src_term.r.fast_max(dst_term.r),
+                g: src_term.g.fast_max(dst_term.g),
+                b: src_term.b.fast_max(dst_term.b),
+                a: src_term.a.fast_max(dst_term.a),
+            },
+        }
+    }
 }
 
 /// A single render pass.
 ///
 /// A render pass provides a temporary command recording context. Draw calls submitted through
-/// [`RenderPass::draw`] are queued and converted into rasterisation commands when [`RenderPass::finish`]
-/// is called.
+/// [`RenderPass::draw`] or [`RenderPass::draw_simd`] are queued and converted into rendering
+/// work when [`RenderPass::finish`] is called.
+///
+/// Both scalar [`Pipeline`] and SIMD [`SimdPipeline`] draw calls may be submitted to the same
+/// render pass.
 ///
 /// A render pass borrows the renderer mutably and must be completed before the renderer can be used
 /// again.
@@ -462,14 +694,16 @@ pub struct RenderPass<'renderer, 'pass> {
     tile_binner: TileBinner,
 }
 impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
-    /// Queues a draw call for execution during this render pass.
+    /// Queues a draw call using a scalar [`Pipeline`].
     ///
-    /// Draw calls are not rendered immediately. They are stored and processed when [`RenderPass::finish`]
-    /// is called.
+    /// The draw call is not rendered immediately. It is stored and processed when
+    /// [`RenderPass::finish`] is called.
+    ///
+    /// For SIMD rasterisation and fragment shading, use [`RenderPass::draw_simd`].
     ///
     /// # Arguments
     ///
-    /// * `pipeline` - Shader pipeline and rendering configuration.
+    /// * `pipeline` - The scalar shader pipeline and rendering configuration.
     /// * `draw_call` - Geometry and fragment shader uniforms.
     /// * `vertex_uniforms` - Data passed to the vertex shader.
     ///
@@ -504,6 +738,52 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
         }));
     }
 
+    /// Queues a draw call using a SIMD [`SimdPipeline`].
+    ///
+    /// The draw call is not rendered immediately. It is stored and processed when
+    /// [`RenderPass::finish`] is called.
+    ///
+    /// The SIMD pipeline rasterises fragments in batches and invokes the shader's
+    /// [`FragmentShaderSimd::shade_simd`] implementation for those batches.
+    ///
+    /// # Arguments
+    ///
+    /// * `pipeline` - The SIMD shader pipeline and rendering configuration.
+    /// * `draw_call` - Geometry and fragment shader uniforms.
+    /// * `vertex_uniforms` - Data passed to the vertex shader.
+    ///  
+    /// # Example
+    ///
+    /// ```ignore
+    /// render_pass.draw(
+    ///     &simd_pipeline,
+    ///     DrawCall::new(
+    ///         vertices,
+    ///         indices,
+    ///         PrimitiveMode::TRIANGLES,
+    ///         material,
+    ///     ),
+    ///     transform,
+    /// );
+    /// ```
+    pub fn draw_simd<'pipeline, VS, FS>(
+        &mut self,
+        pipeline: &'pipeline SimdPipeline<VS, FS>,
+        draw_call: DrawCall<'pass, VS::Vertex, FS::Uniforms>,
+        vertex_uniforms: VS::Uniforms,
+    ) where
+        'pipeline: 'pass,
+        VS: VertexShader,
+        VS::Varyings: SimdInterpolate + Send + Sync + 'static,
+        FS: FragmentShaderSimd<VS::Varyings> + Send + Sync + 'static,
+    {
+        self.queued_draws.push(Box::new(QueuedDrawSimd {
+            pipeline,
+            draw_call,
+            vertex_uniforms,
+        }));
+    }
+
     /// Executes all queued draw calls and renders the completed render pass.
     ///
     /// This performs geometry processing, triangle binning, parallel tile rasterisation, and merges
@@ -520,7 +800,10 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
     }
 }
 
-/// A type-erased rendering command queued during a render pass.
+/// Internal type-erased command queued during a render pass.
+///
+/// This allows scalar and SIMD draw commands to coexist in the same render pass
+/// without exposing their concrete types to the renderer's scheduling machinery.
 ///
 /// `RenderPassCommand` provides the interface required by [`RenderPass`] to defer rendering
 /// operations until [`RenderPass::finish`] is called.
@@ -535,7 +818,7 @@ trait RenderPassCommand {
     fn execute(self: Box<Self>, tile_binner: &mut TileBinner, viewport: &Viewport);
 }
 
-/// A queued draw call containing geometry, shaders, and rendering state.
+/// Internal type-erased command used to execute a scalar [`Pipeline`] draw.
 ///
 /// `QueuedDraw` is the concrete implementation of [`RenderPassCommand`] used for
 /// normal rendering operations. It stores references to a [`Pipeline`], the
@@ -576,16 +859,64 @@ where
                 &self.pipeline.vertex_shader,
                 &self.vertex_uniforms,
                 viewport,
-                self.pipeline.culling_mode,
+                self.pipeline.state.culling_mode,
             );
 
             for triangle in triangles {
                 let command = Arc::new(TriangleRasterCommand {
-                    triangle: triangle.clone(),
+                    triangle,
                     uniforms: uniforms.clone(),
                     shader: self.pipeline.fragment_shader.clone(),
-                    blend_state: self.pipeline.blend_state,
-                    depth_state: self.pipeline.depth_state,
+                    blend_state: self.pipeline.state.blend_state,
+                    depth_state: self.pipeline.state.depth_state,
+                });
+
+                tile_binner.bin_command(command);
+            }
+        }
+    }
+}
+
+/// Internal type-erased command used to execute a SIMD [`SimdPipeline`] draw.
+///
+/// `QueuedDrawSimd` stores the pipeline, draw call, and vertex uniforms until the
+/// render pass is executed.
+struct QueuedDrawSimd<'a, VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: SimdInterpolate,
+    FS: FragmentShaderSimd<VS::Varyings>,
+{
+    pipeline: &'a SimdPipeline<VS, FS>,
+    draw_call: DrawCall<'a, VS::Vertex, FS::Uniforms>,
+    vertex_uniforms: VS::Uniforms,
+}
+
+impl<VS, FS> RenderPassCommand for QueuedDrawSimd<'_, VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: SimdInterpolate + Send + Sync + 'static,
+    FS: FragmentShaderSimd<VS::Varyings> + Send + Sync + 'static,
+{
+    fn execute(self: Box<Self>, tile_binner: &mut TileBinner, viewport: &Viewport) {
+        let uniforms = Arc::new(self.draw_call.fragment_uniforms);
+
+        for triangle in self.draw_call.primitive.triangles() {
+            let triangles = GeometryProcessor::process_triangle(
+                triangle,
+                &self.pipeline.vertex_shader,
+                &self.vertex_uniforms,
+                viewport,
+                self.pipeline.state.culling_mode,
+            );
+
+            for triangle in triangles {
+                let command = Arc::new(TriangleRasterCommandSimd {
+                    triangle,
+                    uniforms: uniforms.clone(),
+                    shader: self.pipeline.fragment_shader.clone(),
+                    blend_state: self.pipeline.state.blend_state,
+                    depth_state: self.pipeline.state.depth_state,
                 });
 
                 tile_binner.bin_command(command);
@@ -701,11 +1032,8 @@ where
     FS: FragmentShader<V>,
 {
     triangle: Triangle2D<V>,
-
     uniforms: Arc<FS::Uniforms>,
-
     shader: Arc<FS>,
-
     blend_state: Option<BlendState>,
     depth_state: DepthState,
 }
@@ -753,6 +1081,148 @@ where
                 depthbuffer.set_depth(fragment.position, fragment.depth);
             }
         });
+    }
+
+    fn bounding_box(&self) -> (Vec2, Vec2) {
+        self.triangle.bounding_box()
+    }
+
+    fn intersects(&self, rect: Rect) -> bool {
+        self.triangle.intersects_rect(rect)
+    }
+}
+
+struct TriangleRasterCommandSimd<V, FS>
+where
+    V: SimdInterpolate,
+    FS: FragmentShaderSimd<V>,
+{
+    triangle: Triangle2D<V>,
+    uniforms: Arc<FS::Uniforms>,
+    shader: Arc<FS>,
+    blend_state: Option<BlendState>,
+    depth_state: DepthState,
+}
+
+impl<V, FS> TriangleRasterCommandSimd<V, FS>
+where
+    V: SimdInterpolate + Send + Sync + 'static,
+    FS: FragmentShaderSimd<V> + Send + Sync + 'static,
+{
+    fn rasterise_impl<const TEST_DEPTH: bool, const WRITE_DEPTH: bool>(
+        &self,
+        framebuffer: &mut FrameBuffer,
+        mut depthbuffer: Option<&mut DepthBuffer>,
+        bounds: Rect,
+    ) {
+        self.triangle
+            .rasterise_segment_simd(bounds, |fragment_simd| {
+                let pass = if TEST_DEPTH {
+                    let depthbuffer = depthbuffer
+                        .as_deref_mut()
+                        .expect("depth testing enabled but no depth buffer");
+
+                    let index = depthbuffer.index_unchecked(
+                        (fragment_simd.x_start - bounds.min_x) as usize,
+                        (fragment_simd.y - bounds.min_y) as usize,
+                    );
+
+                    let stored = unsafe { depthbuffer.get8_unchecked(index) };
+
+                    fragment_simd.mask & fragment_simd.depth.simd_lt(stored)
+                } else {
+                    fragment_simd.mask
+                };
+
+                if !pass.any() {
+                    return;
+                }
+
+                let mask = pass.to_bitmask();
+
+                let base = framebuffer.index_unchecked(
+                    (fragment_simd.x_start - bounds.min_x) as usize,
+                    (fragment_simd.y - bounds.min_y) as usize,
+                );
+
+                let src = self
+                    .shader
+                    .shade_simd(fragment_simd.varyings, self.uniforms.as_ref());
+
+                let colour = if let Some(blend_state) = self.blend_state {
+                    let dst = unsafe { framebuffer.get8_unchecked(base) };
+
+                    blend_state.apply_simd(src, dst)
+                } else {
+                    src
+                };
+
+                let r = colour.r.to_array();
+                let g = colour.g.to_array();
+                let b = colour.b.to_array();
+                let a = colour.a.to_array();
+
+                for lane in 0..8 {
+                    if mask & (1 << lane) == 0 {
+                        continue;
+                    }
+
+                    let frag_colour = Colour::new(r[lane], g[lane], b[lane], a[lane]);
+
+                    unsafe {
+                        framebuffer.set_pixel_index_unchecked(base + lane, frag_colour);
+                    }
+                }
+
+                if WRITE_DEPTH {
+                    let depthbuffer = depthbuffer
+                        .as_deref_mut()
+                        .expect("depth writing enabled but no depth buffer");
+
+                    let index = depthbuffer.index_unchecked(
+                        (fragment_simd.x_start - bounds.min_x) as usize,
+                        (fragment_simd.y - bounds.min_y) as usize,
+                    );
+
+                    unsafe {
+                        depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
+                    }
+                }
+            });
+    }
+}
+
+impl<V, FS> RasterCommand for TriangleRasterCommandSimd<V, FS>
+where
+    V: SimdInterpolate + Send + Sync + 'static,
+    FS: FragmentShaderSimd<V> + Send + Sync + 'static,
+{
+    fn rasterise(
+        &self,
+        framebuffer: &mut FrameBuffer,
+        depthbuffer: Option<&mut DepthBuffer>,
+        bounds: Rect,
+    ) {
+        match (
+            self.depth_state.test_enabled,
+            self.depth_state.write_enabled,
+        ) {
+            (false, false) => {
+                self.rasterise_impl::<false, false>(framebuffer, depthbuffer, bounds);
+            }
+
+            (false, true) => {
+                self.rasterise_impl::<false, true>(framebuffer, depthbuffer, bounds);
+            }
+
+            (true, false) => {
+                self.rasterise_impl::<true, false>(framebuffer, depthbuffer, bounds);
+            }
+
+            (true, true) => {
+                self.rasterise_impl::<true, true>(framebuffer, depthbuffer, bounds);
+            }
+        }
     }
 
     fn bounding_box(&self) -> (Vec2, Vec2) {

@@ -68,3 +68,25 @@ where
 
     fn shade(&self, varyings: V, uniforms: &Self::Uniforms) -> Colour;
 }
+
+/// SIMD fragment shader support for [`SimdPipeline`].
+///
+/// Implement this trait to provide a SIMD implementation of a fragment shader.
+/// The SIMD shader receives multiple interpolated fragments at once and returns
+/// their colours as SIMD values.
+///
+/// `FragmentShaderSimd` is independent of [`FragmentShader`]. A shader may
+/// implement either trait or both, depending on which rendering pipelines it
+/// supports.
+pub trait FragmentShaderSimd<V>
+where
+    V: SimdInterpolate,
+{
+    type Uniforms: Send + Sync + 'static;
+
+    /// Shades a batch of fragments simultaneously.
+    ///
+    /// The input contains interpolated varyings for multiple fragments. The returned
+    /// SIMD colour contains one result per SIMD lane.
+    fn shade_simd(&self, varyings: V::Simd, uniforms: &Self::Uniforms) -> ColourSimd;
+}
