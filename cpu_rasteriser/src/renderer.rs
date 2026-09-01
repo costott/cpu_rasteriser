@@ -169,8 +169,8 @@ impl RenderTarget {
         self
     }
 
-    pub fn pixels(&self) -> &[Colour] {
-        self.framebuffer.pixels()
+    pub fn pixels(&self) -> Vec<Colour> {
+        self.framebuffer.pixels_compact()
     }
 
     pub fn pixels_u32(&self) -> Vec<u32> {
@@ -555,6 +555,7 @@ impl BlendState {
     /// Uses source alpha for the source factor and one minus source alpha for
     /// the destination factor.
     pub const ALPHA_BLEND: BlendState = BlendState {
+        // TODO: currently broken
         src_factor: BlendFactor::SrcAlpha,
         dst_factor: BlendFactor::OneMinusSrcAlpha,
         op: BlendOp::Add,
@@ -1121,8 +1122,10 @@ where
                         .as_deref_mut()
                         .expect("depth testing enabled but no depth buffer");
 
-                    let index = fragment_simd.y as usize * depthbuffer.width()
-                        + fragment_simd.x_start as usize;
+                    let index = depthbuffer.index_unchecked(
+                        (fragment_simd.x_start - bounds.min_x) as usize,
+                        (fragment_simd.y - bounds.min_y) as usize,
+                    );
 
                     let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
@@ -1137,8 +1140,10 @@ where
 
                 let mask = pass.to_bitmask();
 
-                let base = (fragment_simd.y - bounds.min_y) as usize * framebuffer.width()
-                    + (fragment_simd.x_start - bounds.min_x) as usize;
+                let base = framebuffer.index_unchecked(
+                    (fragment_simd.x_start - bounds.min_x) as usize,
+                    (fragment_simd.y - bounds.min_y) as usize,
+                );
 
                 let src = self
                     .shader
@@ -1174,8 +1179,10 @@ where
                         .as_deref_mut()
                         .expect("depth writing enabled but no depth buffer");
 
-                    let index = fragment_simd.y as usize * depthbuffer.width()
-                        + fragment_simd.x_start as usize;
+                    let index = depthbuffer.index_unchecked(
+                        (fragment_simd.x_start - bounds.min_x) as usize,
+                        (fragment_simd.y - bounds.min_y) as usize,
+                    );
 
                     unsafe {
                         depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);

@@ -4,15 +4,21 @@ use crate::maths::Vec2;
 
 pub struct DepthBuffer {
     width: usize,
+    stride: usize, // physical row stride, including SIMD padding
     height: usize,
     buffer: Vec<f32>,
 }
 impl DepthBuffer {
+    const SIMD_WIDTH: usize = 8;
+
     pub fn new(width: usize, height: usize) -> Self {
+        let stride = (width + Self::SIMD_WIDTH - 1).next_multiple_of(Self::SIMD_WIDTH);
+
         Self {
             width,
+            stride,
             height,
-            buffer: vec![1.0; width * height],
+            buffer: vec![1.0; stride * height],
         }
     }
 
@@ -31,21 +37,34 @@ impl DepthBuffer {
     pub fn resize(&mut self, width: usize, height: usize) {
         self.width = width;
         self.height = height;
-        self.buffer.resize(width * height, 1.0);
+        self.stride = (width + Self::SIMD_WIDTH - 1).next_multiple_of(Self::SIMD_WIDTH);
+        self.buffer.resize(self.stride * height, 1.0);
     }
 
-    pub fn set_depth(&mut self, p: Vec2, depth: f32) {
-        let x = p.x as i32;
-        let y = p.y as i32;
-        if x < 0 || x >= self.width as i32 || y < 0 || y >= self.height as i32 {
-            return;
-        }
-        let index = (y as usize) * self.width + (x as usize);
+    #[inline(always)]
+    fn index(&self, x: usize, y: usize) -> usize {
+        debug_assert!(x < self.width);
+        debug_assert!(y < self.height);
+
+        y * self.stride + x
+    }
+
+    #[inline(always)]
+    pub fn index_unchecked(&self, x: usize, y: usize) -> usize {
+        y * self.stride + x
+    }
+
+    #[inline(always)]
+    pub fn set_depth(&mut self, position: Vec2, depth: f32) {
+        let x = position.x as usize;
+        let y = position.y as usize;
+
+        let index = self.index(x, y);
         self.buffer[index] = depth;
     }
 
     pub unsafe fn set_depth_unchecked(&mut self, p: Vec2, depth: f32) {
-        let index = (p.y as usize) * self.width + (p.x as usize);
+        let index = self.index_unchecked(p.x as usize, p.y as usize);
 
         unsafe {
             *self.buffer.get_unchecked_mut(index) = depth;
@@ -79,18 +98,17 @@ impl DepthBuffer {
         unsafe { self.set8_unchecked(index, new_depth) };
     }
 
-    pub fn get(&self, p: Vec2) -> f32 {
-        let x = p.x as i32;
-        let y = p.y as i32;
-        if x < 0 || x >= self.width as i32 || y < 0 || y >= self.height as i32 {
-            return 1.0;
-        }
-        let index = (y as usize) * self.width + (x as usize);
-        self.buffer[index]
+    #[inline(always)]
+    pub fn get(&self, position: Vec2) -> f32 {
+        let x = position.x as usize;
+        let y = position.y as usize;
+
+        self.buffer[self.index(x, y)]
     }
 
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, p: Vec2) -> f32 {
-        let index = (p.y as usize) * self.width + (p.x as usize);
+        let index = self.index_unchecked(p.x as usize, p.y as usize);
 
         unsafe { *self.buffer.get_unchecked(index) }
     }

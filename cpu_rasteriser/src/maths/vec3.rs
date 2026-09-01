@@ -1,3 +1,5 @@
+use wide::f32x8;
+
 use crate::prelude::*;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
@@ -148,6 +150,88 @@ impl From<(i32, i32, i32)> for Vec3 {
             x: tuple.0 as f32,
             y: tuple.1 as f32,
             z: tuple.2 as f32,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Vec3Simd {
+    pub x: f32x8,
+    pub y: f32x8,
+    pub z: f32x8,
+}
+
+impl Vec3Simd {
+    #[inline(always)]
+    pub fn new(x: f32x8, y: f32x8, z: f32x8) -> Self {
+        Self { x, y, z }
+    }
+
+    #[inline(always)]
+    pub fn dot(self, other: Self) -> f32x8 {
+        self.x * other.x + self.y * other.y + self.z * other.z
+    }
+
+    #[inline(always)]
+    pub fn normalise(self) -> Self {
+        let inv_length = self.dot(self).sqrt().recip();
+
+        Self {
+            x: self.x * inv_length,
+            y: self.y * inv_length,
+            z: self.z * inv_length,
+        }
+    }
+}
+
+impl std::ops::Add for Vec3Simd {
+    type Output = Self;
+
+    #[inline(always)]
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            z: self.z + rhs.z,
+        }
+    }
+}
+
+impl std::ops::Sub for Vec3Simd {
+    type Output = Self;
+
+    #[inline(always)]
+    fn sub(self, rhs: Self) -> Self {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
+    }
+}
+
+impl std::ops::Neg for Vec3Simd {
+    type Output = Self;
+
+    #[inline(always)]
+    fn neg(self) -> Self {
+        Self {
+            x: -self.x,
+            y: -self.y,
+            z: -self.z,
+        }
+    }
+}
+
+impl std::ops::Mul<f32x8> for Vec3Simd {
+    type Output = Self;
+
+    #[inline(always)]
+    fn mul(self, rhs: f32x8) -> Self {
+        Self {
+            x: self.x * rhs,
+            y: self.y * rhs,
+            z: self.z * rhs,
         }
     }
 }

@@ -1,10 +1,35 @@
 use std::sync::Arc;
 
-use cpu_rasteriser::prelude::*;
+use cpu_rasteriser::{prelude::*, wide::f32x8};
 use engine::prelude::*;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
+
+#[inline(always)]
+fn reflect_simd(vector: Vec3Simd, normal: Vec3Simd) -> Vec3Simd {
+    vector - normal * (f32x8::splat(2.0) * vector.dot(normal))
+}
+
+#[inline(always)]
+fn colour_splat(colour: Colour) -> ColourSimd {
+    ColourSimd {
+        r: f32x8::splat(colour.r),
+        g: f32x8::splat(colour.g),
+        b: f32x8::splat(colour.b),
+        a: f32x8::splat(colour.a),
+    }
+}
+
+#[inline(always)]
+fn colour_lerp(a: ColourSimd, b: ColourSimd, t: f32x8) -> ColourSimd {
+    ColourSimd {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: a.a + (b.a - a.a) * t,
+    }
+}
 
 // -----------------------------------------------------------------------------
 // Shared scene uniforms
@@ -26,7 +51,7 @@ struct PhongVertexUniforms {
     scene: Arc<SceneUniforms>,
 }
 
-#[derive(Interpolate)]
+#[derive(Interpolate, SimdInterpolate)]
 struct PhongVaryings {
     world_position: Vec3,
     normal: Vec3,
@@ -68,47 +93,87 @@ struct PhongFragmentUniforms {
 
 struct PhongFragmentShader;
 
-impl FragmentShader<PhongVaryings> for PhongFragmentShader {
+impl FragmentShaderSimd<PhongVaryings> for PhongFragmentShader {
     type Uniforms = PhongFragmentUniforms;
 
-    fn shade(&self, varyings: PhongVaryings, uniforms: &Self::Uniforms) -> Colour {
-        let normal = varyings.normal.normalise();
+    #[inline(always)]
+    fn shade_simd(&self, varyings: PhongVaryingsSimd, uniforms: &Self::Uniforms) -> ColourSimd {
+        let normal =
+            Vec3Simd::new(varyings.normal[0], varyings.normal[1], varyings.normal[2]).normalise();
 
-        let view_dir = (uniforms.scene.camera.eye - varyings.world_position).normalise();
+        let eye = uniforms.scene.camera.eye;
 
-        let light_dir = (-uniforms.scene.light.direction).normalise();
+        let view_dir = Vec3Simd::new(
+            f32x8::splat(eye.x) - varyings.world_position[0],
+            f32x8::splat(eye.y) - varyings.world_position[1],
+            f32x8::splat(eye.z) - varyings.world_position[2],
+        )
+        .normalise();
 
-        let mut colour = uniforms.material.ambient;
+        let direction = uniforms.scene.light.direction;
 
-        let diffuse_strength = normal.dot(&light_dir).max(0.0);
+        let light_dir = Vec3Simd::new(
+            f32x8::splat(-direction.x),
+            f32x8::splat(-direction.y),
+            f32x8::splat(-direction.z),
+        )
+        .normalise();
 
-        colour += uniforms.material.diffuse * uniforms.scene.light.colour * diffuse_strength;
+        let mut r = f32x8::splat(uniforms.material.ambient.r);
+        let mut g = f32x8::splat(uniforms.material.ambient.g);
+        let mut b = f32x8::splat(uniforms.material.ambient.b);
 
-        let reflect_dir = reflect(-light_dir, normal).normalise();
+        let light_colour = uniforms.scene.light.colour;
+
+        let diffuse_strength = normal.dot(light_dir).fast_max(f32x8::splat(0.0));
+
+        r += f32x8::splat(uniforms.material.diffuse.r)
+            * f32x8::splat(light_colour.r)
+            * diffuse_strength;
+
+        g += f32x8::splat(uniforms.material.diffuse.g)
+            * f32x8::splat(light_colour.g)
+            * diffuse_strength;
+
+        b += f32x8::splat(uniforms.material.diffuse.b)
+            * f32x8::splat(light_colour.b)
+            * diffuse_strength;
+
+        let reflect_dir = reflect_simd(-light_dir, normal);
 
         let specular_strength = view_dir
-            .dot(&reflect_dir)
-            .max(0.0)
-            .powf(uniforms.material.shininess);
+            .dot(reflect_dir)
+            .fast_max(f32x8::splat(0.0))
+            .powf_simd(f32x8::splat(uniforms.material.shininess));
 
-        // Deliberately allow the specular highlight to exceed 1.0.
-        // These HDR values are what the bloom pass will extract.
-        colour +=
-            uniforms.material.specular * uniforms.scene.light.colour * specular_strength * 4.0;
+        let specular_scale = specular_strength * f32x8::splat(4.0);
 
-        colour
+        r += f32x8::splat(uniforms.material.specular.r)
+            * f32x8::splat(light_colour.r)
+            * specular_scale;
+
+        g += f32x8::splat(uniforms.material.specular.g)
+            * f32x8::splat(light_colour.g)
+            * specular_scale;
+
+        b += f32x8::splat(uniforms.material.specular.b)
+            * f32x8::splat(light_colour.b)
+            * specular_scale;
+
+        ColourSimd {
+            r,
+            g,
+            b,
+            a: f32x8::splat(1.0),
+        }
     }
-}
-
-fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
-    vector - normal * 2.0 * vector.dot(&normal)
 }
 
 // -----------------------------------------------------------------------------
 // Background
 // -----------------------------------------------------------------------------
 
-#[derive(Interpolate)]
+#[derive(Interpolate, SimdInterpolate)]
 struct BackgroundVaryings {
     uv: Vec2,
 }
@@ -137,40 +202,52 @@ struct BackgroundFragmentUniforms {
 
 struct BackgroundFragmentShader;
 
-impl FragmentShader<BackgroundVaryings> for BackgroundFragmentShader {
+impl FragmentShaderSimd<BackgroundVaryings> for BackgroundFragmentShader {
     type Uniforms = BackgroundFragmentUniforms;
 
-    fn shade(&self, varyings: BackgroundVaryings, uniforms: &Self::Uniforms) -> Colour {
+    #[inline(always)]
+    fn shade_simd(
+        &self,
+        varyings: BackgroundVaryingsSimd,
+        uniforms: &Self::Uniforms,
+    ) -> ColourSimd {
         let uv = varyings.uv;
 
-        let sky = Colour::lerp(
-            &Colour::new(0.01, 0.025, 0.08, 1.0),
-            &Colour::new(0.08, 0.25, 0.65, 1.0),
-            uv.y,
-        );
+        let low = colour_splat(Colour::new(0.01, 0.025, 0.08, 1.0));
 
-        // Animated procedural clouds.
-        let t = uniforms.time * 0.03;
+        let high = colour_splat(Colour::new(0.08, 0.25, 0.65, 1.0));
 
-        let n1 = ((uv.x * 7.0 + t).sin() + (uv.y * 5.0 - t).cos()) * 0.5;
-        let n2 = ((uv.x * 15.0 - t * 1.3).sin() * (uv.y * 12.0 + t).cos()) * 0.25;
+        let cloud_colour = colour_splat(Colour::new(0.7, 0.8, 1.0, 1.0));
 
-        let cloud = (n1 + n2 + 0.5).clamp(0.0, 1.0);
+        let t = f32x8::splat(uniforms.time * 0.03);
 
-        let cloud_colour = Colour::new(0.7, 0.8, 1.0, 1.0);
+        let n1 = ((uv[0] * f32x8::splat(7.0) + t).sin() + (uv[1] * f32x8::splat(5.0) - t).cos())
+            * f32x8::splat(0.5);
 
-        let mut colour = Colour::lerp(&sky, &cloud_colour, cloud * 0.35);
+        let n2 = ((uv[0] * f32x8::splat(15.0) - t * f32x8::splat(1.3)).sin()
+            * (uv[1] * f32x8::splat(12.0) + t).cos())
+            * f32x8::splat(0.25);
 
-        // A deliberately overbright sun.
-        //
-        // This is HDR, so values above 1.0 survive into the scene target
-        // and will later be extracted by the bloom pass.
-        let sun_position = Vec2::new(0.72, 0.8);
-        let distance = (uv - sun_position).length();
+        let cloud = (n1 + n2 + f32x8::splat(0.5))
+            .fast_max(f32x8::splat(0.0))
+            .fast_min(f32x8::splat(1.0));
 
-        let sun = (1.0 - distance * 8.0).max(0.0).powf(4.0);
+        let mut colour = colour_lerp(low, high, uv[1]);
 
-        colour += Colour::new(5.0, 3.5, 1.5, 1.0) * sun;
+        colour = colour_lerp(colour, cloud_colour, cloud * f32x8::splat(0.35));
+
+        let dx = uv[0] - f32x8::splat(0.72);
+        let dy = uv[1] - f32x8::splat(0.8);
+
+        let distance = (dx * dx + dy * dy).sqrt();
+
+        let sun = (f32x8::splat(1.0) - distance * f32x8::splat(8.0)).fast_max(f32x8::splat(0.0));
+
+        let sun = sun.powf_simd(f32x8::splat(4.0));
+
+        colour.r += f32x8::splat(5.0) * sun;
+        colour.g += f32x8::splat(3.5) * sun;
+        colour.b += f32x8::splat(1.5) * sun;
 
         colour
     }
@@ -180,7 +257,7 @@ impl FragmentShader<BackgroundVaryings> for BackgroundFragmentShader {
 // Fullscreen post-processing geometry
 // -----------------------------------------------------------------------------
 
-#[derive(Interpolate)]
+#[derive(Interpolate, SimdInterpolate)]
 struct PostProcessVaryings {
     uv: Vec2,
 }
@@ -215,18 +292,33 @@ struct BrightPassUniforms {
 
 struct BrightPassFragmentShader;
 
-impl FragmentShader<PostProcessVaryings> for BrightPassFragmentShader {
+impl FragmentShaderSimd<PostProcessVaryings> for BrightPassFragmentShader {
     type Uniforms = BrightPassUniforms;
 
-    fn shade(&self, varyings: PostProcessVaryings, uniforms: &Self::Uniforms) -> Colour {
-        let colour = uniforms.source.sample_linear_clamp(varyings.uv);
+    #[inline(always)]
+    fn shade_simd(
+        &self,
+        varyings: PostProcessVaryingsSimd,
+        uniforms: &Self::Uniforms,
+    ) -> ColourSimd {
+        let colour = uniforms.source.sample_linear_clamp_simd(varyings.uv);
 
-        let brightness = colour.luminance();
+        let brightness = colour.r * f32x8::splat(0.2126)
+            + colour.g * f32x8::splat(0.7152)
+            + colour.b * f32x8::splat(0.0722);
 
-        let knee = 0.5;
-        let contribution = ((brightness - uniforms.threshold) / knee).clamp(0.0, 1.0);
+        let knee = f32x8::splat(0.5);
 
-        colour * contribution
+        let contribution = ((brightness - f32x8::splat(uniforms.threshold)) / knee)
+            .fast_max(f32x8::splat(0.0))
+            .fast_min(f32x8::splat(1.0));
+
+        ColourSimd {
+            r: colour.r * contribution,
+            g: colour.g * contribution,
+            b: colour.b * contribution,
+            a: colour.a * contribution,
+        }
     }
 }
 
@@ -248,36 +340,50 @@ struct BloomScaleUniforms {
 
 struct BloomScaleFragmentShader;
 
-impl FragmentShader<PostProcessVaryings> for BloomScaleFragmentShader {
+impl FragmentShaderSimd<PostProcessVaryings> for BloomScaleFragmentShader {
     type Uniforms = BloomScaleUniforms;
 
-    fn shade(&self, varyings: PostProcessVaryings, uniforms: &Self::Uniforms) -> Colour {
+    #[inline(always)]
+    fn shade_simd(
+        &self,
+        varyings: PostProcessVaryingsSimd,
+        uniforms: &Self::Uniforms,
+    ) -> ColourSimd {
         match uniforms.scale {
             BloomScale::Downsample => {
-                let texel = Vec2::new(
-                    1.0 / uniforms.source.width() as f32,
-                    1.0 / uniforms.source.height() as f32,
-                );
+                let texel_x = f32x8::splat(1.0 / uniforms.source.width() as f32);
 
-                let offsets = [
-                    Vec2::new(-1.0, -1.0),
-                    Vec2::new(1.0, -1.0),
-                    Vec2::new(-1.0, 1.0),
-                    Vec2::new(1.0, 1.0),
-                ];
+                let texel_y = f32x8::splat(1.0 / uniforms.source.height() as f32);
 
-                let mut colour = Colour::BLACK;
+                let offsets = [(-1.0f32, -1.0f32), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)];
 
-                for offset in offsets {
-                    colour += uniforms
-                        .source
-                        .sample_linear_clamp(varyings.uv + offset * texel);
+                let mut colour = ColourSimd::splat(Colour::BLACK);
+
+                for (ox, oy) in offsets {
+                    let sample_uv = [
+                        varyings.uv[0] + texel_x * f32x8::splat(ox),
+                        varyings.uv[1] + texel_y * f32x8::splat(oy),
+                    ];
+
+                    let sample = uniforms.source.sample_linear_clamp_simd(sample_uv);
+
+                    colour.r += sample.r;
+                    colour.g += sample.g;
+                    colour.b += sample.b;
+                    colour.a += sample.a;
                 }
 
-                colour * 0.25
+                let quarter = f32x8::splat(0.25);
+
+                ColourSimd {
+                    r: colour.r * quarter,
+                    g: colour.g * quarter,
+                    b: colour.b * quarter,
+                    a: colour.a * quarter,
+                }
             }
 
-            BloomScale::Upsample => uniforms.source.sample_linear_clamp(varyings.uv),
+            BloomScale::Upsample => uniforms.source.sample_linear_clamp_simd(varyings.uv),
         }
     }
 }
@@ -296,33 +402,51 @@ struct BloomCompositeUniforms {
 
 struct BloomCompositeFragmentShader;
 
-impl FragmentShader<PostProcessVaryings> for BloomCompositeFragmentShader {
+impl FragmentShaderSimd<PostProcessVaryings> for BloomCompositeFragmentShader {
     type Uniforms = BloomCompositeUniforms;
 
-    fn shade(&self, varyings: PostProcessVaryings, uniforms: &Self::Uniforms) -> Colour {
-        let scene = uniforms.scene.sample_linear_clamp(varyings.uv);
+    #[inline(always)]
+    fn shade_simd(
+        &self,
+        varyings: PostProcessVaryingsSimd,
+        uniforms: &Self::Uniforms,
+    ) -> ColourSimd {
+        let scene = uniforms.scene.sample_linear_clamp_simd(varyings.uv);
 
-        let bloom = uniforms.bloom.sample_linear_clamp(varyings.uv) * uniforms.bloom_strength;
+        let bloom = uniforms.bloom.sample_linear_clamp_simd(varyings.uv);
 
-        let hdr = (scene + bloom) * uniforms.exposure;
+        let bloom_strength = f32x8::splat(uniforms.bloom_strength);
 
-        // Simple Reinhard tone mapping.
-        //
-        // HDR:
-        //     0.5 -> 0.333
-        //     1.0 -> 0.5
-        //     5.0 -> 0.833
-        //    10.0 -> 0.909
-        let mapped = Colour::new(
-            hdr.r / (1.0 + hdr.r),
-            hdr.g / (1.0 + hdr.g),
-            hdr.b / (1.0 + hdr.b),
-            hdr.a,
-        );
+        let exposure = f32x8::splat(uniforms.exposure);
 
-        // The output of tone mapping should already be in displayable range,
-        // but clamp as the final safety boundary before the presentation target.
-        mapped.clamp_rgb(0.0, 1.0)
+        let hdr = ColourSimd {
+            r: (scene.r + bloom.r * bloom_strength) * exposure,
+
+            g: (scene.g + bloom.g * bloom_strength) * exposure,
+
+            b: (scene.b + bloom.b * bloom_strength) * exposure,
+
+            a: scene.a,
+        };
+
+        let one = f32x8::splat(1.0);
+
+        let mapped = ColourSimd {
+            r: hdr.r / (one + hdr.r),
+            g: hdr.g / (one + hdr.g),
+            b: hdr.b / (one + hdr.b),
+            a: hdr.a,
+        };
+
+        ColourSimd {
+            r: mapped.r.fast_max(f32x8::splat(0.0)).fast_min(one),
+
+            g: mapped.g.fast_max(f32x8::splat(0.0)).fast_min(one),
+
+            b: mapped.b.fast_max(f32x8::splat(0.0)).fast_min(one),
+
+            a: mapped.a,
+        }
     }
 }
 
@@ -359,13 +483,13 @@ struct BloomApp {
     bloom_half: RenderTarget,
     bloom_quarter: RenderTarget,
 
-    background_pipeline: Pipeline<BackgroundVertexShader, BackgroundFragmentShader>,
-    teapot_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
-    glass_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
+    background_pipeline: SimdPipeline<BackgroundVertexShader, BackgroundFragmentShader>,
+    teapot_pipeline: SimdPipeline<PhongVertexShader, PhongFragmentShader>,
+    glass_pipeline: SimdPipeline<PhongVertexShader, PhongFragmentShader>,
 
-    bright_pipeline: Pipeline<PostProcessVertexShader, BrightPassFragmentShader>,
-    bloom_scale_pipeline: Pipeline<PostProcessVertexShader, BloomScaleFragmentShader>,
-    composite_pipeline: Pipeline<PostProcessVertexShader, BloomCompositeFragmentShader>,
+    bright_pipeline: SimdPipeline<PostProcessVertexShader, BrightPassFragmentShader>,
+    bloom_scale_pipeline: SimdPipeline<PostProcessVertexShader, BloomScaleFragmentShader>,
+    composite_pipeline: SimdPipeline<PostProcessVertexShader, BloomCompositeFragmentShader>,
 
     elapsed: f32,
 }
@@ -461,29 +585,31 @@ impl BloomApp {
         // Pipelines
         // ---------------------------------------------------------------------
 
-        let background_pipeline = Pipeline::new(BackgroundVertexShader, BackgroundFragmentShader)
-            .with_culling_mode(CullingMode::None)
-            .with_depth_state(DepthState::DISABLED);
+        let background_pipeline =
+            SimdPipeline::new(BackgroundVertexShader, BackgroundFragmentShader)
+                .with_culling_mode(CullingMode::None)
+                .with_depth_state(DepthState::DISABLED);
 
-        let teapot_pipeline = Pipeline::new(PhongVertexShader, PhongFragmentShader)
+        let teapot_pipeline = SimdPipeline::new(PhongVertexShader, PhongFragmentShader)
             .with_culling_mode(CullingMode::None)
             .with_depth_state(DepthState::DEFAULT);
 
-        let glass_pipeline = Pipeline::new(PhongVertexShader, PhongFragmentShader)
+        let glass_pipeline = SimdPipeline::new(PhongVertexShader, PhongFragmentShader)
             .with_culling_mode(CullingMode::None)
             .with_depth_state(DepthState::READ_ONLY)
-            .with_blend_state(BlendState::ALPHA_BLEND);
+            .with_blend_state(BlendState::ADDITIVE);
 
-        let bright_pipeline = Pipeline::new(PostProcessVertexShader, BrightPassFragmentShader)
+        let bright_pipeline = SimdPipeline::new(PostProcessVertexShader, BrightPassFragmentShader)
             .with_culling_mode(CullingMode::None)
             .with_depth_state(DepthState::DISABLED);
 
-        let bloom_scale_pipeline = Pipeline::new(PostProcessVertexShader, BloomScaleFragmentShader)
-            .with_culling_mode(CullingMode::None)
-            .with_depth_state(DepthState::DISABLED);
+        let bloom_scale_pipeline =
+            SimdPipeline::new(PostProcessVertexShader, BloomScaleFragmentShader)
+                .with_culling_mode(CullingMode::None)
+                .with_depth_state(DepthState::DISABLED);
 
         let composite_pipeline =
-            Pipeline::new(PostProcessVertexShader, BloomCompositeFragmentShader)
+            SimdPipeline::new(PostProcessVertexShader, BloomCompositeFragmentShader)
                 .with_culling_mode(CullingMode::None)
                 .with_depth_state(DepthState::DISABLED);
 
@@ -565,7 +691,7 @@ impl Application for BloomApp {
             },
         );
 
-        self.fullscreen_quad.draw_to_render_pass(
+        self.fullscreen_quad.draw_to_render_pass_simd(
             &mut pass,
             &self.background_pipeline,
             BackgroundVertexUniforms,
@@ -598,7 +724,7 @@ impl Application for BloomApp {
         };
 
         self.teapot
-            .draw_to_render_pass(&mut pass, &self.teapot_pipeline, uniforms, |mesh| {
+            .draw_to_render_pass_simd(&mut pass, &self.teapot_pipeline, uniforms, |mesh| {
                 let material = self
                     .teapot
                     .materials
@@ -612,7 +738,7 @@ impl Application for BloomApp {
                 }
             });
 
-        self.cube.draw_to_render_pass(
+        self.cube.draw_to_render_pass_simd(
             &mut pass,
             &self.glass_pipeline,
             PhongVertexUniforms {
@@ -659,7 +785,7 @@ impl Application for BloomApp {
             },
         );
 
-        self.fullscreen_quad.draw_to_render_pass(
+        self.fullscreen_quad.draw_to_render_pass_simd(
             &mut pass,
             &self.bright_pipeline,
             PostProcessVertexUniforms,
@@ -690,7 +816,7 @@ impl Application for BloomApp {
             },
         );
 
-        self.fullscreen_quad.draw_to_render_pass(
+        self.fullscreen_quad.draw_to_render_pass_simd(
             &mut pass,
             &self.bloom_scale_pipeline,
             PostProcessVertexUniforms,
@@ -721,7 +847,7 @@ impl Application for BloomApp {
             },
         );
 
-        self.fullscreen_quad.draw_to_render_pass(
+        self.fullscreen_quad.draw_to_render_pass_simd(
             &mut pass,
             &self.bloom_scale_pipeline,
             PostProcessVertexUniforms,
@@ -752,7 +878,7 @@ impl Application for BloomApp {
             },
         );
 
-        self.fullscreen_quad.draw_to_render_pass(
+        self.fullscreen_quad.draw_to_render_pass_simd(
             &mut pass,
             &self.bloom_scale_pipeline,
             PostProcessVertexUniforms,
@@ -780,7 +906,7 @@ impl Application for BloomApp {
             depth_load_op: None,
         });
 
-        self.fullscreen_quad.draw_to_render_pass(
+        self.fullscreen_quad.draw_to_render_pass_simd(
             &mut pass,
             &self.composite_pipeline,
             PostProcessVertexUniforms,
