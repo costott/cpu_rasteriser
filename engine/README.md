@@ -48,6 +48,7 @@ cargo run --release -p engine --example resize
 cargo run --release -p engine --example pipelines
 cargo run --release -p engine --example textured_cube
 cargo run --release -p engine --example render_passes
+cargo run --release -p engine --example bloom
 ```
 
 - `teapot` — minimal scene: load an OBJ model and render it with a basic shader.
@@ -55,5 +56,6 @@ cargo run --release -p engine --example render_passes
 - `pipelines` — several shader pipelines (Gouraud, Phong, alpha-blended, additive-blended) drawn together with orbit camera controls.
 - `textured_cube` — OBJ/MTL loading with textured materials.
 - `render_passes` — multipass rendering: clouds and a lit teapot composited into an offscreen render target, then run through a swappable post-processing pass (press SPACE to cycle effects).
+- `bloom` — SIMD-accelerated multipass bloom rendering: render a teapot in glass, extract bright areas, apply a Gaussian blur, and composite the blurred result back onto the scene.
 
 The engine is designed as a thin layer over the renderer, keeping the underlying `cpu_rasteriser` reusable as a standalone software graphics library.
