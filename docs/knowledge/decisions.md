@@ -6,8 +6,9 @@ sources:
   - cpu_rasteriser/src/framebuffer.rs
   - cpu_rasteriser/src/maths/mat4.rs
   - engine/src/components/camera.rs
+  - engine/src/components/texture.rs
   - README.md
-verified: 530e0dd
+verified: 4e5fb07
 ---
 
 # Design decisions and history
@@ -34,7 +35,8 @@ Decisions whose reasoning isn't obvious from the current code. Each entry gives 
 ## Decisions
 
 - **Tiles own their buffers.** This avoids all locking during fragment processing, at the cost of load and merge copies. *Evidence:* README "Parallel Tile-Based Rendering".
-  - Tiles were moved from per-triangle allocation to per-frame allocation in `e876c98` ("Preallocate tiles at the start of the frame…"). They are now allocated per pass.
+  - Tiles were moved from per-triangle allocation to per-frame allocation in `e876c98` ("Preallocate tiles at the start of the frame…"). Their buffers now come from a pool that persists across passes, so a warm pass allocates none.
+- **`RenderTarget` holds no sampling state.** A render target is its framebuffer and depth buffer; it offers allocation-free reads (`write_pixels`, `write_pixels_u32`) and nothing shaped around one use. Reusing texture storage across frames is a texture concern, so it is part of `engine`'s `Texture` (`from_render_target`, `update_from`): a texture whose pixels come from a render target, not a separate type. *Evidence:* the commit that introduced `RenderTarget::write_pixels`.
 - **Raster commands are `Arc`-shared across tiles.** This avoids cloning triangles, shaders and uniforms into every overlapping tile. *Evidence:* `d1a643a` "Optimize tile command storage with Arc".
 - **Draw commands are type-erased (`Box<dyn RenderPassCommand>`)** so one pass can contain draws from pipelines with different shader types, scalar and SIMD. *Evidence:* the rustdoc on `RenderPassCommand`; README "multiple pipelines per render pass".
 - **Shaders are generic traits with associated types,** not runtime-configurable shading. This gives compile-time type safety between vertex output and fragment input. *Evidence:* README "Generic Shader Pipeline Architecture", which credits the `black` project as inspiration.

@@ -483,6 +483,14 @@ struct BloomApp {
     bloom_half: RenderTarget,
     bloom_quarter: RenderTarget,
 
+    // One per place a target is sampled, so each frame reuses last frame's storage.
+    // bloom_half is sampled twice per frame, while the first sampler is still alive.
+    scene_texture: Texture,
+    bright_texture: Texture,
+    bloom_half_texture: Texture,
+    bloom_quarter_texture: Texture,
+    composite_bloom_texture: Texture,
+
     background_pipeline: SimdPipeline<BackgroundVertexShader, BackgroundFragmentShader>,
     teapot_pipeline: SimdPipeline<PhongVertexShader, PhongFragmentShader>,
     glass_pipeline: SimdPipeline<PhongVertexShader, PhongFragmentShader>,
@@ -621,6 +629,12 @@ impl BloomApp {
             teapot,
             cube,
             fullscreen_quad,
+
+            scene_texture: Texture::from_render_target(&scene_target),
+            bright_texture: Texture::from_render_target(&bright_target),
+            bloom_half_texture: Texture::from_render_target(&bloom_half),
+            bloom_quarter_texture: Texture::from_render_target(&bloom_quarter),
+            composite_bloom_texture: Texture::from_render_target(&bloom_half),
 
             scene_target,
             bright_target,
@@ -766,7 +780,11 @@ impl Application for BloomApp {
         // Convert the HDR scene target to a texture sampler.
         // =====================================================================
 
-        let scene_texture = Arc::new(render_target_sampler(&self.scene_target));
+        self.scene_texture.update_from(&self.scene_target);
+        let scene_texture = Arc::new(
+            self.scene_texture
+                .sampler(WrapMode::Clamp, FilterMode::Linear),
+        );
 
         // =====================================================================
         // PASS 3: Extract bright pixels
@@ -803,7 +821,11 @@ impl Application for BloomApp {
         // bright_target 640×360 -> bloom_half 320×180
         // =====================================================================
 
-        let bright_texture = Arc::new(render_target_sampler(&self.bright_target));
+        self.bright_texture.update_from(&self.bright_target);
+        let bright_texture = Arc::new(
+            self.bright_texture
+                .sampler(WrapMode::Clamp, FilterMode::Linear),
+        );
 
         let extent = self.bloom_half.extent();
 
@@ -834,7 +856,11 @@ impl Application for BloomApp {
         // bloom_half 320×180 -> bloom_quarter 160×90
         // =====================================================================
 
-        let bloom_half_texture = Arc::new(render_target_sampler(&self.bloom_half));
+        self.bloom_half_texture.update_from(&self.bloom_half);
+        let bloom_half_texture = Arc::new(
+            self.bloom_half_texture
+                .sampler(WrapMode::Clamp, FilterMode::Linear),
+        );
 
         let extent = self.bloom_quarter.extent();
 
@@ -865,7 +891,11 @@ impl Application for BloomApp {
         // bloom_quarter 160×90 -> bloom_half 320×180
         // =====================================================================
 
-        let bloom_quarter_texture = Arc::new(render_target_sampler(&self.bloom_quarter));
+        self.bloom_quarter_texture.update_from(&self.bloom_quarter);
+        let bloom_quarter_texture = Arc::new(
+            self.bloom_quarter_texture
+                .sampler(WrapMode::Clamp, FilterMode::Linear),
+        );
 
         let extent = self.bloom_half.extent();
 
@@ -896,7 +926,11 @@ impl Application for BloomApp {
         // bloom_half 320×180 + scene 640×360 -> presentation 640×360
         // =====================================================================
 
-        let bloom_half_texture = Arc::new(render_target_sampler(&self.bloom_half));
+        self.composite_bloom_texture.update_from(&self.bloom_half);
+        let bloom_half_texture = Arc::new(
+            self.composite_bloom_texture
+                .sampler(WrapMode::Clamp, FilterMode::Linear),
+        );
 
         let extent = context.presentation_target().extent();
 

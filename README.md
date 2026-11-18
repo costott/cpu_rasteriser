@@ -60,8 +60,9 @@ let mut pass = context.begin_render_pass(&mut scene_target, RenderPassDescriptor
 model.draw_to_render_pass(&mut pass, &model_pipeline, vertex_uniforms, fragment_uniforms);
 pass.finish();
 
-// Convert the finished target into a sampleable texture.
-let scene_texture = Arc::new(render_target_sampler(&scene_target));
+// Copy the finished target into a texture kept across frames, which reuses its storage.
+scene_texture.update_from(&scene_target);
+let scene_sampler = Arc::new(scene_texture.sampler(WrapMode::Clamp, FilterMode::Linear));
 
 // Pass 2: post-process into the presentation target (e.g. chromatic aberration, vignette,
 // greyscale, invert, Gaussian blur, Sobel edge detection).
@@ -71,7 +72,7 @@ let mut pass = context.begin_presentation_pass(RenderPassDescriptor {
     depth_load_op: None,
 });
 fullscreen_quad.draw_to_render_pass(&mut pass, &postprocess_pipeline, vertex_uniforms, |_| FragmentUniforms {
-    source: scene_texture.clone(),
+    source: scene_sampler.clone(),
     // ...
 });
 pass.finish()

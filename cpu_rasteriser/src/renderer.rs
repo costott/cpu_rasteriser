@@ -61,12 +61,14 @@ use crate::graphics::geometry_processing::GeometryProcessor;
 /// rendering. Internal rasterisation work is dispatched across worker threads automatically.
 pub struct Renderer {
     thread_pool: ThreadPool,
+    tile_pool: TilePool,
 }
 impl Renderer {
     /// Creates a new renderer.
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
             thread_pool: ThreadPool::new(std::thread::available_parallelism()?.get()),
+            tile_pool: TilePool::default(),
         })
     }
 
@@ -95,7 +97,8 @@ impl Renderer {
             depth_load_op,
         } = descriptor;
 
-        let tile_binner = TileBinner::new(target, colour_load_op, depth_load_op);
+        let tile_binner =
+            TileBinner::new(target, colour_load_op, depth_load_op, &mut self.tile_pool);
 
         RenderPass {
             renderer: self,
@@ -127,24 +130,59 @@ impl Renderer {
     }
 
     fn merge_tile(&mut self, result: TileResult, render_target: &mut RenderTarget) {
-        for y in 0..result.framebuffer.height() {
-            for x in 0..result.framebuffer.width() {
-                let position = Vec2::new(
-                    result.bounds.min_x as f32 + x as f32,
-                    result.bounds.min_y as f32 + y as f32,
-                );
+        let TileResult {
+            bounds,
+            framebuffer,
+            depthbuffer,
+        } = result;
 
-                if let Some(colour) = result.framebuffer.get_pixel((x, y).into()) {
-                    render_target.framebuffer.set_pixel(position, colour);
-                }
+        let (x, y) = (bounds.min_x as usize, bounds.min_y as usize);
+        let size = framebuffer.extent();
 
-                if let (Some(dst), Some(src)) = (
-                    render_target.depthbuffer.as_mut(),
-                    result.depthbuffer.as_ref(),
-                ) {
-                    dst.set_depth((position.x, position.y).into(), src.get((x, y).into()));
-                }
+        render_target
+            .framebuffer
+            .blit_from((x, y), &framebuffer, (0, 0), size);
+
+        if let (Some(dst), Some(src)) = (render_target.depthbuffer.as_mut(), depthbuffer.as_ref()) {
+            dst.blit_from((x, y), src, (0, 0), size);
+        }
+
+        self.tile_pool.recycle(framebuffer, depthbuffer);
+    }
+}
+
+/// Tile buffers reused across render passes. Buffers taken from the pool keep stale contents, so
+/// callers must overwrite or clear them.
+#[derive(Default)]
+struct TilePool {
+    framebuffers: Vec<FrameBuffer>,
+    depthbuffers: Vec<DepthBuffer>,
+}
+impl TilePool {
+    fn take_framebuffer(&mut self, width: usize, height: usize) -> FrameBuffer {
+        match self.framebuffers.pop() {
+            Some(mut framebuffer) => {
+                framebuffer.resize(width, height);
+                framebuffer
             }
+            None => FrameBuffer::new(width, height),
+        }
+    }
+
+    fn take_depthbuffer(&mut self, width: usize, height: usize) -> DepthBuffer {
+        match self.depthbuffers.pop() {
+            Some(mut depthbuffer) => {
+                depthbuffer.resize(width, height);
+                depthbuffer
+            }
+            None => DepthBuffer::new(width, height),
+        }
+    }
+
+    fn recycle(&mut self, framebuffer: FrameBuffer, depthbuffer: Option<DepthBuffer>) {
+        self.framebuffers.push(framebuffer);
+        if let Some(depthbuffer) = depthbuffer {
+            self.depthbuffers.push(depthbuffer);
         }
     }
 }
@@ -173,8 +211,59 @@ impl RenderTarget {
         self.framebuffer.pixels_compact()
     }
 
+    /// Writes the pixels into `out`, row by row, without allocating.
+    ///
+    /// Elements of `out` past `width * height` are left untouched. This is the allocation-free
+    /// form of [`RenderTarget::pixels`], for reusing one buffer across reads.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `out` is shorter than `width * height`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let target = RenderTarget::new(Extent::new(4, 2));
+    /// let mut pixels = vec![Colour::WHITE; 4 * 2];
+    ///
+    /// target.write_pixels(&mut pixels);
+    ///
+    /// assert_eq!(pixels, target.pixels());
+    /// ```
+    pub fn write_pixels(&self, out: &mut [Colour]) {
+        self.framebuffer.write_pixels(out);
+    }
+
     pub fn pixels_u32(&self) -> Vec<u32> {
         self.framebuffer.pixels_u32()
+    }
+
+    /// Writes the pixels into `out` as packed `0xAARRGGBB` values, row by row, without allocating.
+    ///
+    /// Each channel is clamped to `[0, 1]` and NaN becomes 0, as in [`Colour::to_u32`]. Elements
+    /// of `out` past `width * height` are left untouched. This is the allocation-free form of
+    /// [`RenderTarget::pixels_u32`], for writing straight into a presentation buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `out` is shorter than `width * height`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let target = RenderTarget::new(Extent::new(4, 2));
+    /// let mut presentation = vec![0; 4 * 2];
+    ///
+    /// target.write_pixels_u32(&mut presentation);
+    ///
+    /// assert_eq!(presentation, target.pixels_u32());
+    /// ```
+    pub fn write_pixels_u32(&self, out: &mut [u32]) {
+        self.framebuffer.write_pixels_u32(out);
     }
 
     pub fn width(&self) -> usize {
@@ -1252,6 +1341,7 @@ impl TileBinner {
         render_target: &RenderTarget,
         colour_load_op: LoadOp<Colour>,
         depth_load_op: Option<LoadOp<f32>>,
+        pool: &mut TilePool,
     ) -> Self {
         let tiles_x = render_target.width().div_ceil(Self::TILE_SIZE as usize);
 
@@ -1273,6 +1363,7 @@ impl TileBinner {
                     render_target,
                     &colour_load_op,
                     &depth_load_op,
+                    pool,
                 ));
             }
         }
@@ -1321,29 +1412,24 @@ impl Tile {
         render_target: &RenderTarget,
         colour_load_op: &LoadOp<Colour>,
         depth_load_op: &Option<LoadOp<f32>>,
+        pool: &mut TilePool,
     ) -> Self {
         let width = (bounds.max_x - bounds.min_x) as usize;
 
         let height = (bounds.max_y - bounds.min_y) as usize;
 
-        let mut framebuffer = FrameBuffer::new(width, height);
+        let (min_x, min_y) = (bounds.min_x as usize, bounds.min_y as usize);
+
+        let mut framebuffer = pool.take_framebuffer(width, height);
 
         match colour_load_op {
             LoadOp::Load => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let target_position = Vec2::new(
-                            bounds.min_x as f32 + x as f32,
-                            bounds.min_y as f32 + y as f32,
-                        );
-
-                        let tile_position = Vec2::new(x as f32, y as f32);
-
-                        if let Some(colour) = render_target.framebuffer.get_pixel(target_position) {
-                            framebuffer.set_pixel(tile_position, colour);
-                        }
-                    }
-                }
+                framebuffer.blit_from(
+                    (0, 0),
+                    &render_target.framebuffer,
+                    (min_x, min_y),
+                    Extent::new(width, height),
+                );
             }
             LoadOp::Clear(colour) => {
                 framebuffer.clear(*colour);
@@ -1357,22 +1443,16 @@ impl Tile {
                     .as_ref()
                     .expect("depth load op specified but render target has no depth buffer");
 
-                let mut depthbuffer = DepthBuffer::new(width, height);
+                let mut depthbuffer = pool.take_depthbuffer(width, height);
 
                 match load_op {
                     LoadOp::Load => {
-                        for y in 0..height {
-                            for x in 0..width {
-                                let target_position = Vec2::new(
-                                    bounds.min_x as f32 + x as f32,
-                                    bounds.min_y as f32 + y as f32,
-                                );
-
-                                let tile_position = Vec2::new(x as f32, y as f32);
-
-                                depthbuffer.set_depth(tile_position, src.get(target_position));
-                            }
-                        }
+                        depthbuffer.blit_from(
+                            (0, 0),
+                            src,
+                            (min_x, min_y),
+                            Extent::new(width, height),
+                        );
                     }
 
                     LoadOp::Clear(depth) => {

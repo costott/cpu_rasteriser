@@ -17,7 +17,7 @@ It introduces concepts that intentionally do not exist in the rasteriser itself,
 - Materials (ambient/diffuse/specular/shininess, with texture slots)
 - Textures, with configurable wrap mode (repeat/clamp) and filter mode (nearest/bilinear)
 - Directional lighting
-- Render-to-texture: any `RenderTarget` can be sampled as a texture in a later pass via `render_target_sampler`
+- Render-to-texture: any `RenderTarget` can be copied into a `Texture` (`Texture::from_render_target`) and sampled in a later pass; `Texture::update_from` refills it every frame without reallocating
 - Multipass rendering and post-processing pipelines (chromatic aberration, vignette, greyscale, invert, Gaussian blur, Sobel edge detection are demonstrated as examples)
 - Automatic window-resize handling
 

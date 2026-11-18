@@ -1,6 +1,7 @@
 ---
 sources:
   - cpu_rasteriser/src/renderer.rs
+  - cpu_rasteriser/src/grid.rs
   - cpu_rasteriser/src/graphics/triangle.rs
   - cpu_rasteriser/src/graphics/fragment.rs
   - cpu_rasteriser/src/graphics/fragment_shader.rs
@@ -12,7 +13,7 @@ sources:
   - .cargo/config.toml
   - rasteriser_macros/src/lib.rs
   - engine/src/components/texture.rs
-verified: 1659598
+verified: 4e5fb07
 ---
 
 # SIMD path
@@ -45,9 +46,9 @@ The path is selected at compile time per draw. `SimdPipeline` plus `RenderPass::
 
 ## The padding invariant behind the unchecked accesses
 
-Both `FrameBuffer` and `DepthBuffer` use `stride = (width + 7).next_multiple_of(8)`. That guarantees `x + 8 ≤ stride` for every `x < width`. An 8-wide access starting at any in-bounds pixel therefore stays within that row's allocation.
+`FrameBuffer` and `DepthBuffer` store their data in a `Grid`, whose `stride_for` uses `stride = (width + 7).next_multiple_of(8)`. That guarantees `x + 8 ≤ stride` for every `x < width`. An 8-wide access starting at any in-bounds pixel therefore stays within that row's allocation.
 
-Tile buffers are separate allocations with their own padded stride, so the invariant holds in tile-local coordinates.
+Tile buffers are separate allocations with their own padded stride, so the invariant holds in tile-local coordinates. Pooled tile buffers recompute the stride whenever they are resized for a new pass.
 - Lanes past the row's logical width read and write padding.
 - The masked depth write rewrites lanes between the span end and the group end with their own current values. This is benign only because a tile is single-threaded.
 

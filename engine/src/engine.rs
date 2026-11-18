@@ -190,7 +190,7 @@ where
 
         let mut buffer = surface.buffer_mut().unwrap();
 
-        buffer.copy_from_slice(&self.presentation_target.pixels_u32());
+        self.presentation_target.write_pixels_u32(&mut buffer);
         buffer.present().unwrap();
     }
 }
@@ -405,6 +405,7 @@ where
     app_handle: AppHandle,
     renderer: Renderer,
     presentation_target: RenderTarget,
+    pixel_buffer: Vec<u32>,
     window: minifb::Window,
     last_frame: Instant,
     input_state: InputState,
@@ -439,6 +440,7 @@ where
             app_handle: AppHandle::default(),
             renderer: Renderer::new()?,
             presentation_target: RenderTarget::new(Extent::new(width, height)).with_depth(),
+            pixel_buffer: Vec::new(),
             window,
             last_frame: Instant::now(),
             input_state: InputState::default(),
@@ -560,12 +562,15 @@ where
         let mut context = RenderContext::new(&mut self.renderer, &mut self.presentation_target);
         let _ = self.app.render(&mut context);
 
+        let width = self.presentation_target.width();
+        let height = self.presentation_target.height();
+
+        self.pixel_buffer.resize(width * height, 0);
+        self.presentation_target
+            .write_pixels_u32(&mut self.pixel_buffer);
+
         self.window
-            .update_with_buffer(
-                &self.presentation_target.pixels_u32(),
-                self.presentation_target.width(),
-                self.presentation_target.height(),
-            )
+            .update_with_buffer(&self.pixel_buffer, width, height)
             .map_err(|err| err.into())
     }
 
