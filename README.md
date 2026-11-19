@@ -426,6 +426,20 @@ Potential extensions:
 
 ---
 
+## Development Process
+
+Up to and including v0.5.1, the project was developed with a conversational, ChatGPT-assisted workflow: I worked through designs and code in conversation, then integrated and adapted the code into the project manually.
+
+From then on, the project is developed with an agentic workflow using [Claude Code](https://claude.com/claude-code):
+
+- **Scope and design first.** Each change starts with its scope and design agreed before any code is written.
+- **One change, one worktree.** Each change gets its own git worktree and branch, and lands as a single self-contained commit and PR.
+- **Independent review.** A separate read-only reviewer agent checks the diff against the requirements and the coding principles.
+- **Evidence for performance.** Performance claims need before/after measurements.
+- **Persistent context.** [`CLAUDE.md`](./CLAUDE.md) and the internals knowledge base in [`docs/knowledge/`](./docs/knowledge/) give the agent the architecture and design history up front. Each document records the commit it was last verified against.
+
+---
+
 ## Built With
 
 - **Language:** Rust

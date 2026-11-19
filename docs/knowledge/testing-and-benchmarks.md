@@ -1,0 +1,44 @@
+---
+sources:
+  - cpu_rasteriser/Cargo.toml
+  - engine/Cargo.toml
+  - cpu_rasteriser/.cargo/config.toml
+  - engine/.cargo/config.toml
+  - cpu_rasteriser/benches/rasterise_segment.rs
+  - cpu_rasteriser/benches/raster_command.rs
+  - engine/benches/texture_sampling.rs
+  - engine/examples/bloom.rs
+verified: 530e0dd
+---
+
+# Testing, benchmarks and build flags
+
+## Build flags
+
+`target-cpu=native` is set in `cpu_rasteriser/.cargo/config.toml` and `engine/.cargo/config.toml`, but Cargo reads config files starting from the **current working directory**. It applies only when cargo runs from inside one of those crate directories. `cargo run -p engine --example bloom` from the workspace root builds **without** AVX or FMA ([#20](https://github.com/costott/cpu_rasteriser/issues/20)). Performance comparisons must therefore state which directory cargo was run from.
+
+There is no custom `[profile.release]`. The only formatting configuration is rustfmt's defaults, and the code is currently `cargo fmt --check` clean.
+
+## Tests
+
+- **Location:** unit tests sit in `#[cfg(test)] mod tests` beside the code. Names are descriptive behaviour phrases, e.g. `rasterise_respects_bounds`, `process_triangle_culls_back_facing_triangles`.
+- **Coverage:** concentrated on maths, geometry processing, triangle rasterisation, blending and SIMD/scalar equivalence. There are no integration tests that render a whole pass and compare images.
+- **Fakes:** the unit tests and benches write `SimdInterpolate` implementations by hand. See `simd.md`.
+- **Doctests:** most doc examples are marked `ignore`. The one on `Renderer` isn't, and it doesn't compile ([#25](https://github.com/costott/cpu_rasteriser/issues/25)).
+- **Baseline:** the current pass and fail baseline is in the project `CLAUDE.md`.
+
+## Benchmarks (criterion 0.7, `harness = false`)
+
+| Bench | Measures |
+|---|---|
+| `cpu_rasteriser/benches/rasterise_segment.rs` | Scanline rasterisation, scalar and SIMD, across triangle sizes, shapes and bounds: bare overhead and compute, fragment callbacks with depth writes and full shading, throughput, a scalar against SIMD shader comparison, and 8-pixel framebuffer stores |
+| `cpu_rasteriser/benches/raster_command.rs` | Whole raster commands in groups `pre_simd`, `simd_scalar_shader` and `simd_shader` |
+| `engine/benches/texture_sampling.rs` | Texture sampler variants. Some benchmark functions are defined but unused (clippy `dead_code`). |
+
+**The benches contain their own copies of the raster command logic.** The renderer's `RasterCommand` types are private, so the benches re-implement them. Changing `TriangleRasterCommand(Simd)` in `renderer.rs` doesn't change what the benches measure. Keep the copies in sync deliberately, or say that they diverge. `pre_simd` is a frozen historical baseline.
+
+## Measuring performance
+
+1. Compare before and after on the same machine, in the same session, with the same cargo invocation directory.
+2. Release builds only.
+3. For whole-frame work, the bloom example (`engine/examples/bloom.rs`) is the established workload. Check that output is unchanged.
