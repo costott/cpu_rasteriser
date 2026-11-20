@@ -1,27 +1,28 @@
 ---
 sources:
+  - cpu_rasteriser/src/grid.rs
   - cpu_rasteriser/src/framebuffer.rs
   - cpu_rasteriser/src/depthbuffer.rs
   - cpu_rasteriser/src/colour.rs
   - cpu_rasteriser/src/renderer.rs
-verified: 530e0dd
+verified: 4e5fb07
 ---
 
 # Buffers, colour and blending
 
 ## `FrameBuffer` and `DepthBuffer`
 
-- **Layout:** both are row-major `Vec`s with a padded stride (see `simd.md` for the invariant). `FrameBuffer` stores `Colour`, so its layout is an array of structs (AoS). `DepthBuffer` stores `f32`.
-- **Duplication:** the two are structurally duplicated: stride computation, `index`/`index_unchecked`, the `*8_unchecked` accessors, and `resize`.
-- **Planned layout change:** `FrameBuffer` carries a TODO to move to a struct-of-arrays layout (separate channel `Vec`s) for SIMD loads and stores. A shared abstraction must not block that.
+- **Layout:** both wrap a crate-private `Grid<T>` (`grid.rs`): a row-major `Vec` with a padded stride (see `simd.md` for the invariant), row access, a row-wise region copy (`blit_from`) and in-place `resize`. `FrameBuffer` stores `Colour`, so its layout is an array of structs (AoS). `DepthBuffer` stores `f32`.
+- **Shared layout:** stride, indexing, `fill`, `resize` and region copies live once in `Grid`. The `*8_unchecked` accessors stay in each buffer, because they depend on the element type.
+- **Planned layout change:** `FrameBuffer` carries a TODO to move to a struct-of-arrays layout (separate channel `Vec`s) for SIMD loads and stores. A shared abstraction must not block that. `Grid` is generic over its element, so a struct-of-arrays `FrameBuffer` can hold one `Grid<f32>` per channel.
 - **Accessor families:**
   - Bounds-checked `get_pixel`/`set_pixel`. These ignore out-of-range writes and return `None` on out-of-range reads.
   - `index_unchecked`, plus `unsafe` single-element and 8-wide accessors.
   - `DepthBuffer::get`/`set_depth` aren't bounds-checked against the logical size in release builds. Only `index`'s `debug_assert`s check it, so release builds panic only beyond the allocation.
 - **Positions:** positions are passed as `Vec2` and truncated with `as usize`.
 - **Dead accessors:** `set8_{r,g,b}_unchecked(_with_mask)` and `get8_{r,g,b}_unchecked` are used nowhere outside `framebuffer.rs`. The `g` and `b` setters write into the red channel ([#23](https://github.com/costott/cpu_rasteriser/issues/23)).
-- **Resizing:** `resize` keeps the old allocation and recomputes the stride. Existing contents become meaningless.
-- **Reading pixels back:** `pixels_compact` and `pixels_u32` strip the padding and allocate a new `Vec` on every call.
+- **Resizing:** `resize` reuses the allocation where it is large enough and recomputes the stride. Existing contents become meaningless.
+- **Reading pixels back:** `pixels_compact` and `pixels_u32` strip the padding into a new `Vec` on every call. `write_pixels` and `write_pixels_u32` write into the caller's slice without allocating; `write_pixels_u32` packs eight pixels at a time. Its clamp uses `f32x8::max` rather than `fast_max`, because only `max` picks the non-NaN operand on every target, so NaN becomes 0 as in `Colour::to_u32`.
 
 ## `RenderTarget`
 

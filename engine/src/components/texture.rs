@@ -32,6 +32,60 @@ impl Texture {
         })
     }
 
+    /// Creates a texture holding a copy of the render target's current pixels.
+    ///
+    /// To copy from the same target repeatedly, keep the texture and refill it with
+    /// [`Texture::update_from`].
+    pub fn from_render_target(render_target: &RenderTarget) -> Self {
+        Self {
+            width: render_target.width() as u32,
+            height: render_target.height() as u32,
+            pixels: Self::copy_pixels(render_target),
+        }
+    }
+
+    /// Replaces the texture's contents with the render target's current pixels.
+    ///
+    /// Samplers and clones made earlier keep the pixels they were made with. The existing storage
+    /// is reused only when nothing else shares it, so drop the previous samplers before calling
+    /// this to avoid a new allocation each time.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let target = RenderTarget::new(Extent::new(4, 2));
+    /// let mut texture = Texture::from_render_target(&target);
+    ///
+    /// for _frame in 0..3 {
+    ///     // ... render into `target` ...
+    ///     texture.update_from(&target);
+    ///     let sampler = texture.sampler(WrapMode::Clamp, FilterMode::Linear);
+    ///     assert_eq!((sampler.width(), sampler.height()), (4, 2));
+    /// }
+    /// ```
+    pub fn update_from(&mut self, render_target: &RenderTarget) {
+        let len = render_target.width() * render_target.height();
+
+        if let Some(pixels) = Arc::get_mut(&mut self.pixels).filter(|pixels| pixels.len() == len) {
+            render_target.write_pixels(pixels);
+        } else {
+            self.pixels = Self::copy_pixels(render_target);
+        }
+
+        self.width = render_target.width() as u32;
+        self.height = render_target.height() as u32;
+    }
+
+    fn copy_pixels(render_target: &RenderTarget) -> Arc<[Colour]> {
+        let len = render_target.width() * render_target.height();
+        let mut pixels: Arc<[Colour]> = std::iter::repeat_n(Colour::BLACK, len).collect();
+        render_target.write_pixels(Arc::get_mut(&mut pixels).expect("a new Arc is unique"));
+        pixels
+    }
+
     pub fn sampler(&self, wrap_mode: WrapMode, filter_mode: FilterMode) -> TextureSampler {
         TextureSampler::new(
             self.pixels.clone(),
@@ -267,16 +321,6 @@ impl TextureSampler {
     }
 }
 
-pub fn render_target_sampler(render_target: &RenderTarget) -> TextureSampler {
-    TextureSampler::new(
-        render_target.pixels().into(),
-        render_target.width() as u32,
-        render_target.height() as u32,
-        WrapMode::Clamp,
-        FilterMode::Linear,
-    )
-}
-
 #[derive(Debug)]
 pub enum TextureError {
     Image(image::ImageError),
@@ -300,4 +344,49 @@ pub enum WrapMode {
 pub enum FilterMode {
     Nearest,
     Linear,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn filled(extent: Extent, colour: Colour) -> RenderTarget {
+        let mut target = RenderTarget::new(extent);
+        let mut renderer = Renderer::new().unwrap();
+        renderer
+            .begin_render_pass(
+                &mut target,
+                RenderPassDescriptor {
+                    viewport: Viewport::full(&extent),
+                    colour_load_op: LoadOp::Clear(colour),
+                    depth_load_op: None,
+                },
+            )
+            .finish();
+        target
+    }
+
+    #[test]
+    fn update_from_never_changes_a_live_sampler_and_reuses_unshared_storage() {
+        let extent = Extent::new(10, 4);
+        let mut texture = Texture::from_render_target(&filled(extent, Colour::RED));
+        let first = texture.sampler(WrapMode::Clamp, FilterMode::Linear);
+
+        texture.update_from(&filled(extent, Colour::GREEN));
+        assert_ne!(texture.pixels.as_ptr(), first.pixels.as_ptr());
+        assert!(first.pixels.iter().all(|&c| c == Colour::RED));
+        assert!(texture.pixels.iter().all(|&c| c == Colour::GREEN));
+
+        let unshared = texture.pixels.as_ptr();
+        texture.update_from(&filled(extent, Colour::BLUE));
+        assert_eq!(texture.pixels.as_ptr(), unshared);
+        assert!(texture.pixels.iter().all(|&c| c == Colour::BLUE));
+        assert!(first.pixels.iter().all(|&c| c == Colour::RED));
+
+        texture.update_from(&filled(Extent::new(6, 3), Colour::BLUE));
+        assert_eq!(
+            (texture.width, texture.height, texture.pixels.len()),
+            (6, 3, 18)
+        );
+    }
 }

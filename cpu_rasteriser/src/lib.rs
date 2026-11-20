@@ -3,6 +3,7 @@ pub mod depthbuffer;
 pub mod extent;
 pub mod framebuffer;
 pub mod graphics;
+mod grid;
 pub mod maths;
 pub mod prelude;
 pub mod renderer;

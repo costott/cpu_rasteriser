@@ -432,6 +432,7 @@ struct MultipassApp {
     fullscreen_quad: Model<ObjVertex>,
 
     scene_target: RenderTarget,
+    scene_texture: Texture,
 
     cloud_pipeline: Pipeline<CloudVertexShader, CloudFragmentShader>,
     teapot_pipeline: Pipeline<PhongVertexShader, PhongFragmentShader>,
@@ -556,6 +557,7 @@ impl MultipassApp {
             teapot,
             fullscreen_quad,
 
+            scene_texture: Texture::from_render_target(&scene_target),
             scene_target,
 
             cloud_pipeline,
@@ -674,7 +676,11 @@ impl Application for MultipassApp {
         // Convert the result of passes 1 + 2 into a Texture.
         // ---------------------------------------------------------------------
 
-        let scene_texture = Arc::new(render_target_sampler(&self.scene_target));
+        self.scene_texture.update_from(&self.scene_target);
+        let scene_texture = Arc::new(
+            self.scene_texture
+                .sampler(WrapMode::Clamp, FilterMode::Linear),
+        );
 
         // ---------------------------------------------------------------------
         // PASS 3: post-process into the presentation target

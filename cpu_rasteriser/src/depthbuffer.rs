@@ -1,57 +1,56 @@
 use wide::f32x8;
 
+use crate::extent::Extent;
+use crate::grid::Grid;
 use crate::maths::Vec2;
 
 pub struct DepthBuffer {
-    width: usize,
-    stride: usize, // physical row stride, including SIMD padding
-    height: usize,
-    buffer: Vec<f32>,
+    depths: Grid<f32>,
 }
 impl DepthBuffer {
-    const SIMD_WIDTH: usize = 8;
+    const FAR: f32 = 1.0;
 
     pub fn new(width: usize, height: usize) -> Self {
-        let stride = (width + Self::SIMD_WIDTH - 1).next_multiple_of(Self::SIMD_WIDTH);
-
         Self {
-            width,
-            stride,
-            height,
-            buffer: vec![1.0; stride * height],
+            depths: Grid::new(width, height, Self::FAR),
         }
     }
 
     pub fn width(&self) -> usize {
-        self.width
+        self.depths.width()
     }
 
     pub fn height(&self) -> usize {
-        self.height
+        self.depths.height()
     }
 
     pub fn clear(&mut self, depth: f32) {
-        self.buffer.fill(depth);
+        self.depths.fill(depth);
     }
 
     pub fn resize(&mut self, width: usize, height: usize) {
-        self.width = width;
-        self.height = height;
-        self.stride = (width + Self::SIMD_WIDTH - 1).next_multiple_of(Self::SIMD_WIDTH);
-        self.buffer.resize(self.stride * height, 1.0);
+        self.depths.resize(width, height, Self::FAR);
+    }
+
+    pub(crate) fn blit_from(
+        &mut self,
+        dst_origin: (usize, usize),
+        src: &DepthBuffer,
+        src_origin: (usize, usize),
+        size: Extent,
+    ) {
+        self.depths
+            .blit_from(dst_origin, &src.depths, src_origin, size);
     }
 
     #[inline(always)]
     fn index(&self, x: usize, y: usize) -> usize {
-        debug_assert!(x < self.width);
-        debug_assert!(y < self.height);
-
-        y * self.stride + x
+        self.depths.index(x, y)
     }
 
     #[inline(always)]
     pub fn index_unchecked(&self, x: usize, y: usize) -> usize {
-        y * self.stride + x
+        self.depths.index_unchecked(x, y)
     }
 
     #[inline(always)]
@@ -60,37 +59,38 @@ impl DepthBuffer {
         let y = position.y as usize;
 
         let index = self.index(x, y);
-        self.buffer[index] = depth;
+        self.depths.as_mut_slice()[index] = depth;
     }
 
     pub unsafe fn set_depth_unchecked(&mut self, p: Vec2, depth: f32) {
         let index = self.index_unchecked(p.x as usize, p.y as usize);
 
         unsafe {
-            *self.buffer.get_unchecked_mut(index) = depth;
+            *self.depths.as_mut_slice().get_unchecked_mut(index) = depth;
         }
     }
 
     #[inline(always)]
     pub unsafe fn set8_unchecked(&mut self, index: usize, depth: f32x8) {
-        debug_assert!(index + 8 <= self.buffer.len());
+        debug_assert!(index + 8 <= self.depths.as_slice().len());
 
         // check if stores auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD store
         let values = depth.to_array();
+        let buffer = self.depths.as_mut_slice();
         unsafe {
-            *self.buffer.get_unchecked_mut(index) = values[0];
-            *self.buffer.get_unchecked_mut(index + 1) = values[1];
-            *self.buffer.get_unchecked_mut(index + 2) = values[2];
-            *self.buffer.get_unchecked_mut(index + 3) = values[3];
-            *self.buffer.get_unchecked_mut(index + 4) = values[4];
-            *self.buffer.get_unchecked_mut(index + 5) = values[5];
-            *self.buffer.get_unchecked_mut(index + 6) = values[6];
-            *self.buffer.get_unchecked_mut(index + 7) = values[7];
+            *buffer.get_unchecked_mut(index) = values[0];
+            *buffer.get_unchecked_mut(index + 1) = values[1];
+            *buffer.get_unchecked_mut(index + 2) = values[2];
+            *buffer.get_unchecked_mut(index + 3) = values[3];
+            *buffer.get_unchecked_mut(index + 4) = values[4];
+            *buffer.get_unchecked_mut(index + 5) = values[5];
+            *buffer.get_unchecked_mut(index + 6) = values[6];
+            *buffer.get_unchecked_mut(index + 7) = values[7];
         }
     }
 
     pub unsafe fn set8_unchecked_with_mask(&mut self, index: usize, depth: f32x8, mask: f32x8) {
-        debug_assert!(index + 8 <= self.buffer.len());
+        debug_assert!(index + 8 <= self.depths.as_slice().len());
 
         let current_depth = unsafe { self.get8_unchecked(index) };
         let new_depth = mask.select(depth, current_depth);
@@ -103,30 +103,31 @@ impl DepthBuffer {
         let x = position.x as usize;
         let y = position.y as usize;
 
-        self.buffer[self.index(x, y)]
+        self.depths.as_slice()[self.index(x, y)]
     }
 
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, p: Vec2) -> f32 {
         let index = self.index_unchecked(p.x as usize, p.y as usize);
 
-        unsafe { *self.buffer.get_unchecked(index) }
+        unsafe { *self.depths.as_slice().get_unchecked(index) }
     }
 
     #[inline(always)]
     pub unsafe fn get8_unchecked(&self, index: usize) -> f32x8 {
-        debug_assert!(index + 8 <= self.buffer.len());
+        debug_assert!(index + 8 <= self.depths.as_slice().len());
 
         // check if loads auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD load
+        let buffer = self.depths.as_slice();
         let values = [
-            unsafe { *self.buffer.get_unchecked(index) },
-            unsafe { *self.buffer.get_unchecked(index + 1) },
-            unsafe { *self.buffer.get_unchecked(index + 2) },
-            unsafe { *self.buffer.get_unchecked(index + 3) },
-            unsafe { *self.buffer.get_unchecked(index + 4) },
-            unsafe { *self.buffer.get_unchecked(index + 5) },
-            unsafe { *self.buffer.get_unchecked(index + 6) },
-            unsafe { *self.buffer.get_unchecked(index + 7) },
+            unsafe { *buffer.get_unchecked(index) },
+            unsafe { *buffer.get_unchecked(index + 1) },
+            unsafe { *buffer.get_unchecked(index + 2) },
+            unsafe { *buffer.get_unchecked(index + 3) },
+            unsafe { *buffer.get_unchecked(index + 4) },
+            unsafe { *buffer.get_unchecked(index + 5) },
+            unsafe { *buffer.get_unchecked(index + 6) },
+            unsafe { *buffer.get_unchecked(index + 7) },
         ];
         f32x8::new(values)
     }
