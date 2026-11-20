@@ -2,20 +2,20 @@
 sources:
   - cpu_rasteriser/Cargo.toml
   - engine/Cargo.toml
-  - cpu_rasteriser/.cargo/config.toml
-  - engine/.cargo/config.toml
+  - Cargo.toml
+  - .cargo/config.toml
   - cpu_rasteriser/benches/rasterise_segment.rs
   - cpu_rasteriser/benches/raster_command.rs
   - engine/benches/texture_sampling.rs
   - engine/examples/bloom.rs
-verified: 530e0dd
+verified: 1659598
 ---
 
 # Testing, benchmarks and build flags
 
 ## Build flags
 
-`target-cpu=native` is set in `cpu_rasteriser/.cargo/config.toml` and `engine/.cargo/config.toml`, but Cargo reads config files starting from the **current working directory**. It applies only when cargo runs from inside one of those crate directories. `cargo run -p engine --example bloom` from the workspace root builds **without** AVX or FMA ([#20](https://github.com/costott/cpu_rasteriser/issues/20)). Performance comparisons must therefore state which directory cargo was run from.
+`target-cpu=native` is set once, in the workspace-root `.cargo/config.toml`. Cargo searches for config files from the current working directory upwards, so the flag applies to every build in the workspace, whichever directory cargo runs from.
 
 There is no custom `[profile.release]`. The only formatting configuration is rustfmt's defaults, and the code is currently `cargo fmt --check` clean.
 
@@ -39,6 +39,6 @@ There is no custom `[profile.release]`. The only formatting configuration is rus
 
 ## Measuring performance
 
-1. Compare before and after on the same machine, in the same session, with the same cargo invocation directory.
+1. Compare before and after on the same machine, in the same session, with the same build configuration. A comparison across a change to the build flags measures that change too.
 2. Release builds only.
 3. For whole-frame work, the bloom example (`engine/examples/bloom.rs`) is the established workload. Check that output is unchanged.

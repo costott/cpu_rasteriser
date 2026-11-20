@@ -44,7 +44,7 @@ Run these from the workspace root.
 | Bench | `cargo bench -p cpu_rasteriser --bench rasterise_segment` (also `raster_command`, and `-p engine --bench texture_sampling`) |
 | Example | `cargo run --release -p <crate> --example <name>` (see the READMEs) |
 
-Running cargo from the workspace root does **not** enable `target-cpu=native` ([#20](https://github.com/costott/cpu_rasteriser/issues/20)); see `testing-and-benchmarks.md`. Run benchmarks and performance comparisons the same way every time, and say which way you used.
+`target-cpu=native` applies to every build in the workspace, whichever directory cargo runs from; see `testing-and-benchmarks.md`. Compare performance only between builds with the same build configuration.
 
 **Test baseline at `530e0dd`**, so new failures can be told apart from old ones:
 - 80 tests pass in `cpu_rasteriser`.
