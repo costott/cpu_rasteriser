@@ -9,10 +9,10 @@ sources:
   - cpu_rasteriser/src/framebuffer.rs
   - cpu_rasteriser/src/depthbuffer.rs
   - cpu_rasteriser/src/colour.rs
-  - cpu_rasteriser/.cargo/config.toml
+  - .cargo/config.toml
   - rasteriser_macros/src/lib.rs
   - engine/src/components/texture.rs
-verified: 530e0dd
+verified: 1659598
 ---
 
 # SIMD path
