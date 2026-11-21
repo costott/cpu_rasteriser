@@ -11,13 +11,19 @@ threadpool = "1.8.1"
 rasteriser_macros = { path = "../rasteriser_macros" }
 wide = "1.6.1"
 
+[features]
+# Exposes internal types and methods for the crate's own benchmarks. Not part of the public API.
+internals = []
+
 [dev-dependencies]
 criterion = "0.7"
 
 [[bench]]
 name = "rasterise_segment"
 harness = false
+required-features = ["internals"]
 
 [[bench]]
 name = "raster_command"
 harness = false
+required-features = ["internals"]
