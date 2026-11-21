@@ -646,7 +646,7 @@ impl Application for MultipassApp {
         );
 
         let scene = Arc::new(SceneUniforms {
-            camera: self.camera.clone(),
+            camera: self.camera,
             light: self.light.clone(),
         });
 

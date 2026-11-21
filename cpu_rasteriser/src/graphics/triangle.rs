@@ -5,7 +5,7 @@ use crate::graphics::fragment::{Fragment, FragmentSimd};
 
 use wide::f32x8;
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Triangle2D<V>
 where
     V: Interpolate,
@@ -392,7 +392,7 @@ impl<V: Interpolate> Edge<V> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TriangleClip<V>
 where
     V: Interpolate,
@@ -407,7 +407,7 @@ impl<V: Interpolate> TriangleClip<V> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Triangle3D<V: Clone> {
     pub a: V,
     pub b: V,

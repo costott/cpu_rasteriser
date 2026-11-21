@@ -66,7 +66,7 @@ pub fn load_mtl(path: impl AsRef<std::path::Path>) -> Result<Vec<Material>, MtlE
                         keyword: parts[0].to_owned(),
                     });
                 };
-                current_material = Some(Material::default(name.to_string()));
+                current_material = Some(Material::named(name.to_string()));
             }
             "Kd" => {
                 if let Some(material) = current_material.as_mut() {
@@ -205,7 +205,7 @@ mod tests {
             Colour::new(0.7, 0.8, 0.9, 1.0),
             32.0,
         );
-        assert_eq!(materials, [a, Material::default("b".to_owned())]);
+        assert_eq!(materials, [a, Material::named("b".to_owned())]);
     }
 
     #[test]

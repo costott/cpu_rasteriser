@@ -154,7 +154,7 @@ impl From<(i32, i32, i32)> for Vec3 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3Simd {
     pub x: f32x8,
     pub y: f32x8,

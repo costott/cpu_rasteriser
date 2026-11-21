@@ -53,6 +53,7 @@ pub trait Application {
     }
 }
 
+#[derive(Debug)]
 pub struct RenderContext<'a> {
     renderer: &'a mut Renderer,
     presentation_target: &'a mut RenderTarget,
@@ -95,6 +96,7 @@ impl<'a> RenderContext<'a> {
 
 /// A wrapper around the final [`RenderPass`] that will draw to the
 /// engine's presentation target.
+#[derive(Debug)]
 pub struct PresentationPass<'a, 'b> {
     render_pass: RenderPass<'a, 'b>,
 }
@@ -126,11 +128,12 @@ impl<'a, 'b> std::ops::DerefMut for PresentationPass<'a, 'b> {
 }
 /// Compiler proof token that the [`PresentationPass`] presents a finished pass to the engine's
 /// presentation target.
+#[derive(Debug)]
 pub struct PresentedFrame {
     _private: (),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AppEvent {
     CloseRequested,
     Resized { width: u32, height: u32 },
@@ -140,6 +143,7 @@ pub enum AppEvent {
     Input(InputEvent),
 }
 
+#[derive(Debug)]
 pub struct AppHandle {
     exit_requested: bool,
 }
