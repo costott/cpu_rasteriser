@@ -207,10 +207,10 @@ impl TextureSampler {
                 let tx = x - x0 as f32;
                 let ty = y - y0 as f32;
 
-                let c0 = Colour::lerp(&c00, &c10, tx);
-                let c1 = Colour::lerp(&c01, &c11, tx);
+                let c0 = Colour::lerp(c00, c10, tx);
+                let c1 = Colour::lerp(c01, c11, tx);
 
-                Colour::lerp(&c0, &c1, ty)
+                Colour::lerp(c0, c1, ty)
             }
         }
     }
@@ -264,10 +264,10 @@ impl TextureSampler {
             ]
         };
 
-        let c0 = Colour::lerp(&c00, &c10, tx);
-        let c1 = Colour::lerp(&c01, &c11, tx);
+        let c0 = Colour::lerp(c00, c10, tx);
+        let c1 = Colour::lerp(c01, c11, tx);
 
-        Colour::lerp(&c0, &c1, ty)
+        Colour::lerp(c0, c1, ty)
     }
 
     #[inline(always)]

@@ -82,7 +82,7 @@ impl FragmentShader<PhongVaryings> for PhongFragmentShader {
         let mut colour = uniforms.material.ambient;
 
         // Diffuse
-        let diffuse_strength = normal.dot(&light_dir).max(0.0);
+        let diffuse_strength = normal.dot(light_dir).max(0.0);
 
         colour += uniforms.material.diffuse * uniforms.scene.light.colour * diffuse_strength;
 
@@ -90,7 +90,7 @@ impl FragmentShader<PhongVaryings> for PhongFragmentShader {
         let reflect_dir = reflect(-light_dir, normal).normalise();
 
         let specular_strength = view_dir
-            .dot(&reflect_dir)
+            .dot(reflect_dir)
             .max(0.0)
             .powf(uniforms.material.shininess);
 
@@ -102,7 +102,7 @@ impl FragmentShader<PhongVaryings> for PhongFragmentShader {
 
 /// Reflects a vector around a normal, using the formula: R = V - 2 * (V . N) * N
 fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
-    vector - normal * 2.0 * vector.dot(&normal)
+    vector - normal * 2.0 * vector.dot(normal)
 }
 
 // -----------------------------------------------------------------------------
@@ -155,14 +155,14 @@ impl FragmentShader<CloudVaryings> for CloudFragmentShader {
         let cloud = (n1 + n2 + 0.5).clamp(0.0, 1.0);
 
         let sky = Colour::lerp(
-            &Colour::new(0.05, 0.1, 0.2, 1.0),
-            &Colour::new(0.3, 0.5, 0.7, 1.0),
+            Colour::new(0.05, 0.1, 0.2, 1.0),
+            Colour::new(0.3, 0.5, 0.7, 1.0),
             uv.y,
         );
 
         let cloud_colour = Colour::new(0.95, 0.97, 1.0, 1.0);
 
-        Colour::lerp(&sky, &cloud_colour, cloud * 0.75)
+        Colour::lerp(sky, cloud_colour, cloud * 0.75)
     }
 }
 
