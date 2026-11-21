@@ -850,6 +850,9 @@ fn bench_rasteriser_simd_callback(c: &mut Criterion) {
                             (fragment_simd.y - bounds.min_y) as usize,
                         );
 
+                        // SAFETY: `framebuffer` and `depthbuffer` are at least as large as
+                        // `bounds`, inside which `rasterise_segment_simd` keeps `x_start` and `y`,
+                        // so `index` is an in-bounds pixel.
                         let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
                         let pass = fragment_simd.depth.simd_lt(stored);
@@ -876,6 +879,8 @@ fn bench_rasteriser_simd_callback(c: &mut Criterion) {
 
                             let src = Colour::new(r[lane], g[lane], b[lane], 1.0);
 
+                            // SAFETY: `base` is an in-bounds pixel, as for the depth load, and
+                            // `lane < 8`.
                             unsafe {
                                 framebuffer.set_pixel_index_unchecked(base + lane, src);
                             }
@@ -913,6 +918,9 @@ fn bench_rasteriser_simd_depthwrite(c: &mut Criterion) {
                             (fragment_simd.y - bounds.min_y) as usize,
                         );
 
+                        // SAFETY: `framebuffer` and `depthbuffer` are at least as large as
+                        // `bounds`, inside which `rasterise_segment_simd` keeps `x_start` and `y`,
+                        // so `index` is an in-bounds pixel.
                         let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
                         let pass = fragment_simd.depth.simd_lt(stored);
@@ -939,11 +947,14 @@ fn bench_rasteriser_simd_depthwrite(c: &mut Criterion) {
 
                             let colour = Colour::new(r[lane], g[lane], b[lane], 1.0);
 
+                            // SAFETY: `base` is an in-bounds pixel, as for the depth load, and
+                            // `lane < 8`.
                             unsafe {
                                 framebuffer.set_pixel_index_unchecked(base + lane, colour);
                             }
                         }
 
+                        // SAFETY: `index` is an in-bounds pixel, as for the depth load.
                         unsafe {
                             depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
                         }
@@ -984,6 +995,9 @@ fn bench_rasteriser_simd_full(c: &mut Criterion) {
                             (fragment_simd.y - bounds.min_y) as usize,
                         );
 
+                        // SAFETY: `framebuffer` and `depthbuffer` are at least as large as
+                        // `bounds`, inside which `rasterise_segment_simd` keeps `x_start` and `y`,
+                        // so `index` is an in-bounds pixel.
                         let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
                         let depth_mask = fragment_simd.depth.simd_lt(stored);
@@ -1015,11 +1029,14 @@ fn bench_rasteriser_simd_full(c: &mut Criterion) {
 
                             let frag_colour = Colour::new(r[lane], g[lane], b[lane], 1.0);
 
+                            // SAFETY: `base` is an in-bounds pixel, as for the depth load, and
+                            // `lane < 8`.
                             unsafe {
                                 framebuffer.set_pixel_index_unchecked(base + lane, frag_colour);
                             }
                         }
 
+                        // SAFETY: `index` is an in-bounds pixel, as for the depth load.
                         unsafe {
                             depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, mask);
                         }
@@ -1108,6 +1125,8 @@ fn bench_framebuffer_set(c: &mut Criterion) {
             let index = 100_000;
 
             for lane in 0..8 {
+                // SAFETY: `100_000` is an in-bounds pixel of the 640 × 360 framebuffer, and
+                // `lane < 8`.
                 unsafe {
                     framebuffer.set_pixel_index_unchecked(index + lane, colours[lane]);
                 }

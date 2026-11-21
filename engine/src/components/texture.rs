@@ -86,6 +86,9 @@ impl Texture {
         pixels
     }
 
+    /// # Panics
+    ///
+    /// Panics if the texture's size or pixels break the requirements of [`TextureSampler::new`].
     pub fn sampler(&self, wrap_mode: WrapMode, filter_mode: FilterMode) -> TextureSampler {
         TextureSampler::new(
             self.pixels.clone(),
@@ -106,6 +109,15 @@ pub struct TextureSampler {
     filter_mode: FilterMode,
 }
 impl TextureSampler {
+    /// The largest supported width or height. Up to this value every `width - 1` and
+    /// `height - 1` converts to `f32` exactly, which keeps the clamped texel coordinates
+    /// computed in `f32` inside the texture.
+    const MAX_DIMENSION: u32 = 1 << f32::MANTISSA_DIGITS;
+
+    /// # Panics
+    ///
+    /// Panics if `width` or `height` is zero or greater than 2^24, or if `pixels` holds fewer
+    /// than `width * height` pixels.
     pub fn new(
         pixels: Arc<[Colour]>,
         width: u32,
@@ -113,6 +125,20 @@ impl TextureSampler {
         wrap_mode: WrapMode,
         filter_mode: FilterMode,
     ) -> Self {
+        assert!(
+            (1..=Self::MAX_DIMENSION).contains(&width)
+                && (1..=Self::MAX_DIMENSION).contains(&height),
+            "texture size {width}x{height} must be between 1 and {} in each dimension",
+            Self::MAX_DIMENSION,
+        );
+        assert!(
+            (width as usize)
+                .checked_mul(height as usize)
+                .is_some_and(|len| pixels.len() >= len),
+            "{} pixels are too few for a {width}x{height} texture",
+            pixels.len(),
+        );
+
         Self {
             pixels,
             width,
@@ -186,8 +212,15 @@ impl TextureSampler {
         self.pixels[(y * self.width + x) as usize]
     }
 
+    /// # Safety
+    ///
+    /// `x < self.width` and `y < self.height`.
     #[inline(always)]
     unsafe fn get_pixel_unchecked(&self, x: u32, y: u32) -> Colour {
+        // SAFETY: the caller guarantees `x` and `y` are inside the texture, so the index is below
+        // `width * height`, and `new` ensures `pixels` holds at least that many pixels. If the
+        // index overflows `u32` in a release build, `width * height` exceeds `u32::MAX`, so the
+        // wrapped index is still below `pixels.len()`.
         unsafe { *self.pixels.get_unchecked((y * self.width + x) as usize) }
     }
 
@@ -208,10 +241,17 @@ impl TextureSampler {
         let tx = x_f - x0 as f32;
         let ty = y_f - y0 as f32;
 
-        let c00 = unsafe { self.get_pixel_unchecked(x0, y0) };
-        let c10 = unsafe { self.get_pixel_unchecked(x1, y0) };
-        let c01 = unsafe { self.get_pixel_unchecked(x0, y1) };
-        let c11 = unsafe { self.get_pixel_unchecked(x1, y1) };
+        // SAFETY: `u` and `v` are clamped to [0, 1] (NaN converts to 0), and `new` limits the size
+        // so that `width - 1` and `height - 1` are exact in `f32`. So `x0 <= width - 1` and
+        // `y0 <= height - 1`, and `x1` and `y1` are clamped to the same limits.
+        let [c00, c10, c01, c11] = unsafe {
+            [
+                self.get_pixel_unchecked(x0, y0),
+                self.get_pixel_unchecked(x1, y0),
+                self.get_pixel_unchecked(x0, y1),
+                self.get_pixel_unchecked(x1, y1),
+            ]
+        };
 
         let c0 = Colour::lerp(&c00, &c10, tx);
         let c1 = Colour::lerp(&c01, &c11, tx);
@@ -267,10 +307,16 @@ impl TextureSampler {
 
         let ty = y_f - f32x8::new(y0.map(|y| y as f32));
 
-        let c00 = self.gather8(x0, y0);
-        let c10 = self.gather8(x1, y0);
-        let c01 = self.gather8(x0, y1);
-        let c11 = self.gather8(x1, y1);
+        // SAFETY: the coordinates are in range for the same reasons as in `sample_linear_clamp`.
+        // `fast_max` and `fast_min` may pass a NaN through, but NaN still converts to 0.
+        let [c00, c10, c01, c11] = unsafe {
+            [
+                self.gather8(x0, y0),
+                self.gather8(x1, y0),
+                self.gather8(x0, y1),
+                self.gather8(x1, y1),
+            ]
+        };
 
         let c0 = c00.lerp(c10, tx);
         let c1 = c01.lerp(c11, tx);
@@ -278,16 +324,24 @@ impl TextureSampler {
         c0.lerp(c1, ty)
     }
 
+    /// # Safety
+    ///
+    /// Every element of `xs` is below `self.width` and every element of `ys` below `self.height`.
     #[inline(always)]
-    fn gather8(&self, xs: [u32; 8], ys: [u32; 8]) -> ColourSimd {
-        let p0 = unsafe { self.get_pixel_unchecked(xs[0], ys[0]) };
-        let p1 = unsafe { self.get_pixel_unchecked(xs[1], ys[1]) };
-        let p2 = unsafe { self.get_pixel_unchecked(xs[2], ys[2]) };
-        let p3 = unsafe { self.get_pixel_unchecked(xs[3], ys[3]) };
-        let p4 = unsafe { self.get_pixel_unchecked(xs[4], ys[4]) };
-        let p5 = unsafe { self.get_pixel_unchecked(xs[5], ys[5]) };
-        let p6 = unsafe { self.get_pixel_unchecked(xs[6], ys[6]) };
-        let p7 = unsafe { self.get_pixel_unchecked(xs[7], ys[7]) };
+    unsafe fn gather8(&self, xs: [u32; 8], ys: [u32; 8]) -> ColourSimd {
+        // SAFETY: the caller guarantees every coordinate is inside the texture.
+        let [p0, p1, p2, p3, p4, p5, p6, p7] = unsafe {
+            [
+                self.get_pixel_unchecked(xs[0], ys[0]),
+                self.get_pixel_unchecked(xs[1], ys[1]),
+                self.get_pixel_unchecked(xs[2], ys[2]),
+                self.get_pixel_unchecked(xs[3], ys[3]),
+                self.get_pixel_unchecked(xs[4], ys[4]),
+                self.get_pixel_unchecked(xs[5], ys[5]),
+                self.get_pixel_unchecked(xs[6], ys[6]),
+                self.get_pixel_unchecked(xs[7], ys[7]),
+            ]
+        };
 
         ColourSimd {
             r: f32x8::new([p0.r, p1.r, p2.r, p3.r, p4.r, p5.r, p6.r, p7.r]),
@@ -317,7 +371,9 @@ impl TextureSampler {
             ys[lane] = y[lane].round() as u32;
         }
 
-        self.gather8(xs, ys)
+        // SAFETY: as in `sample_linear_clamp`, each coordinate is at most `width - 1` or
+        // `height - 1`, both exact integers in `f32`, so rounding can't exceed them.
+        unsafe { self.gather8(xs, ys) }
     }
 }
 
@@ -387,6 +443,41 @@ mod tests {
         assert_eq!(
             (texture.width, texture.height, texture.pixels.len()),
             (6, 3, 18)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "too few")]
+    fn sampler_rejects_fewer_pixels_than_its_size() {
+        TextureSampler::new(
+            Arc::from([Colour::BLACK; 3]),
+            2,
+            2,
+            WrapMode::Clamp,
+            FilterMode::Linear,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "must be between")]
+    fn sampler_rejects_an_empty_size() {
+        Texture {
+            width: 0,
+            height: 0,
+            pixels: Arc::from([]),
+        }
+        .sampler(WrapMode::Clamp, FilterMode::Linear);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be between")]
+    fn sampler_rejects_a_size_beyond_exact_f32_texel_coordinates() {
+        TextureSampler::new(
+            Arc::from([]),
+            (1 << 24) + 1,
+            1,
+            WrapMode::Clamp,
+            FilterMode::Linear,
         );
     }
 }
