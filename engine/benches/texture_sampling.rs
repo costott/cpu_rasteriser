@@ -1,85 +1,12 @@
 use std::hint::black_box;
 use std::sync::Arc;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-
 use cpu_rasteriser::{prelude::*, wide::f32x8};
-
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::components::texture::{FilterMode, TextureSampler, WrapMode};
 
 const SCREEN_WIDTH: usize = 1920;
 const SCREEN_HEIGHT: usize = 1080;
-
-fn make_texture(width: u32, height: u32) -> Arc<[Colour]> {
-    let mut pixels = Vec::with_capacity((width * height) as usize);
-
-    for y in 0..height {
-        for x in 0..width {
-            let r = x as f32 * 1.0 / width as f32;
-            let g = y as f32 * 1.0 / height as f32;
-            let b = (x + y) as f32 * 1.0 / (width + height) as f32;
-
-            let colour = Colour::new(r, g, b, 1.0);
-
-            pixels.push(colour);
-        }
-    }
-
-    pixels.into()
-}
-
-fn make_sampler(
-    width: u32,
-    height: u32,
-    wrap_mode: WrapMode,
-    filter_mode: FilterMode,
-) -> TextureSampler {
-    TextureSampler::new(
-        make_texture(width, height),
-        width,
-        height,
-        wrap_mode,
-        filter_mode,
-    )
-}
-
-fn make_fullscreen_uvs(width: usize, height: usize) -> Vec<Vec2> {
-    let mut uvs = Vec::with_capacity(width * height);
-
-    for y in 0..height {
-        for x in 0..width {
-            let u = x as f32 / (width - 1) as f32;
-            let v = y as f32 / (height - 1) as f32;
-
-            uvs.push(Vec2::new(u, v));
-        }
-    }
-
-    uvs
-}
-
-fn make_random_uvs(count: usize) -> Vec<Vec2> {
-    let mut state = 0x12345678u32;
-    let mut uvs = Vec::with_capacity(count);
-
-    for _ in 0..count {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-
-        let u = state as f32 / u32::MAX as f32;
-
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-
-        let v = state as f32 / u32::MAX as f32;
-
-        uvs.push(Vec2::new(u, v));
-    }
-
-    uvs
-}
 
 fn benchmark_sampling(c: &mut Criterion) {
     let mut group = c.benchmark_group("texture_sampling");
@@ -396,6 +323,77 @@ fn benchmark_simd_uv_patterns(c: &mut Criterion) {
     }
 
     group.finish();
+}
+
+fn make_fullscreen_uvs(width: usize, height: usize) -> Vec<Vec2> {
+    let mut uvs = Vec::with_capacity(width * height);
+
+    for y in 0..height {
+        for x in 0..width {
+            let u = x as f32 / (width - 1) as f32;
+            let v = y as f32 / (height - 1) as f32;
+
+            uvs.push(Vec2::new(u, v));
+        }
+    }
+
+    uvs
+}
+
+fn make_sampler(
+    width: u32,
+    height: u32,
+    wrap_mode: WrapMode,
+    filter_mode: FilterMode,
+) -> TextureSampler {
+    TextureSampler::new(
+        make_texture(width, height),
+        width,
+        height,
+        wrap_mode,
+        filter_mode,
+    )
+}
+
+fn make_texture(width: u32, height: u32) -> Arc<[Colour]> {
+    let mut pixels = Vec::with_capacity((width * height) as usize);
+
+    for y in 0..height {
+        for x in 0..width {
+            let r = x as f32 * 1.0 / width as f32;
+            let g = y as f32 * 1.0 / height as f32;
+            let b = (x + y) as f32 * 1.0 / (width + height) as f32;
+
+            let colour = Colour::new(r, g, b, 1.0);
+
+            pixels.push(colour);
+        }
+    }
+
+    pixels.into()
+}
+
+fn make_random_uvs(count: usize) -> Vec<Vec2> {
+    let mut state = 0x12345678u32;
+    let mut uvs = Vec::with_capacity(count);
+
+    for _ in 0..count {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+
+        let u = state as f32 / u32::MAX as f32;
+
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+
+        let v = state as f32 / u32::MAX as f32;
+
+        uvs.push(Vec2::new(u, v));
+    }
+
+    uvs
 }
 
 criterion_group!(

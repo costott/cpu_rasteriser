@@ -254,25 +254,6 @@ pub fn derive_simd_interpolate(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-fn type_name(ty: &Type) -> syn::Result<String> {
-    match ty {
-        Type::Path(path) if path.qself.is_none() => {
-            let segment = path
-                .path
-                .segments
-                .last()
-                .ok_or_else(|| syn::Error::new_spanned(ty, "missing type name"))?;
-
-            Ok(segment.ident.to_string())
-        }
-
-        _ => Err(syn::Error::new_spanned(
-            ty,
-            "SimdInterpolate only supports named types",
-        )),
-    }
-}
-
 fn simd_type(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
     match type_name(ty)?.as_str() {
         "f32" => Ok(quote! { ::cpu_rasteriser::wide::f32x8 }),
@@ -451,6 +432,25 @@ fn simd_extract_expr(ty: &Type, field: &syn::Ident) -> syn::Result<proc_macro2::
         _ => Err(syn::Error::new_spanned(
             ty,
             "SimdInterpolate only supports f32, Vec2, Vec3, and Vec4 fields",
+        )),
+    }
+}
+
+fn type_name(ty: &Type) -> syn::Result<String> {
+    match ty {
+        Type::Path(path) if path.qself.is_none() => {
+            let segment = path
+                .path
+                .segments
+                .last()
+                .ok_or_else(|| syn::Error::new_spanned(ty, "missing type name"))?;
+
+            Ok(segment.ident.to_string())
+        }
+
+        _ => Err(syn::Error::new_spanned(
+            ty,
+            "SimdInterpolate only supports named types",
         )),
     }
 }

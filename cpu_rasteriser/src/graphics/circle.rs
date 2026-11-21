@@ -1,22 +1,6 @@
 use crate::framebuffer::FrameBuffer;
 use crate::prelude::*;
 
-/// Plots the 8 symmetrical points of a circle given a center point and an offset (x, y) from the center.
-#[expect(
-    dead_code,
-    reason = "circle rasterisation is outside the pipeline until it returns (#28)"
-)]
-fn plot8(framebuffer: &mut FrameBuffer, center: Vec2, x: i32, y: i32, colour: Colour) {
-    framebuffer.set_pixel((center.x as i32 + x, center.y as i32 + y).into(), colour);
-    framebuffer.set_pixel((center.x as i32 - x, center.y as i32 + y).into(), colour);
-    framebuffer.set_pixel((center.x as i32 + x, center.y as i32 - y).into(), colour);
-    framebuffer.set_pixel((center.x as i32 - x, center.y as i32 - y).into(), colour);
-    framebuffer.set_pixel((center.x as i32 + y, center.y as i32 + x).into(), colour);
-    framebuffer.set_pixel((center.x as i32 - y, center.y as i32 + x).into(), colour);
-    framebuffer.set_pixel((center.x as i32 + y, center.y as i32 - x).into(), colour);
-    framebuffer.set_pixel((center.x as i32 - y, center.y as i32 - x).into(), colour);
-}
-
 /// Draws a circle using the basic circle drawing algorithm y = +-sqrt(r^2 - x^2) from the center point `center` with the specified `radius` and `colour`. Not filled.
 #[expect(
     dead_code,
@@ -58,4 +42,20 @@ pub fn draw_circle(framebuffer: &mut FrameBuffer, center: Vec2, radius: f32, col
             p = p + 2 * y - 2 * x + 1;
         }
     }
+}
+
+/// Plots the 8 symmetrical points of a circle given a center point and an offset (x, y) from the center.
+#[expect(
+    dead_code,
+    reason = "circle rasterisation is outside the pipeline until it returns (#28)"
+)]
+fn plot8(framebuffer: &mut FrameBuffer, center: Vec2, x: i32, y: i32, colour: Colour) {
+    framebuffer.set_pixel((center.x as i32 + x, center.y as i32 + y).into(), colour);
+    framebuffer.set_pixel((center.x as i32 - x, center.y as i32 + y).into(), colour);
+    framebuffer.set_pixel((center.x as i32 + x, center.y as i32 - y).into(), colour);
+    framebuffer.set_pixel((center.x as i32 - x, center.y as i32 - y).into(), colour);
+    framebuffer.set_pixel((center.x as i32 + y, center.y as i32 + x).into(), colour);
+    framebuffer.set_pixel((center.x as i32 - y, center.y as i32 + x).into(), colour);
+    framebuffer.set_pixel((center.x as i32 + y, center.y as i32 - x).into(), colour);
+    framebuffer.set_pixel((center.x as i32 - y, center.y as i32 - x).into(), colour);
 }

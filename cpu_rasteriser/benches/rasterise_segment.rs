@@ -1,311 +1,9 @@
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-
 use cpu_rasteriser::internals::{DepthBuffer, FrameBuffer, RasterVertex, Rect, Triangle2D};
 use cpu_rasteriser::prelude::*;
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use wide::f32x8;
-
-// -----------------------------------------------------------------------------
-// Test varying / geometry
-// -----------------------------------------------------------------------------
-
-#[derive(Debug, Interpolate)]
-struct TestVaryings {
-    colour: Vec3,
-}
-
-impl SimdInterpolate for TestVaryings {
-    type Simd = TestVaryingsSimd;
-
-    fn simd_step(value: &Self, step: &Self, lanes: f32x8) -> Self::Simd {
-        TestVaryingsSimd {
-            colour: [
-                f32x8::splat(value.colour.x) + lanes * f32x8::splat(step.colour.x),
-                f32x8::splat(value.colour.y) + lanes * f32x8::splat(step.colour.y),
-                f32x8::splat(value.colour.z) + lanes * f32x8::splat(step.colour.z),
-            ],
-        }
-    }
-
-    fn simd_add_scaled(value: &Self::Simd, step: &Self, scale: f32x8) -> Self::Simd {
-        TestVaryingsSimd {
-            colour: [
-                value.colour[0] + f32x8::splat(step.colour.x) * scale,
-                value.colour[1] + f32x8::splat(step.colour.y) * scale,
-                value.colour[2] + f32x8::splat(step.colour.z) * scale,
-            ],
-        }
-    }
-
-    fn simd_perspective(value: Self::Simd, perspective: f32x8) -> Self::Simd {
-        TestVaryingsSimd {
-            colour: [
-                value.colour[0] * perspective,
-                value.colour[1] * perspective,
-                value.colour[2] * perspective,
-            ],
-        }
-    }
-
-    fn simd_extract_all(value: &Self::Simd) -> [Self; 8] {
-        let r = value.colour[0].to_array();
-        let g = value.colour[1].to_array();
-        let b = value.colour[2].to_array();
-
-        [
-            Self {
-                colour: Vec3::new(r[0], g[0], b[0]),
-            },
-            Self {
-                colour: Vec3::new(r[1], g[1], b[1]),
-            },
-            Self {
-                colour: Vec3::new(r[2], g[2], b[2]),
-            },
-            Self {
-                colour: Vec3::new(r[3], g[3], b[3]),
-            },
-            Self {
-                colour: Vec3::new(r[4], g[4], b[4]),
-            },
-            Self {
-                colour: Vec3::new(r[5], g[5], b[5]),
-            },
-            Self {
-                colour: Vec3::new(r[6], g[6], b[6]),
-            },
-            Self {
-                colour: Vec3::new(r[7], g[7], b[7]),
-            },
-        ]
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct TestVaryingsSimd {
-    pub colour: [f32x8; 3],
-}
-
-fn vertex(x: f32, y: f32, colour: Vec3) -> RasterVertex<TestVaryings> {
-    RasterVertex {
-        position: Vec2::new(x, y),
-        depth: 0.5,
-        inv_w: 1.0,
-        varyings: TestVaryings { colour },
-    }
-}
-
-fn triangle(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> Triangle2D<TestVaryings> {
-    Triangle2D::new(
-        vertex(a.0, a.1, Vec3::new(1.0, 0.0, 0.0)),
-        vertex(b.0, b.1, Vec3::new(0.0, 1.0, 0.0)),
-        vertex(c.0, c.1, Vec3::new(0.0, 0.0, 1.0)),
-    )
-}
-
-fn small_triangle() -> Triangle2D<TestVaryings> {
-    triangle((300.0, 170.0), (340.0, 180.0), (320.0, 210.0))
-}
-
-fn medium_triangle() -> Triangle2D<TestVaryings> {
-    triangle((100.0, 80.0), (500.0, 120.0), (180.0, 300.0))
-}
-
-fn large_triangle() -> Triangle2D<TestVaryings> {
-    triangle((64.0, 32.0), (576.0, 96.0), (320.0, 328.0))
-}
-
-fn wide_triangle() -> Triangle2D<TestVaryings> {
-    triangle((32.0, 150.0), (608.0, 155.0), (320.0, 210.0))
-}
-
-fn tall_triangle() -> Triangle2D<TestVaryings> {
-    triangle((300.0, 16.0), (340.0, 180.0), (320.0, 344.0))
-}
-
-fn clipped_triangle() -> Triangle2D<TestVaryings> {
-    triangle((-100.0, -50.0), (740.0, 80.0), (320.0, 500.0))
-}
-
-fn perspective_triangle() -> Triangle2D<TestVaryings> {
-    Triangle2D::new(
-        RasterVertex {
-            position: Vec2::new(64.0, 32.0),
-            depth: 0.1,
-            inv_w: 0.25,
-            varyings: TestVaryings {
-                colour: Vec3::new(1.0, 0.0, 0.0),
-            },
-        },
-        RasterVertex {
-            position: Vec2::new(576.0, 96.0),
-            depth: 0.8,
-            inv_w: 1.5,
-            varyings: TestVaryings {
-                colour: Vec3::new(0.0, 1.0, 0.0),
-            },
-        },
-        RasterVertex {
-            position: Vec2::new(320.0, 328.0),
-            depth: 0.4,
-            inv_w: 0.5,
-            varyings: TestVaryings {
-                colour: Vec3::new(0.0, 0.0, 1.0),
-            },
-        },
-    )
-}
-
-// -----------------------------------------------------------------------------
-// Bounds
-// -----------------------------------------------------------------------------
-
-fn full_bounds() -> Rect {
-    Rect {
-        min_x: 0,
-        min_y: 0,
-        max_x: 640,
-        max_y: 360,
-    }
-}
-
-fn half_bounds() -> Rect {
-    Rect {
-        min_x: 0,
-        min_y: 0,
-        max_x: 320,
-        max_y: 180,
-    }
-}
-
-fn small_bounds() -> Rect {
-    Rect {
-        min_x: 280,
-        min_y: 140,
-        max_x: 360,
-        max_y: 220,
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Shaders
-// -----------------------------------------------------------------------------
-#[derive(Clone, Copy, Debug, Default)]
-struct TestUniforms;
-
-struct TestShader;
-
-impl FragmentShader<TestVaryings> for TestShader {
-    type Uniforms = TestUniforms;
-
-    #[inline(always)]
-    fn shade(&self, varyings: TestVaryings, _uniforms: &Self::Uniforms) -> Colour {
-        let mut r = varyings.colour.x;
-        let mut g = varyings.colour.y;
-        let mut b = varyings.colour.z;
-
-        for _ in 0..16 {
-            r = (r * 1.37 + g * 0.21).max(0.0);
-            g = (g * 0.91 + b * 0.34).max(0.0);
-            b = (b * 1.13 + r * 0.17).max(0.0);
-        }
-
-        Colour::new(r, g, b, 1.0)
-    }
-}
-
-impl FragmentShaderSimd<TestVaryings> for TestShader {
-    type Uniforms = TestUniforms;
-
-    #[inline(always)]
-    fn shade_simd(&self, varyings: TestVaryingsSimd, _uniforms: &Self::Uniforms) -> ColourSimd {
-        let mut r = varyings.colour[0];
-        let mut g = varyings.colour[1];
-        let mut b = varyings.colour[2];
-
-        let c137 = f32x8::splat(1.37);
-        let c021 = f32x8::splat(0.21);
-        let c091 = f32x8::splat(0.91);
-        let c034 = f32x8::splat(0.34);
-        let c113 = f32x8::splat(1.13);
-        let c017 = f32x8::splat(0.17);
-        let zero = f32x8::splat(0.0);
-
-        for _ in 0..16 {
-            r = (r * c137 + g * c021).fast_max(zero);
-            g = (g * c091 + b * c034).fast_max(zero);
-            b = (b * c113 + r * c017).fast_max(zero);
-        }
-
-        ColourSimd {
-            r,
-            g,
-            b,
-            a: f32x8::splat(1.0),
-        }
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Callback path
-// -----------------------------------------------------------------------------
-
-#[inline(always)]
-fn shade(varyings: &TestVaryings) -> Colour {
-    Colour::new(varyings.colour.x, varyings.colour.y, varyings.colour.z, 1.0)
-}
-
-fn rasterise_with_callback(
-    triangle: &Triangle2D<TestVaryings>,
-    framebuffer: &mut FrameBuffer,
-    depthbuffer: Option<&mut DepthBuffer>,
-    bounds: Rect,
-    depth_test: bool,
-) {
-    let mut depthbuffer = depthbuffer;
-
-    triangle.rasterise_segment(bounds, |mut fragment| {
-        fragment.position.x -= bounds.min_x as f32;
-        fragment.position.y -= bounds.min_y as f32;
-
-        if depth_test {
-            let depthbuffer = depthbuffer
-                .as_deref_mut()
-                .expect("depth testing enabled but no depth buffer");
-
-            if fragment.depth >= depthbuffer.get(fragment.position) {
-                return;
-            }
-        }
-
-        let src = shade(&fragment.varyings);
-
-        framebuffer.set_pixel(fragment.position, src);
-    });
-}
-
-// -----------------------------------------------------------------------------
-// Shared benchmark case lists
-// -----------------------------------------------------------------------------
-
-fn size_cases() -> [(&'static str, Triangle2D<TestVaryings>); 3] {
-    [
-        ("small", small_triangle()),
-        ("medium", medium_triangle()),
-        ("large", large_triangle()),
-    ]
-}
-
-fn shape_cases() -> [(&'static str, Triangle2D<TestVaryings>); 5] {
-    [
-        ("large", large_triangle()),
-        ("wide", wide_triangle()),
-        ("tall", tall_triangle()),
-        ("clipped", clipped_triangle()),
-        ("perspective", perspective_triangle()),
-    ]
-}
 
 // -----------------------------------------------------------------------------
 // Rasteriser: overhead
@@ -1151,6 +849,307 @@ fn bench_framebuffer_set(c: &mut Criterion) {
     });
 
     group.finish();
+}
+
+// -----------------------------------------------------------------------------
+// Bounds
+// -----------------------------------------------------------------------------
+
+fn full_bounds() -> Rect {
+    Rect {
+        min_x: 0,
+        min_y: 0,
+        max_x: 640,
+        max_y: 360,
+    }
+}
+
+fn half_bounds() -> Rect {
+    Rect {
+        min_x: 0,
+        min_y: 0,
+        max_x: 320,
+        max_y: 180,
+    }
+}
+
+fn small_bounds() -> Rect {
+    Rect {
+        min_x: 280,
+        min_y: 140,
+        max_x: 360,
+        max_y: 220,
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Shared benchmark case lists
+// -----------------------------------------------------------------------------
+
+fn size_cases() -> [(&'static str, Triangle2D<TestVaryings>); 3] {
+    [
+        ("small", small_triangle()),
+        ("medium", medium_triangle()),
+        ("large", large_triangle()),
+    ]
+}
+
+fn shape_cases() -> [(&'static str, Triangle2D<TestVaryings>); 5] {
+    [
+        ("large", large_triangle()),
+        ("wide", wide_triangle()),
+        ("tall", tall_triangle()),
+        ("clipped", clipped_triangle()),
+        ("perspective", perspective_triangle()),
+    ]
+}
+
+// -----------------------------------------------------------------------------
+// Shaders
+// -----------------------------------------------------------------------------
+struct TestShader;
+
+impl FragmentShader<TestVaryings> for TestShader {
+    type Uniforms = TestUniforms;
+
+    #[inline(always)]
+    fn shade(&self, varyings: TestVaryings, _uniforms: &Self::Uniforms) -> Colour {
+        let mut r = varyings.colour.x;
+        let mut g = varyings.colour.y;
+        let mut b = varyings.colour.z;
+
+        for _ in 0..16 {
+            r = (r * 1.37 + g * 0.21).max(0.0);
+            g = (g * 0.91 + b * 0.34).max(0.0);
+            b = (b * 1.13 + r * 0.17).max(0.0);
+        }
+
+        Colour::new(r, g, b, 1.0)
+    }
+}
+
+impl FragmentShaderSimd<TestVaryings> for TestShader {
+    type Uniforms = TestUniforms;
+
+    #[inline(always)]
+    fn shade_simd(&self, varyings: TestVaryingsSimd, _uniforms: &Self::Uniforms) -> ColourSimd {
+        let mut r = varyings.colour[0];
+        let mut g = varyings.colour[1];
+        let mut b = varyings.colour[2];
+
+        let c137 = f32x8::splat(1.37);
+        let c021 = f32x8::splat(0.21);
+        let c091 = f32x8::splat(0.91);
+        let c034 = f32x8::splat(0.34);
+        let c113 = f32x8::splat(1.13);
+        let c017 = f32x8::splat(0.17);
+        let zero = f32x8::splat(0.0);
+
+        for _ in 0..16 {
+            r = (r * c137 + g * c021).fast_max(zero);
+            g = (g * c091 + b * c034).fast_max(zero);
+            b = (b * c113 + r * c017).fast_max(zero);
+        }
+
+        ColourSimd {
+            r,
+            g,
+            b,
+            a: f32x8::splat(1.0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct TestUniforms;
+
+// -----------------------------------------------------------------------------
+// Callback path
+// -----------------------------------------------------------------------------
+
+fn rasterise_with_callback(
+    triangle: &Triangle2D<TestVaryings>,
+    framebuffer: &mut FrameBuffer,
+    depthbuffer: Option<&mut DepthBuffer>,
+    bounds: Rect,
+    depth_test: bool,
+) {
+    let mut depthbuffer = depthbuffer;
+
+    triangle.rasterise_segment(bounds, |mut fragment| {
+        fragment.position.x -= bounds.min_x as f32;
+        fragment.position.y -= bounds.min_y as f32;
+
+        if depth_test {
+            let depthbuffer = depthbuffer
+                .as_deref_mut()
+                .expect("depth testing enabled but no depth buffer");
+
+            if fragment.depth >= depthbuffer.get(fragment.position) {
+                return;
+            }
+        }
+
+        let src = shade(&fragment.varyings);
+
+        framebuffer.set_pixel(fragment.position, src);
+    });
+}
+
+#[inline(always)]
+fn shade(varyings: &TestVaryings) -> Colour {
+    Colour::new(varyings.colour.x, varyings.colour.y, varyings.colour.z, 1.0)
+}
+
+// -----------------------------------------------------------------------------
+// Test varying / geometry
+// -----------------------------------------------------------------------------
+
+fn small_triangle() -> Triangle2D<TestVaryings> {
+    triangle((300.0, 170.0), (340.0, 180.0), (320.0, 210.0))
+}
+
+fn medium_triangle() -> Triangle2D<TestVaryings> {
+    triangle((100.0, 80.0), (500.0, 120.0), (180.0, 300.0))
+}
+
+fn large_triangle() -> Triangle2D<TestVaryings> {
+    triangle((64.0, 32.0), (576.0, 96.0), (320.0, 328.0))
+}
+
+fn wide_triangle() -> Triangle2D<TestVaryings> {
+    triangle((32.0, 150.0), (608.0, 155.0), (320.0, 210.0))
+}
+
+fn tall_triangle() -> Triangle2D<TestVaryings> {
+    triangle((300.0, 16.0), (340.0, 180.0), (320.0, 344.0))
+}
+
+fn clipped_triangle() -> Triangle2D<TestVaryings> {
+    triangle((-100.0, -50.0), (740.0, 80.0), (320.0, 500.0))
+}
+
+fn triangle(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> Triangle2D<TestVaryings> {
+    Triangle2D::new(
+        vertex(a.0, a.1, Vec3::new(1.0, 0.0, 0.0)),
+        vertex(b.0, b.1, Vec3::new(0.0, 1.0, 0.0)),
+        vertex(c.0, c.1, Vec3::new(0.0, 0.0, 1.0)),
+    )
+}
+
+fn vertex(x: f32, y: f32, colour: Vec3) -> RasterVertex<TestVaryings> {
+    RasterVertex {
+        position: Vec2::new(x, y),
+        depth: 0.5,
+        inv_w: 1.0,
+        varyings: TestVaryings { colour },
+    }
+}
+
+fn perspective_triangle() -> Triangle2D<TestVaryings> {
+    Triangle2D::new(
+        RasterVertex {
+            position: Vec2::new(64.0, 32.0),
+            depth: 0.1,
+            inv_w: 0.25,
+            varyings: TestVaryings {
+                colour: Vec3::new(1.0, 0.0, 0.0),
+            },
+        },
+        RasterVertex {
+            position: Vec2::new(576.0, 96.0),
+            depth: 0.8,
+            inv_w: 1.5,
+            varyings: TestVaryings {
+                colour: Vec3::new(0.0, 1.0, 0.0),
+            },
+        },
+        RasterVertex {
+            position: Vec2::new(320.0, 328.0),
+            depth: 0.4,
+            inv_w: 0.5,
+            varyings: TestVaryings {
+                colour: Vec3::new(0.0, 0.0, 1.0),
+            },
+        },
+    )
+}
+
+#[derive(Debug, Interpolate)]
+struct TestVaryings {
+    colour: Vec3,
+}
+
+impl SimdInterpolate for TestVaryings {
+    type Simd = TestVaryingsSimd;
+
+    fn simd_step(value: &Self, step: &Self, lanes: f32x8) -> Self::Simd {
+        TestVaryingsSimd {
+            colour: [
+                f32x8::splat(value.colour.x) + lanes * f32x8::splat(step.colour.x),
+                f32x8::splat(value.colour.y) + lanes * f32x8::splat(step.colour.y),
+                f32x8::splat(value.colour.z) + lanes * f32x8::splat(step.colour.z),
+            ],
+        }
+    }
+
+    fn simd_add_scaled(value: &Self::Simd, step: &Self, scale: f32x8) -> Self::Simd {
+        TestVaryingsSimd {
+            colour: [
+                value.colour[0] + f32x8::splat(step.colour.x) * scale,
+                value.colour[1] + f32x8::splat(step.colour.y) * scale,
+                value.colour[2] + f32x8::splat(step.colour.z) * scale,
+            ],
+        }
+    }
+
+    fn simd_perspective(value: Self::Simd, perspective: f32x8) -> Self::Simd {
+        TestVaryingsSimd {
+            colour: [
+                value.colour[0] * perspective,
+                value.colour[1] * perspective,
+                value.colour[2] * perspective,
+            ],
+        }
+    }
+
+    fn simd_extract_all(value: &Self::Simd) -> [Self; 8] {
+        let r = value.colour[0].to_array();
+        let g = value.colour[1].to_array();
+        let b = value.colour[2].to_array();
+
+        [
+            Self {
+                colour: Vec3::new(r[0], g[0], b[0]),
+            },
+            Self {
+                colour: Vec3::new(r[1], g[1], b[1]),
+            },
+            Self {
+                colour: Vec3::new(r[2], g[2], b[2]),
+            },
+            Self {
+                colour: Vec3::new(r[3], g[3], b[3]),
+            },
+            Self {
+                colour: Vec3::new(r[4], g[4], b[4]),
+            },
+            Self {
+                colour: Vec3::new(r[5], g[5], b[5]),
+            },
+            Self {
+                colour: Vec3::new(r[6], g[6], b[6]),
+            },
+            Self {
+                colour: Vec3::new(r[7], g[7], b[7]),
+            },
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TestVaryingsSimd {
+    pub colour: [f32x8; 3],
 }
 
 // -----------------------------------------------------------------------------

@@ -1,6 +1,6 @@
-use cpu_rasteriser::{prelude::*, wide::f32x8};
-
 use std::sync::Arc;
+
+use cpu_rasteriser::{prelude::*, wide::f32x8};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Texture {
@@ -216,26 +216,6 @@ impl TextureSampler {
     }
 
     #[inline(always)]
-    fn get_pixel(&self, x: u32, y: u32) -> Colour {
-        let x = x.min(self.width - 1);
-        let y = y.min(self.height - 1);
-
-        self.pixels[(y * self.width + x) as usize]
-    }
-
-    /// # Safety
-    ///
-    /// `x < self.width` and `y < self.height`.
-    #[inline(always)]
-    unsafe fn get_pixel_unchecked(&self, x: u32, y: u32) -> Colour {
-        // SAFETY: the caller guarantees `x` and `y` are inside the texture, so the index is below
-        // `width * height`, and `new` ensures `pixels` holds at least that many pixels. If the
-        // index overflows `u32` in a release build, `width * height` exceeds `u32::MAX`, so the
-        // wrapped index is still below `pixels.len()`.
-        unsafe { *self.pixels.get_unchecked((y * self.width + x) as usize) }
-    }
-
-    #[inline(always)]
     pub fn sample_linear_clamp(&self, uv: Vec2) -> Colour {
         let u = uv.x.clamp(0.0, 1.0);
         let v = uv.y.clamp(0.0, 1.0);
@@ -279,6 +259,14 @@ impl TextureSampler {
         let y = ((1.0 - v) * (self.height - 1) as f32).round() as u32;
 
         self.get_pixel(x, y)
+    }
+
+    #[inline(always)]
+    fn get_pixel(&self, x: u32, y: u32) -> Colour {
+        let x = x.min(self.width - 1);
+        let y = y.min(self.height - 1);
+
+        self.pixels[(y * self.width + x) as usize]
     }
 
     /// Samples eight horizontally adjacent fragments using bilinear filtering.
@@ -335,6 +323,31 @@ impl TextureSampler {
         c0.lerp(c1, ty)
     }
 
+    #[inline(always)]
+    pub fn sample_nearest_clamp_simd(&self, uv: [f32x8; 2]) -> ColourSimd {
+        let zero = f32x8::splat(0.0);
+        let one = f32x8::splat(1.0);
+
+        let u = uv[0].fast_max(zero).fast_min(one);
+        let v = uv[1].fast_max(zero).fast_min(one);
+
+        let x = (u * f32x8::splat((self.width - 1) as f32)).to_array();
+
+        let y = ((one - v) * f32x8::splat((self.height - 1) as f32)).to_array();
+
+        let mut xs = [0u32; 8];
+        let mut ys = [0u32; 8];
+
+        for lane in 0..8 {
+            xs[lane] = x[lane].round() as u32;
+            ys[lane] = y[lane].round() as u32;
+        }
+
+        // SAFETY: as in `sample_linear_clamp`, each coordinate is at most `width - 1` or
+        // `height - 1`, both exact integers in `f32`, so rounding can't exceed them.
+        unsafe { self.gather8(xs, ys) }
+    }
+
     /// # Safety
     ///
     /// Every element of `xs` is below `self.width` and every element of `ys` below `self.height`.
@@ -362,29 +375,16 @@ impl TextureSampler {
         }
     }
 
+    /// # Safety
+    ///
+    /// `x < self.width` and `y < self.height`.
     #[inline(always)]
-    pub fn sample_nearest_clamp_simd(&self, uv: [f32x8; 2]) -> ColourSimd {
-        let zero = f32x8::splat(0.0);
-        let one = f32x8::splat(1.0);
-
-        let u = uv[0].fast_max(zero).fast_min(one);
-        let v = uv[1].fast_max(zero).fast_min(one);
-
-        let x = (u * f32x8::splat((self.width - 1) as f32)).to_array();
-
-        let y = ((one - v) * f32x8::splat((self.height - 1) as f32)).to_array();
-
-        let mut xs = [0u32; 8];
-        let mut ys = [0u32; 8];
-
-        for lane in 0..8 {
-            xs[lane] = x[lane].round() as u32;
-            ys[lane] = y[lane].round() as u32;
-        }
-
-        // SAFETY: as in `sample_linear_clamp`, each coordinate is at most `width - 1` or
-        // `height - 1`, both exact integers in `f32`, so rounding can't exceed them.
-        unsafe { self.gather8(xs, ys) }
+    unsafe fn get_pixel_unchecked(&self, x: u32, y: u32) -> Colour {
+        // SAFETY: the caller guarantees `x` and `y` are inside the texture, so the index is below
+        // `width * height`, and `new` ensures `pixels` holds at least that many pixels. If the
+        // index overflows `u32` in a release build, `width * height` exceeds `u32::MAX`, so the
+        // wrapped index is still below `pixels.len()`.
+        unsafe { *self.pixels.get_unchecked((y * self.width + x) as usize) }
     }
 }
 

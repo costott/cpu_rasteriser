@@ -11,6 +11,7 @@ where
     pub inv_w: f32,
     pub varyings: V,
 }
+/// Unused constructor, kept for now.
 impl<V: Interpolate> RasterVertex<V> {
     #[cfg_attr(
         not(feature = "internals"),

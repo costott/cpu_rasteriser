@@ -1,6 +1,5 @@
-use engine::prelude::*;
-
 use cpu_rasteriser::prelude::*;
+use engine::prelude::*;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;

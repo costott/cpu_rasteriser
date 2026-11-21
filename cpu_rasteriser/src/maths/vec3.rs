@@ -1,7 +1,8 @@
+use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
+
 use wide::f32x8;
 
 use crate::prelude::*;
-use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 #[derive(Debug, Copy, PartialEq, Interpolate)]
 pub struct Vec3 {
@@ -239,7 +240,6 @@ impl std::ops::Mul<f32x8> for Vec3Simd {
 #[cfg(test)]
 mod tests {
     use super::Vec3;
-
     use crate::graphics::interpolate::Interpolate;
 
     const EPSILON: f32 = 1e-6;

@@ -1,9 +1,8 @@
-use crate::graphics::vertex::{ClipVertex, RasterVertex};
-use crate::prelude::*;
+use wide::f32x8;
 
 use crate::graphics::fragment::{Fragment, FragmentSimd};
-
-use wide::f32x8;
+use crate::graphics::vertex::{ClipVertex, RasterVertex};
+use crate::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triangle2D<V>
@@ -286,6 +285,14 @@ where
     }
 }
 
+/// Constructor for the unit tests and benchmarks.
+#[cfg(any(test, feature = "internals"))]
+impl<V: Interpolate> Triangle2D<V> {
+    pub fn new(a: RasterVertex<V>, b: RasterVertex<V>, c: RasterVertex<V>) -> Self {
+        Self { a, b, c }
+    }
+}
+
 #[inline(always)]
 fn mask_for_lanes(lanes: usize) -> f32x8 {
     debug_assert!(lanes <= 8);
@@ -424,13 +431,6 @@ impl Triangle3D<ObjVertex> {
         let ac = self.c.position - self.a.position;
 
         ab.cross(ac).normalise()
-    }
-}
-
-#[cfg(any(test, feature = "internals"))]
-impl<V: Interpolate> Triangle2D<V> {
-    pub fn new(a: RasterVertex<V>, b: RasterVertex<V>, c: RasterVertex<V>) -> Self {
-        Self { a, b, c }
     }
 }
 

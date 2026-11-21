@@ -16,44 +16,12 @@ impl DepthBuffer {
         }
     }
 
-    #[cfg_attr(
-        not(feature = "internals"),
-        expect(dead_code, reason = "unused; kept rather than deleted for now")
-    )]
-    pub fn width(&self) -> usize {
-        self.depths.width()
-    }
-
-    #[cfg_attr(
-        not(feature = "internals"),
-        expect(dead_code, reason = "unused; kept rather than deleted for now")
-    )]
-    pub fn height(&self) -> usize {
-        self.depths.height()
-    }
-
     pub fn clear(&mut self, depth: f32) {
         self.depths.fill(depth);
     }
 
     pub fn resize(&mut self, width: usize, height: usize) {
         self.depths.resize(width, height, Self::FAR);
-    }
-
-    pub(crate) fn blit_from(
-        &mut self,
-        dst_origin: (usize, usize),
-        src: &DepthBuffer,
-        src_origin: (usize, usize),
-        size: Extent,
-    ) {
-        self.depths
-            .blit_from(dst_origin, &src.depths, src_origin, size);
-    }
-
-    #[inline(always)]
-    fn index(&self, x: usize, y: usize) -> usize {
-        self.depths.index(x, y)
     }
 
     #[inline(always)]
@@ -68,23 +36,6 @@ impl DepthBuffer {
 
         let index = self.index(x, y);
         self.depths.as_mut_slice()[index] = depth;
-    }
-
-    /// # Safety
-    ///
-    /// `p` must lie inside the buffer: `p.x as usize < self.width()` and
-    /// `p.y as usize < self.height()`.
-    #[cfg_attr(
-        not(feature = "internals"),
-        expect(dead_code, reason = "unused; kept rather than deleted for now")
-    )]
-    pub unsafe fn set_depth_unchecked(&mut self, p: Vec2, depth: f32) {
-        let index = self.index_unchecked(p.x as usize, p.y as usize);
-
-        // SAFETY: the caller guarantees `p` lies inside the buffer, so `index` is in bounds.
-        unsafe {
-            *self.depths.as_mut_slice().get_unchecked_mut(index) = depth;
-        }
     }
 
     /// # Safety
@@ -135,20 +86,9 @@ impl DepthBuffer {
         self.depths.as_slice()[self.index(x, y)]
     }
 
-    /// # Safety
-    ///
-    /// `p` must lie inside the buffer: `p.x as usize < self.width()` and
-    /// `p.y as usize < self.height()`.
     #[inline(always)]
-    #[cfg_attr(
-        not(feature = "internals"),
-        expect(dead_code, reason = "unused; kept rather than deleted for now")
-    )]
-    pub unsafe fn get_unchecked(&self, p: Vec2) -> f32 {
-        let index = self.index_unchecked(p.x as usize, p.y as usize);
-
-        // SAFETY: the caller guarantees `p` lies inside the buffer, so `index` is in bounds.
-        unsafe { *self.depths.as_slice().get_unchecked(index) }
+    fn index(&self, x: usize, y: usize) -> usize {
+        self.depths.index(x, y)
     }
 
     /// # Safety
@@ -177,6 +117,68 @@ impl DepthBuffer {
             ]
         };
         f32x8::new(values)
+    }
+
+    pub(crate) fn blit_from(
+        &mut self,
+        dst_origin: (usize, usize),
+        src: &DepthBuffer,
+        src_origin: (usize, usize),
+        size: Extent,
+    ) {
+        self.depths
+            .blit_from(dst_origin, &src.depths, src_origin, size);
+    }
+}
+/// Unused methods, kept for now.
+impl DepthBuffer {
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
+    pub fn width(&self) -> usize {
+        self.depths.width()
+    }
+
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
+    pub fn height(&self) -> usize {
+        self.depths.height()
+    }
+
+    /// # Safety
+    ///
+    /// `p` must lie inside the buffer: `p.x as usize < self.width()` and
+    /// `p.y as usize < self.height()`.
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
+    pub unsafe fn set_depth_unchecked(&mut self, p: Vec2, depth: f32) {
+        let index = self.index_unchecked(p.x as usize, p.y as usize);
+
+        // SAFETY: the caller guarantees `p` lies inside the buffer, so `index` is in bounds.
+        unsafe {
+            *self.depths.as_mut_slice().get_unchecked_mut(index) = depth;
+        }
+    }
+
+    /// # Safety
+    ///
+    /// `p` must lie inside the buffer: `p.x as usize < self.width()` and
+    /// `p.y as usize < self.height()`.
+    #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
+    pub unsafe fn get_unchecked(&self, p: Vec2) -> f32 {
+        let index = self.index_unchecked(p.x as usize, p.y as usize);
+
+        // SAFETY: the caller guarantees `p` lies inside the buffer, so `index` is in bounds.
+        unsafe { *self.depths.as_slice().get_unchecked(index) }
     }
 }
 impl std::fmt::Debug for DepthBuffer {

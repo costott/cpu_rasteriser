@@ -186,6 +186,13 @@ fn one_based<T>(values: &[T], index: u32) -> Option<&T> {
     values.get(index.checked_sub(1)? as usize)
 }
 
+fn finish_current_mesh(current_mesh: &mut ObjMesh, obj_meshes: &mut Vec<ObjMesh>) {
+    if !current_mesh.vertices.is_empty() || !current_mesh.indices.is_empty() {
+        obj_meshes.push(current_mesh.clone());
+        *current_mesh = ObjMesh::empty();
+    }
+}
+
 #[derive(Clone)]
 struct ObjMesh {
     vertices: Vec<ObjVertex>,
@@ -202,13 +209,6 @@ impl ObjMesh {
             material_index: None,
             vertex_map: HashMap::new(),
         }
-    }
-}
-
-fn finish_current_mesh(current_mesh: &mut ObjMesh, obj_meshes: &mut Vec<ObjMesh>) {
-    if !current_mesh.vertices.is_empty() || !current_mesh.indices.is_empty() {
-        obj_meshes.push(current_mesh.clone());
-        *current_mesh = ObjMesh::empty();
     }
 }
 

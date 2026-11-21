@@ -11,12 +11,6 @@ pub(crate) struct Grid<T> {
 impl<T: Copy> Grid<T> {
     const SIMD_WIDTH: usize = 8;
 
-    /// Leaves room for a full SIMD group starting on the last pixel of a row, so unchecked
-    /// 8-wide loads and stores there stay inside the grid.
-    fn stride_for(width: usize) -> usize {
-        (width + Self::SIMD_WIDTH - 1).next_multiple_of(Self::SIMD_WIDTH)
-    }
-
     pub(crate) fn new(width: usize, height: usize, fill: T) -> Self {
         let stride = Self::stride_for(width);
 
@@ -78,6 +72,12 @@ impl<T: Copy> Grid<T> {
         self.height = height;
         self.stride = Self::stride_for(width);
         self.data.resize(self.stride * height, fill);
+    }
+
+    /// Leaves room for a full SIMD group starting on the last pixel of a row, so unchecked
+    /// 8-wide loads and stores there stay inside the grid.
+    fn stride_for(width: usize) -> usize {
+        (width + Self::SIMD_WIDTH - 1).next_multiple_of(Self::SIMD_WIDTH)
     }
 
     /// Copies the `size` region of `src` whose top-left corner is `src_origin` to `dst_origin`.

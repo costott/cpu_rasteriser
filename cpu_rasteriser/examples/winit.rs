@@ -1,7 +1,7 @@
-use cpu_rasteriser::prelude::*;
-
 use std::num::NonZeroU32;
 use std::rc::Rc;
+
+use cpu_rasteriser::prelude::*;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
