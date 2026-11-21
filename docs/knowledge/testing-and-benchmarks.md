@@ -8,7 +8,7 @@ sources:
   - cpu_rasteriser/benches/raster_command.rs
   - engine/benches/texture_sampling.rs
   - engine/examples/bloom.rs
-verified: 1659598
+verified: ffed0e7
 ---
 
 # Testing, benchmarks and build flags
@@ -34,6 +34,8 @@ There is no custom `[profile.release]`. The only formatting configuration is rus
 | `cpu_rasteriser/benches/rasterise_segment.rs` | Scanline rasterisation, scalar and SIMD, across triangle sizes, shapes and bounds: bare overhead and compute, fragment callbacks with depth writes and full shading, throughput, a scalar against SIMD shader comparison, and 8-pixel framebuffer stores |
 | `cpu_rasteriser/benches/raster_command.rs` | Whole raster commands in groups `pre_simd`, `simd_scalar_shader` and `simd_shader` |
 | `engine/benches/texture_sampling.rs` | Texture sampler variants. Some benchmark functions are defined but unused (clippy `dead_code`). |
+
+**The `cpu_rasteriser` benches need the `internals` feature.** They use internal types (`FrameBuffer`, `DepthBuffer`, `Triangle2D`, `RasterVertex`, `Rect`) from the `#[doc(hidden)]` `internals` module, and declare `required-features = ["internals"]`, so cargo skips them, clippy included, unless the feature is on. The feature adds nothing else, so it doesn't change the measured code.
 
 **The benches contain their own copies of the raster command logic.** The renderer's `RasterCommand` types are private, so the benches re-implement them. Changing `TriangleRasterCommand(Simd)` in `renderer.rs` doesn't change what the benches measure. Keep the copies in sync deliberately, or say that they diverge. `pre_simd` is a frozen historical baseline.
 

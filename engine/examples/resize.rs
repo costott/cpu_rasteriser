@@ -2,11 +2,6 @@ use engine::prelude::*;
 
 use cpu_rasteriser::prelude::*;
 
-use cpu_rasteriser::{
-    graphics::{fragment_shader::FragmentShader, vertex_shader::VertexShader},
-    renderer::{CullingMode, Pipeline},
-};
-
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;
 
@@ -123,5 +118,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             resize: true,
             ..Default::default()
         })
-        .run(TeapotApp::new()?)
+        .run(TeapotApp::new()?)?;
+    Ok(())
 }

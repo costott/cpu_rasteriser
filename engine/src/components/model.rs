@@ -28,7 +28,11 @@ impl<V: Clone> Model<V> {
         for (i, mesh) in self.meshes.iter().enumerate() {
             if let Some(material_index) = mesh.material_index {
                 if material_index >= self.materials.len() {
-                    return Err(ModelError::InvalidMaterialIndex(i, material_index));
+                    return Err(ModelError::InvalidMaterialIndex {
+                        mesh: i,
+                        material: material_index,
+                        material_count: self.materials.len(),
+                    });
                 }
             }
         }
@@ -43,7 +47,7 @@ impl<V: Clone> Model<V> {
             DrawCall::new(
                 &mesh.vertices,
                 &mesh.indices,
-                cpu_rasteriser::renderer::PrimitiveMode::TRIANGLES,
+                PrimitiveMode::TRIANGLES,
                 make_uniforms(mesh),
             )
         })
@@ -92,22 +96,18 @@ impl Model<ObjVertex> {
     }
 }
 
-#[derive(Debug)]
+/// An error constructing a [`Model`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ModelError {
-    InvalidMaterialIndex(usize, usize), // (mesh_index, material_index)
+    /// A mesh refers to a material the model doesn't have.
+    #[error("mesh {mesh} uses material {material}, but the model has {material_count} materials")]
+    InvalidMaterialIndex {
+        mesh: usize,
+        material: usize,
+        material_count: usize,
+    },
 }
-impl std::fmt::Display for ModelError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ModelError::InvalidMaterialIndex(mesh_index, material_index) => write!(
-                f,
-                "Mesh {} has an invalid material index: {}",
-                mesh_index, material_index
-            ),
-        }
-    }
-}
-impl std::error::Error for ModelError {}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelTransform {

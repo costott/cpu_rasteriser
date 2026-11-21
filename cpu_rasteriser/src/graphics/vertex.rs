@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 /// Represents a 2D vertex in screen space
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RasterVertex<V>
 where
     V: Interpolate,
@@ -12,6 +12,10 @@ where
     pub varyings: V,
 }
 impl<V: Interpolate> RasterVertex<V> {
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub fn new(position: Vec2, depth: f32, inv_w: f32, varyings: V) -> Self {
         Self {
             position,
@@ -22,7 +26,7 @@ impl<V: Interpolate> RasterVertex<V> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClipVertex<V>
 where
     V: Interpolate,
@@ -31,6 +35,10 @@ where
     pub varyings: V,
 }
 impl<V: Interpolate> ClipVertex<V> {
+    #[expect(
+        dead_code,
+        reason = "unused internally; kept rather than deleted for now"
+    )]
     pub fn new(position: Vec4, varyings: V) -> Self {
         Self { position, varyings }
     }
@@ -40,13 +48,13 @@ impl<V: Interpolate> ClipVertex<V> {
         V: Interpolate,
     {
         Self {
-            position: self.position.lerp(&other.position, t),
+            position: self.position.lerp(other.position, t),
             varyings: self.varyings.interpolate(&other.varyings, t),
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ObjVertex {
     pub position: Vec3,
     pub colour: Colour,

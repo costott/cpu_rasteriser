@@ -15,7 +15,7 @@ sources:
   - cpu_rasteriser/src/colour.rs
   - cpu_rasteriser/src/renderer.rs
   - cpu_rasteriser/src/depthbuffer.rs
-verified: 530e0dd
+verified: ffed0e7
 ---
 
 # Geometry processing and rasterisation
@@ -54,5 +54,5 @@ The derive also generates `Clone`. A type deriving `Interpolate` must not derive
 ## Other primitives
 
 - `PrimitiveMode::TRIANGLES` is the only topology.
-- `graphics::circle` (midpoint circle) writes straight into a `FrameBuffer` and isn't part of the pipeline.
+- `graphics::circle` (midpoint circle) writes straight into a `FrameBuffer`, isn't part of the pipeline and isn't public ([#28](https://github.com/costott/cpu_rasteriser/issues/28)).
 - `graphics::line` is entirely commented out ([#28](https://github.com/costott/cpu_rasteriser/issues/28)).

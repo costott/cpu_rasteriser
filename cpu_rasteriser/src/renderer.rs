@@ -7,6 +7,7 @@ use crate::prelude::*;
 use crate::depthbuffer::DepthBuffer;
 use crate::framebuffer::FrameBuffer;
 use crate::graphics::geometry_processing::GeometryProcessor;
+use crate::graphics::triangle::Triangle2D;
 
 /// A CPU-based renderer responsible for executing draw calls and producing a final framebuffer.
 ///
@@ -64,8 +65,13 @@ pub struct Renderer {
     tile_pool: TilePool,
 }
 impl Renderer {
-    /// Creates a new renderer.
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    /// Creates a new renderer with one worker thread per available CPU thread.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error from [`std::thread::available_parallelism`] if the number of available
+    /// CPU threads can't be determined.
+    pub fn new() -> std::io::Result<Self> {
         Ok(Self {
             thread_pool: ThreadPool::new(std::thread::available_parallelism()?.get()),
             tile_pool: TilePool::default(),
@@ -97,12 +103,14 @@ impl Renderer {
             depth_load_op,
         } = descriptor;
 
+        let has_depth_buffer = depth_load_op.is_some();
         let tile_binner =
             TileBinner::new(target, colour_load_op, depth_load_op, &mut self.tile_pool);
 
         RenderPass {
             renderer: self,
             render_target: target,
+            has_depth_buffer,
             viewport,
             queued_draws: Vec::new(),
             tile_binner,
@@ -148,6 +156,13 @@ impl Renderer {
         }
 
         self.tile_pool.recycle(framebuffer, depthbuffer);
+    }
+}
+impl std::fmt::Debug for Renderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Renderer")
+            .field("threads", &self.thread_pool.max_count())
+            .finish_non_exhaustive()
     }
 }
 
@@ -288,13 +303,23 @@ impl RenderTarget {
         }
     }
 }
+impl std::fmt::Debug for RenderTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RenderTarget")
+            .field("extent", &self.extent())
+            .field("has_depth_buffer", &self.depthbuffer.is_some())
+            .finish_non_exhaustive()
+    }
+}
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderPassDescriptor {
     pub viewport: Viewport,
     pub colour_load_op: LoadOp<Colour>,
     pub depth_load_op: Option<LoadOp<f32>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadOp<T> {
     /// Keeps the existing data in the framebuffer / depth buffer.
     Load,
@@ -302,6 +327,7 @@ pub enum LoadOp<T> {
     Clear(T),
 }
 
+#[derive(Debug)]
 struct PipelineState {
     culling_mode: CullingMode,
     /// Optional blending configuration.
@@ -384,6 +410,17 @@ where
         self
     }
 }
+impl<VS, FS> std::fmt::Debug for Pipeline<VS, FS>
+where
+    VS: VertexShader,
+    FS: FragmentShader<VS::Varyings>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pipeline")
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
 
 /// A rendering pipeline that uses SIMD rasterisation and fragment shading.
 ///
@@ -459,12 +496,24 @@ where
         self
     }
 }
+impl<VS, FS> std::fmt::Debug for SimdPipeline<VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: SimdInterpolate,
+    FS: FragmentShaderSimd<VS::Varyings>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SimdPipeline")
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
 
 /// Controls whether primitives are removed based on their winding direction before rasterisation.
 ///
 /// Back-face culling can improve rendering performance by avoiding rasterisation of triangles
 /// facing away from the camera.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CullingMode {
     /// No culling is performed; all triangles are rendered.
     None,
@@ -473,7 +522,7 @@ pub enum CullingMode {
 }
 
 /// Rendering depth-test and depth-write configuration.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DepthState {
     pub test_enabled: bool,
     pub write_enabled: bool,
@@ -505,7 +554,7 @@ impl DepthState {
 }
 
 /// Determines how a source or destination colour contributes to the blend result.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlendFactor {
     Zero,
     One,
@@ -619,7 +668,7 @@ impl BlendFactor {
 }
 
 /// Determines the arithmetic operation used to combine the scaled source and destination colours.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlendOp {
     Add,
     Subtract,
@@ -632,7 +681,7 @@ pub enum BlendOp {
 ///
 /// A blend state determines how a fragment's source colour is combined with
 /// the existing destination colour in the framebuffer.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlendState {
     pub src_factor: BlendFactor,
     pub dst_factor: BlendFactor,
@@ -776,6 +825,7 @@ pub struct RenderPass<'renderer, 'pass> {
     renderer: &'renderer mut Renderer,
 
     render_target: &'pass mut RenderTarget,
+    has_depth_buffer: bool,
     viewport: Viewport,
 
     queued_draws: Vec<Box<dyn RenderPassCommand + 'pass>>,
@@ -789,6 +839,11 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
     /// [`RenderPass::finish`] is called.
     ///
     /// For SIMD rasterisation and fragment shading, use [`RenderPass::draw_simd`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pipeline's [`DepthState`] tests or writes depth and the render pass has no
+    /// depth buffer, because its [`RenderPassDescriptor::depth_load_op`] is `None`.
     ///
     /// # Arguments
     ///
@@ -820,11 +875,20 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
         VS: VertexShader,
         FS: FragmentShader<VS::Varyings>,
     {
+        self.assert_depth_buffer_for(pipeline.state.depth_state);
         self.queued_draws.push(Box::new(QueuedDraw {
             pipeline,
             draw_call,
             vertex_uniforms,
         }));
+    }
+
+    fn assert_depth_buffer_for(&self, depth_state: DepthState) {
+        assert!(
+            self.has_depth_buffer || !(depth_state.test_enabled || depth_state.write_enabled),
+            "the pipeline tests or writes depth, but the render pass has no depth buffer \
+             (its `depth_load_op` is `None`)"
+        );
     }
 
     /// Queues a draw call using a SIMD [`SimdPipeline`].
@@ -834,6 +898,11 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
     ///
     /// The SIMD pipeline rasterises fragments in batches and invokes the shader's
     /// [`FragmentShaderSimd::shade_simd`] implementation for those batches.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pipeline's [`DepthState`] tests or writes depth and the render pass has no
+    /// depth buffer, because its [`RenderPassDescriptor::depth_load_op`] is `None`.
     ///
     /// # Arguments
     ///
@@ -866,6 +935,7 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
         VS::Varyings: SimdInterpolate + Send + Sync + 'static,
         FS: FragmentShaderSimd<VS::Varyings> + Send + Sync + 'static,
     {
+        self.assert_depth_buffer_for(pipeline.state.depth_state);
         self.queued_draws.push(Box::new(QueuedDrawSimd {
             pipeline,
             draw_call,
@@ -886,6 +956,16 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
 
         self.renderer
             .render_tiles(self.tile_binner, self.render_target);
+    }
+}
+impl std::fmt::Debug for RenderPass<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RenderPass")
+            .field("render_target", &self.render_target)
+            .field("has_depth_buffer", &self.has_depth_buffer)
+            .field("viewport", &self.viewport)
+            .field("queued_draws", &self.queued_draws.len())
+            .finish_non_exhaustive()
     }
 }
 
@@ -1101,6 +1181,15 @@ where
         self.primitive.primitive_mode
     }
 }
+impl<V: Clone, U> std::fmt::Debug for DrawCall<'_, V, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DrawCall")
+            .field("vertices", &self.primitive.vertices.len())
+            .field("indices", &self.primitive.indices.len())
+            .field("primitive_mode", &self.primitive.primitive_mode)
+            .finish_non_exhaustive()
+    }
+}
 
 trait RasterCommand: Send + Sync {
     /// Rasterises the part of the command inside `bounds` into tile-local buffers.
@@ -1146,9 +1235,9 @@ where
             fragment.position.y -= bounds.min_y as f32;
 
             if self.depth_state.test_enabled {
-                let depthbuffer = depthbuffer
-                    .as_deref_mut()
-                    .expect("depth testing enabled but render target has no depth buffer");
+                let depthbuffer = depthbuffer.as_deref_mut().expect(
+                    "draw rejects depth-testing pipelines in passes without a depth buffer",
+                );
 
                 if fragment.depth >= depthbuffer.get(fragment.position) {
                     return;
@@ -1167,9 +1256,9 @@ where
             framebuffer.set_pixel(fragment.position, colour);
 
             if self.depth_state.write_enabled {
-                let depthbuffer = depthbuffer
-                    .as_deref_mut()
-                    .expect("depth writing enabled but render target has no depth buffer");
+                let depthbuffer = depthbuffer.as_deref_mut().expect(
+                    "draw rejects depth-writing pipelines in passes without a depth buffer",
+                );
 
                 depthbuffer.set_depth(fragment.position, fragment.depth);
             }
@@ -1213,7 +1302,7 @@ where
                 let pass = if TEST_DEPTH {
                     let depthbuffer = depthbuffer
                         .as_deref_mut()
-                        .expect("depth testing enabled but no depth buffer");
+                        .expect("draw_simd rejects depth-testing pipelines in passes without a depth buffer");
 
                     let index = depthbuffer.index_unchecked(
                         (fragment_simd.x_start - bounds.min_x) as usize,
@@ -1277,7 +1366,7 @@ where
                 if WRITE_DEPTH {
                     let depthbuffer = depthbuffer
                         .as_deref_mut()
-                        .expect("depth writing enabled but no depth buffer");
+                        .expect("draw_simd rejects depth-writing pipelines in passes without a depth buffer");
 
                     let index = depthbuffer.index_unchecked(
                         (fragment_simd.x_start - bounds.min_x) as usize,
@@ -1526,6 +1615,120 @@ pub struct Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PassThroughVertexShader;
+    impl VertexShader for PassThroughVertexShader {
+        type Vertex = Vec4;
+        type Uniforms = ();
+        type Varyings = f32;
+
+        fn shade(&self, vertex: Vec4, _: &()) -> (Vec4, f32) {
+            (vertex, 0.0)
+        }
+    }
+
+    struct WhiteFragmentShader;
+    impl FragmentShader<f32> for WhiteFragmentShader {
+        type Uniforms = ();
+
+        fn shade(&self, _: f32, _: &()) -> Colour {
+            Colour::WHITE
+        }
+    }
+
+    #[derive(Interpolate, SimdInterpolate)]
+    struct SimdVaryings {
+        value: f32,
+    }
+
+    struct SimdVaryingsVertexShader;
+    impl VertexShader for SimdVaryingsVertexShader {
+        type Vertex = Vec4;
+        type Uniforms = ();
+        type Varyings = SimdVaryings;
+
+        fn shade(&self, vertex: Vec4, _: &()) -> (Vec4, SimdVaryings) {
+            (vertex, SimdVaryings { value: 0.0 })
+        }
+    }
+
+    struct WhiteFragmentShaderSimd;
+    impl FragmentShaderSimd<SimdVaryings> for WhiteFragmentShaderSimd {
+        type Uniforms = ();
+
+        fn shade_simd(&self, _: <SimdVaryings as SimdInterpolate>::Simd, _: &()) -> ColourSimd {
+            ColourSimd::splat(Colour::WHITE)
+        }
+    }
+
+    fn no_depth_buffer_pass<'r, 't>(
+        renderer: &'r mut Renderer,
+        target: &'t mut RenderTarget,
+    ) -> RenderPass<'r, 't> {
+        let extent = target.extent();
+        renderer.begin_render_pass(
+            target,
+            RenderPassDescriptor {
+                viewport: Viewport::full(&extent),
+                colour_load_op: LoadOp::Clear(Colour::BLACK),
+                depth_load_op: None,
+            },
+        )
+    }
+
+    #[test]
+    #[should_panic(expected = "the render pass has no depth buffer")]
+    fn draw_rejects_a_depth_testing_pipeline_in_a_pass_without_a_depth_buffer() {
+        let mut renderer = Renderer::new().unwrap();
+        let mut target = RenderTarget::new(Extent::new(4, 4)).with_depth();
+        let pipeline = Pipeline::new(PassThroughVertexShader, WhiteFragmentShader)
+            .with_depth_state(DepthState::READ_ONLY);
+
+        let mut pass = no_depth_buffer_pass(&mut renderer, &mut target);
+        pass.draw(
+            &pipeline,
+            DrawCall::new(&[], &[], PrimitiveMode::TRIANGLES, ()),
+            (),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "the render pass has no depth buffer")]
+    fn draw_simd_rejects_a_depth_writing_pipeline_in_a_pass_without_a_depth_buffer() {
+        let mut renderer = Renderer::new().unwrap();
+        let mut target = RenderTarget::new(Extent::new(4, 4)).with_depth();
+        let pipeline = SimdPipeline::new(SimdVaryingsVertexShader, WhiteFragmentShaderSimd)
+            .with_depth_state(DepthState::WRITE_ONLY);
+
+        let mut pass = no_depth_buffer_pass(&mut renderer, &mut target);
+        pass.draw_simd(
+            &pipeline,
+            DrawCall::new(&[], &[], PrimitiveMode::TRIANGLES, ()),
+            (),
+        );
+    }
+
+    #[test]
+    fn a_pipeline_without_depth_needs_no_depth_buffer() {
+        let mut renderer = Renderer::new().unwrap();
+        let mut target = RenderTarget::new(Extent::new(4, 4));
+        let pipeline = Pipeline::new(PassThroughVertexShader, WhiteFragmentShader);
+        let triangle = [
+            Vec4::new(-1.0, -1.0, 0.0, 1.0),
+            Vec4::new(1.0, -1.0, 0.0, 1.0),
+            Vec4::new(-1.0, 1.0, 0.0, 1.0),
+        ];
+
+        let mut pass = no_depth_buffer_pass(&mut renderer, &mut target);
+        pass.draw(
+            &pipeline,
+            DrawCall::new(&triangle, &[0, 1, 2], PrimitiveMode::TRIANGLES, ()),
+            (),
+        );
+        pass.finish();
+
+        assert!(target.pixels().contains(&Colour::WHITE));
+    }
 
     #[test]
     fn blend_state_alpha_blend() {

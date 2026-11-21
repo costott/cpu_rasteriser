@@ -26,11 +26,11 @@ impl Vec3 {
         Self { x, y, z }
     }
 
-    pub fn dot(&self, other: &Self) -> f32 {
+    pub fn dot(self, other: Self) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    pub fn cross(&self, other: &Self) -> Self {
+    pub fn cross(self, other: Self) -> Self {
         Self {
             x: self.y * other.z - self.z * other.y,
             y: self.z * other.x - self.x * other.z,
@@ -38,24 +38,24 @@ impl Vec3 {
         }
     }
 
-    pub fn length(&self) -> f32 {
+    pub fn length(self) -> f32 {
         self.dot(self).sqrt()
     }
 
-    pub fn normalise(&self) -> Vec3 {
+    pub fn normalise(self) -> Vec3 {
         let length = self.length();
-        if length > 0.0 { *self / length } else { *self }
+        if length > 0.0 { self / length } else { self }
     }
 
-    pub fn to_point4(&self) -> Vec4 {
+    pub fn to_point4(self) -> Vec4 {
         Vec4::new(self.x, self.y, self.z, 1.0)
     }
 
-    pub fn to_direction4(&self) -> Vec4 {
+    pub fn to_direction4(self) -> Vec4 {
         Vec4::new(self.x, self.y, self.z, 0.0)
     }
 
-    pub fn xy(&self) -> Vec2 {
+    pub fn xy(self) -> Vec2 {
         Vec2::new(self.x, self.y)
     }
 }
@@ -154,7 +154,7 @@ impl From<(i32, i32, i32)> for Vec3 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3Simd {
     pub x: f32x8,
     pub y: f32x8,
@@ -346,7 +346,7 @@ mod tests {
         let a = Vec3::new(1.0, 2.0, 3.0);
         let b = Vec3::new(4.0, -5.0, 6.0);
 
-        let dot = a.dot(&b);
+        let dot = a.dot(b);
 
         assert_eq!(dot, 12.0);
     }
@@ -356,7 +356,7 @@ mod tests {
         let x = Vec3::new(1.0, 0.0, 0.0);
         let y = Vec3::new(0.0, 1.0, 0.0);
 
-        let z = x.cross(&y);
+        let z = x.cross(y);
 
         assert_eq!(z, Vec3::new(0.0, 0.0, 1.0));
     }
@@ -366,8 +366,8 @@ mod tests {
         let a = Vec3::new(2.0, -1.0, 3.0);
         let b = Vec3::new(0.0, 4.0, -2.0);
 
-        let ab = a.cross(&b);
-        let ba = b.cross(&a);
+        let ab = a.cross(b);
+        let ba = b.cross(a);
 
         assert_vec3_approx_eq(ab, ba * -1.0);
     }

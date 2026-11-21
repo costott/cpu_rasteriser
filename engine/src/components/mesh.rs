@@ -129,11 +129,7 @@ impl Mesh<ObjVertex> {
             let i1 = triangle[1] as usize;
             let i2 = triangle[2] as usize;
 
-            let face = Triangle3D::new(
-                self.vertices[i0].clone(),
-                self.vertices[i1].clone(),
-                self.vertices[i2].clone(),
-            );
+            let face = Triangle3D::new(self.vertices[i0], self.vertices[i1], self.vertices[i2]);
 
             let n = face.normal();
 

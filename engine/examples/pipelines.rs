@@ -7,7 +7,7 @@ const HEIGHT: usize = 360;
 
 /// Reflects a vector around a normal, using the formula: R = V - 2 * (V . N) * N
 fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
-    vector - normal * 2.0 * vector.dot(&normal)
+    vector - normal * 2.0 * vector.dot(normal)
 }
 
 #[derive(Clone)]
@@ -46,7 +46,7 @@ impl VertexShader for GouraudVertexShader {
             let light_dir = -light.direction.normalise();
 
             // diffuse
-            let diffuse = normal.dot(&light_dir).max(0.0);
+            let diffuse = normal.dot(light_dir).max(0.0);
 
             colour += Into::<Vec4>::into(light.colour) * diffuse;
 
@@ -54,7 +54,7 @@ impl VertexShader for GouraudVertexShader {
             let view_dir = (uniforms.scene.camera.eye - world_pos).normalise();
 
             let reflect_dir = reflect(-light_dir, normal).normalise();
-            let specular = view_dir.dot(&reflect_dir).max(0.0).powf(32.0);
+            let specular = view_dir.dot(reflect_dir).max(0.0).powf(32.0);
 
             colour += Into::<Vec4>::into(light.colour) * specular;
         }
@@ -144,15 +144,14 @@ impl FragmentShader<PhongVaryings> for PhongFragmentShader {
                 let light_dir = (-light.direction).normalise();
 
                 // Diffuse
-                let diffuse_strength = normal.dot(&light_dir).max(0.0);
+                let diffuse_strength = normal.dot(light_dir).max(0.0);
 
                 let diffuse = material.diffuse * light.colour * diffuse_strength;
 
                 // Specular
                 let reflect_dir = reflect(-light_dir, normal);
 
-                let specular_strength =
-                    view_dir.dot(&reflect_dir).max(0.0).powf(material.shininess);
+                let specular_strength = view_dir.dot(reflect_dir).max(0.0).powf(material.shininess);
 
                 let specular = material.specular * light.colour * specular_strength;
 
@@ -408,5 +407,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     MinifbEngine::new()
         .with_title("Pipelines Demo - ESC to exit")
         .with_size(WIDTH, HEIGHT)
-        .run(PipelinesApp::new()?)
+        .run(PipelinesApp::new()?)?;
+    Ok(())
 }

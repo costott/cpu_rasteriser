@@ -1,10 +1,11 @@
+use crate::graphics::vertex::{ClipVertex, RasterVertex};
 use crate::prelude::*;
 
 use crate::graphics::fragment::{Fragment, FragmentSimd};
 
 use wide::f32x8;
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Triangle2D<V>
 where
     V: Interpolate,
@@ -14,10 +15,6 @@ where
     pub c: RasterVertex<V>,
 }
 impl<V: Interpolate> Triangle2D<V> {
-    pub fn new(a: RasterVertex<V>, b: RasterVertex<V>, c: RasterVertex<V>) -> Self {
-        Self { a, b, c }
-    }
-
     pub fn bounding_box(&self) -> (Vec2, Vec2) {
         let min_x = self
             .a
@@ -395,7 +392,7 @@ impl<V: Interpolate> Edge<V> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TriangleClip<V>
 where
     V: Interpolate,
@@ -410,7 +407,7 @@ impl<V: Interpolate> TriangleClip<V> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Triangle3D<V: Clone> {
     pub a: V,
     pub b: V,
@@ -426,7 +423,15 @@ impl Triangle3D<ObjVertex> {
         let ab = self.b.position - self.a.position;
         let ac = self.c.position - self.a.position;
 
-        ab.cross(&ac).normalise()
+        ab.cross(ac).normalise()
+    }
+}
+
+/// A constructor that only the benches, through the `internals` feature, and the tests use.
+#[cfg(any(test, feature = "internals"))]
+impl<V: Interpolate> Triangle2D<V> {
+    pub fn new(a: RasterVertex<V>, b: RasterVertex<V>, c: RasterVertex<V>) -> Self {
+        Self { a, b, c }
     }
 }
 

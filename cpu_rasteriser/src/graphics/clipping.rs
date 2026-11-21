@@ -1,3 +1,5 @@
+use crate::graphics::triangle::TriangleClip;
+use crate::graphics::vertex::ClipVertex;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy)]

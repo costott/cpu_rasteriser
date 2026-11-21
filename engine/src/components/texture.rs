@@ -10,7 +10,13 @@ pub struct Texture {
 }
 impl Texture {
     pub fn from_image(path: impl AsRef<std::path::Path>) -> Result<Self, TextureError> {
-        let image = image::open(path).map_err(TextureError::Image)?.to_rgba8();
+        let path = path.as_ref();
+        let image = image::open(path)
+            .map_err(|source| TextureError::Image {
+                path: path.to_path_buf(),
+                source,
+            })?
+            .to_rgba8();
 
         let pixels = image
             .pixels()
@@ -196,10 +202,10 @@ impl TextureSampler {
                 let tx = x - x0 as f32;
                 let ty = y - y0 as f32;
 
-                let c0 = Colour::lerp(&c00, &c10, tx);
-                let c1 = Colour::lerp(&c01, &c11, tx);
+                let c0 = Colour::lerp(c00, c10, tx);
+                let c1 = Colour::lerp(c01, c11, tx);
 
-                Colour::lerp(&c0, &c1, ty)
+                Colour::lerp(c0, c1, ty)
             }
         }
     }
@@ -253,10 +259,10 @@ impl TextureSampler {
             ]
         };
 
-        let c0 = Colour::lerp(&c00, &c10, tx);
-        let c1 = Colour::lerp(&c01, &c11, tx);
+        let c0 = Colour::lerp(c00, c10, tx);
+        let c1 = Colour::lerp(c01, c11, tx);
 
-        Colour::lerp(&c0, &c1, ty)
+        Colour::lerp(c0, c1, ty)
     }
 
     #[inline(always)]
@@ -377,18 +383,18 @@ impl TextureSampler {
     }
 }
 
-#[derive(Debug)]
+/// An error loading a [`Texture`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum TextureError {
-    Image(image::ImageError),
+    /// The image file couldn't be opened or decoded.
+    #[error("failed to load the image `{}`", path.display())]
+    Image {
+        path: std::path::PathBuf,
+        #[source]
+        source: image::ImageError,
+    },
 }
-impl std::fmt::Display for TextureError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TextureError::Image(e) => write!(f, "Image error: {}", e),
-        }
-    }
-}
-impl std::error::Error for TextureError {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WrapMode {

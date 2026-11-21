@@ -2,7 +2,7 @@
 sources:
   - cpu_rasteriser/src/renderer.rs
   - cpu_rasteriser/Cargo.toml
-verified: 4e5fb07
+verified: ffed0e7
 ---
 
 # Tiling and threading
@@ -17,7 +17,7 @@ All of this lives in `renderer.rs` (`TileBinner`, `Tile`, `render_tile`, `Render
 - **Load operations:** these seed the tiles at that point.
   - `LoadOp::Clear` fills the tile.
   - `LoadOp::Load` copies the target's pixels and depth into the tile row by row (`blit_from`).
-  - With `depth_load_op: None`, tiles have no depth buffer. Any pipeline that tests or writes depth will then panic inside the worker thread (`expect` in the raster command; [#27](https://github.com/costott/cpu_rasteriser/issues/27)).
+  - With `depth_load_op: None`, tiles have no depth buffer. `draw` and `draw_simd` reject a pipeline that tests or writes depth in such a pass by panicking on the calling thread, so the raster commands' `expect`s on the depth buffer state an invariant rather than a reachable failure.
   - A `depth_load_op` of `Some(_)` on a target built without `with_depth()` panics earlier, on the calling thread, in `begin_render_pass` (`Tile::new`).
 
 ## Binning (`TileBinner::bin_command`)

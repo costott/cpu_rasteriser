@@ -127,6 +127,7 @@ impl PerspectiveProjection {
 ///     controls.update_from_events(&mut camera, dt);
 /// }
 /// ```
+#[derive(Debug, Clone)]
 pub struct OrbitControls {
     pub radius: f32,
     pub azimuth: f32,
@@ -202,6 +203,7 @@ impl OrbitControls {
 /// Move: WASD or arrow keys
 /// Look: Mouse movement
 /// Rise/Fall: Space/Shift
+#[derive(Debug, Clone)]
 pub struct FirstPersonControls {
     pub yaw: f32,
     pub pitch: f32,
@@ -305,7 +307,7 @@ impl FirstPersonControls {
         forward.y = 0.0;
         forward = forward.normalise();
 
-        let mut right = forward.cross(&camera.up).normalise();
+        let mut right = forward.cross(camera.up).normalise();
         right.y = 0.0;
         right = right.normalise();
 

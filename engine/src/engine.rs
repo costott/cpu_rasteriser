@@ -15,12 +15,41 @@ use crate::app::{AppEvent, Application, CursorGrab};
 use crate::input::{ButtonState, InputEvent, InputKey, InputState, MouseButton};
 use crate::{AppHandle, RenderContext};
 
+/// A windowing backend that runs an [`Application`].
 pub trait EngineBackend: Sized {
-    fn run<A>(self, app: A) -> Result<(), Box<dyn std::error::Error>>
+    /// Opens a window and runs `app` until it exits or the window is closed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EngineError`] if the backend fails to start, or fails while running. A
+    /// failure while running ends the application.
+    fn run<A>(self, app: A) -> Result<(), EngineError>
     where
         A: Application + 'static;
 }
 
+/// An error raised by an [`EngineBackend`] while starting or running an application.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum EngineError {
+    /// The renderer couldn't be created.
+    #[error("failed to create the renderer")]
+    Renderer(#[source] std::io::Error),
+    /// The winit event loop couldn't be created or failed while running.
+    #[error("the winit event loop failed")]
+    EventLoop(#[from] winit::error::EventLoopError),
+    /// The winit window couldn't be created.
+    #[error("failed to create the window")]
+    Window(#[from] winit::error::OsError),
+    /// The softbuffer surface that presents frames to a winit window failed.
+    #[error("the window surface failed")]
+    Surface(#[from] softbuffer::SoftBufferError),
+    /// The minifb window couldn't be created or updated.
+    #[error("the minifb window failed")]
+    Minifb(#[from] minifb::Error),
+}
+
+#[derive(Debug)]
 pub struct WinitEngine {
     window_attributes: winit::window::WindowAttributes,
 }
@@ -47,7 +76,7 @@ impl Default for WinitEngine {
 }
 
 impl EngineBackend for WinitEngine {
-    fn run<A>(self, app: A) -> Result<(), Box<dyn std::error::Error>>
+    fn run<A>(self, app: A) -> Result<(), EngineError>
     where
         A: Application + 'static,
     {
@@ -56,10 +85,11 @@ impl EngineBackend for WinitEngine {
 
         let mut app_runner = WinitEngineApp::new(context, app, self.window_attributes)?;
         event_loop.run_app(&mut app_runner)?;
-        Ok(())
+        app_runner.error.map_or(Ok(()), Err)
     }
 }
 
+#[derive(Debug)]
 pub struct MinifbEngine {
     title: String,
     width: usize,
@@ -101,7 +131,7 @@ impl Default for MinifbEngine {
 }
 
 impl EngineBackend for MinifbEngine {
-    fn run<A>(self, app: A) -> Result<(), Box<dyn std::error::Error>>
+    fn run<A>(self, app: A) -> Result<(), EngineError>
     where
         A: Application + 'static,
     {
@@ -126,6 +156,9 @@ where
     state: AppState,
     last_frame: Instant,
     input_state: InputState,
+    /// The first error raised inside an event loop callback. Raising it exits the event loop,
+    /// and [`WinitEngine::run`] returns it.
+    error: Option<EngineError>,
 }
 
 enum AppState {
@@ -146,18 +179,24 @@ where
         context: softbuffer::Context<winit::event_loop::OwnedDisplayHandle>,
         app: A,
         window_attributes: winit::window::WindowAttributes,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, EngineError> {
         Ok(Self {
             app,
             app_handle: AppHandle::default(),
             context,
-            renderer: Renderer::new()?,
+            renderer: Renderer::new().map_err(EngineError::Renderer)?,
             presentation_target: RenderTarget::new(Extent::new(640, 360)).with_depth(),
             window_attributes,
             state: AppState::Initial,
             last_frame: Instant::now(),
             input_state: InputState::default(),
+            error: None,
         })
+    }
+
+    fn exit_with(&mut self, event_loop: &ActiveEventLoop, error: EngineError) {
+        self.error.get_or_insert(error);
+        event_loop.exit();
     }
 
     fn handle_input_event(&mut self, event: InputEvent) {
@@ -175,9 +214,9 @@ where
         self.app.resize(width, height);
     }
 
-    fn render_frame(&mut self) {
+    fn render_frame(&mut self) -> Result<(), EngineError> {
         let AppState::Running { surface } = &mut self.state else {
-            return;
+            return Ok(());
         };
 
         let dt = self.last_frame.elapsed().as_secs_f32();
@@ -188,10 +227,11 @@ where
         let mut context = RenderContext::new(&mut self.renderer, &mut self.presentation_target);
         let _ = self.app.render(&mut context);
 
-        let mut buffer = surface.buffer_mut().unwrap();
+        let mut buffer = surface.buffer_mut()?;
 
         self.presentation_target.write_pixels_u32(&mut buffer);
-        buffer.present().unwrap();
+        buffer.present()?;
+        Ok(())
     }
 }
 
@@ -201,24 +241,28 @@ where
 {
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
         if let StartCause::Init = cause {
-            let window = event_loop
-                .create_window(self.window_attributes.clone())
-                .expect("failed creating window");
-            self.state = AppState::Suspended {
-                window: Rc::new(window),
-            };
+            match event_loop.create_window(self.window_attributes.clone()) {
+                Ok(window) => {
+                    self.state = AppState::Suspended {
+                        window: Rc::new(window),
+                    };
+                }
+                Err(error) => self.exit_with(event_loop, error.into()),
+            }
         }
     }
 
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = match &self.state {
             AppState::Suspended { window } => window.clone(),
             _ => return,
         };
 
         let size = window.inner_size();
-        let surface = softbuffer::Surface::new(&self.context, window.clone())
-            .expect("failed creating surface");
+        let surface = match softbuffer::Surface::new(&self.context, window.clone()) {
+            Ok(surface) => surface,
+            Err(error) => return self.exit_with(event_loop, error.into()),
+        };
 
         if let (Some(width), Some(height)) =
             (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
@@ -264,8 +308,10 @@ where
                 if let (Some(width), Some(height)) =
                     (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
                 {
-                    if let AppState::Running { surface } = &mut self.state {
-                        surface.resize(width, height).unwrap();
+                    if let AppState::Running { surface } = &mut self.state
+                        && let Err(error) = surface.resize(width, height)
+                    {
+                        return self.exit_with(event_loop, error.into());
                     }
                     self.apply_resize(width.get(), height.get());
                     self.app.event(
@@ -278,7 +324,9 @@ where
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.render_frame();
+                if let Err(error) = self.render_frame() {
+                    return self.exit_with(event_loop, error);
+                }
                 self.app
                     .event(AppEvent::RedrawRequested, &mut self.app_handle);
             }
@@ -433,12 +481,12 @@ impl<A> MinifbEngineApp<A>
 where
     A: Application,
 {
-    fn new(window: minifb::Window, app: A) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(window: minifb::Window, app: A) -> Result<Self, EngineError> {
         let (width, height) = window.get_size();
         Ok(Self {
             app,
             app_handle: AppHandle::default(),
-            renderer: Renderer::new()?,
+            renderer: Renderer::new().map_err(EngineError::Renderer)?,
             presentation_target: RenderTarget::new(Extent::new(width, height)).with_depth(),
             pixel_buffer: Vec::new(),
             window,
@@ -554,7 +602,7 @@ where
         self.window.set_cursor_visibility(state.cursor.visible);
     }
 
-    fn render_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn render_frame(&mut self) -> Result<(), EngineError> {
         let dt = self.last_frame.elapsed().as_secs_f32();
         self.last_frame = Instant::now();
         self.app.update(dt);
@@ -570,11 +618,11 @@ where
             .write_pixels_u32(&mut self.pixel_buffer);
 
         self.window
-            .update_with_buffer(&self.pixel_buffer, width, height)
-            .map_err(|err| err.into())
+            .update_with_buffer(&self.pixel_buffer, width, height)?;
+        Ok(())
     }
 
-    fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run(&mut self) -> Result<(), EngineError> {
         self.app.event(AppEvent::Resumed, &mut self.app_handle);
 
         while self.window.is_open() {

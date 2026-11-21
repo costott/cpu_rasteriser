@@ -177,12 +177,12 @@ Supported features:
 The rasteriser includes custom implementations of:
 
 - Triangle scanline rasterisation
-- Bresenham line drawing
-- Circle rasterisation
 - Barycentric interpolation
 - Perspective-correct interpolation
 
 Perspective correction ensures attributes such as normals, colours, and depth values are correctly interpolated across projected triangles.
+
+Line and circle rasterisation are not currently supported ([#28](https://github.com/costott/cpu_rasteriser/issues/28)).
 
 ---
 
@@ -324,7 +324,7 @@ impl Application for MyApp {
 MinifbEngine::new()
     .with_title("My App")
     .with_size(640, 360)
-    .run(MyApp::new()?)
+    .run(MyApp::new()?)?;
 ```
 
 Built-in `OrbitControls` and `FirstPersonControls` camera controllers consume this normalised input to drive a `Camera` without any backend-specific code.
@@ -339,7 +339,7 @@ Built-in `OrbitControls` and `FirstPersonControls` camera controllers consume th
 | ------------------------------------------------ | ------ |
 | 3D transformations                               | ✅     |
 | Triangle rasterisation                           | ✅     |
-| Line and circle rasterisation                    | ✅     |
+| Line and circle rasterisation ([#28](https://github.com/costott/cpu_rasteriser/issues/28)) | ❌     |
 | Depth buffering                                  | ✅     |
 | Configurable depth test/write state              | ✅     |
 | Backface culling                                 | ✅     |

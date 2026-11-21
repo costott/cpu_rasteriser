@@ -1,7 +1,8 @@
+use crate::graphics::triangle::{Triangle2D, TriangleClip};
+use crate::graphics::vertex::{ClipVertex, RasterVertex};
 use crate::prelude::*;
 
 use crate::graphics::clipping::*;
-use crate::graphics::vertex_shader::*;
 use crate::renderer::CullingMode;
 
 pub struct GeometryProcessor;
@@ -67,7 +68,7 @@ impl GeometryProcessor {
         let ab = triangle.b.position - triangle.a.position;
         let ac = triangle.c.position - triangle.a.position;
 
-        ab.cross(&ac) >= 0.0
+        ab.cross(ac) >= 0.0
     }
 
     fn triangle_clip_to_screen<V>(triangle: TriangleClip<V>, viewport: &Viewport) -> Triangle2D<V>

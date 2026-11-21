@@ -14,40 +14,28 @@ impl Vec4 {
         Self { x, y, z, w }
     }
 
-    pub fn from_vec3(vec3: &Vec3) -> Self {
-        Self {
-            x: vec3.x,
-            y: vec3.y,
-            z: vec3.z,
-            w: 1.0,
-        }
+    pub fn lerp(self, other: Self, t: f32) -> Self {
+        self * (1.0 - t) + other * t
     }
 
-    pub fn lerp(&self, other: &Self, t: f32) -> Self {
-        *self * (1.0 - t) + *other * t
-    }
-
-    pub fn dot(&self, other: &Self) -> f32 {
+    pub fn dot(self, other: Self) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z + self.w * other.w
     }
 
-    pub fn normalise(&mut self) {
+    pub fn normalise(self) -> Self {
         let length = self.dot(self).sqrt();
-        if length > 0.0 {
-            *self = *self / length;
-        }
+        if length > 0.0 { self / length } else { self }
     }
 
-    pub fn homogenize(&mut self) {
+    pub fn homogenize(self) -> Self {
         if self.w != 0.0 {
-            self.x /= self.w;
-            self.y /= self.w;
-            self.z /= self.w;
-            self.w = 1.0;
+            Self::new(self.x / self.w, self.y / self.w, self.z / self.w, 1.0)
+        } else {
+            self
         }
     }
 
-    pub fn homogenize_to_vec3(&self) -> Vec3 {
+    pub fn homogenize_to_vec3(self) -> Vec3 {
         if self.w != 0.0 {
             Vec3::new(self.x / self.w, self.y / self.w, self.z / self.w)
         } else {
@@ -55,11 +43,11 @@ impl Vec4 {
         }
     }
 
-    pub fn xyz(&self) -> Vec3 {
+    pub fn xyz(self) -> Vec3 {
         Vec3::new(self.x, self.y, self.z)
     }
 
-    pub fn xy(&self) -> Vec2 {
+    pub fn xy(self) -> Vec2 {
         Vec2::new(self.x, self.y)
     }
 }
@@ -237,7 +225,7 @@ mod tests {
         let a = Vec4::new(-2.0, 5.0, 3.0, 1.0);
         let b = Vec4::new(8.0, -1.0, 7.0, 0.0);
 
-        let result = a.lerp(&b, 0.0);
+        let result = a.lerp(b, 0.0);
 
         assert_eq!(result, a);
     }
@@ -247,7 +235,7 @@ mod tests {
         let a = Vec4::new(-2.0, 5.0, 3.0, 1.0);
         let b = Vec4::new(8.0, -1.0, 7.0, 0.0);
 
-        let result = a.lerp(&b, 1.0);
+        let result = a.lerp(b, 1.0);
 
         assert_eq!(result, b);
     }
@@ -257,7 +245,7 @@ mod tests {
         let a = Vec4::new(2.0, 4.0, 6.0, 0.0);
         let b = Vec4::new(6.0, 8.0, 10.0, 2.0);
 
-        let result = a.lerp(&b, 0.5);
+        let result = a.lerp(b, 0.5);
 
         assert_vec4_approx_eq(result, Vec4::new(4.0, 6.0, 8.0, 1.0));
     }
@@ -267,27 +255,23 @@ mod tests {
         let a = Vec4::new(1.0, 2.0, 3.0, 4.0);
         let b = Vec4::new(4.0, -5.0, 6.0, -2.0);
 
-        let dot = a.dot(&b);
+        let dot = a.dot(b);
 
         assert_eq!(dot, 1.0 * 4.0 + 2.0 * (-5.0) + 3.0 * 6.0 + 4.0 * (-2.0));
     }
 
     #[test]
     fn normalise_scales_non_zero_vector_to_unit_length() {
-        let mut v = Vec4::new(3.0, 4.0, 0.0, 0.0);
+        let v = Vec4::new(3.0, 4.0, 0.0, 0.0);
 
-        v.normalise();
-
-        assert_vec4_approx_eq(v, Vec4::new(0.6, 0.8, 0.0, 0.0));
+        assert_vec4_approx_eq(v.normalise(), Vec4::new(0.6, 0.8, 0.0, 0.0));
     }
 
     #[test]
     fn normalise_zero_vector_keeps_zero_vector() {
-        let mut v = Vec4::new(0.0, 0.0, 0.0, 0.0);
+        let v = Vec4::new(0.0, 0.0, 0.0, 0.0);
 
-        v.normalise();
-
-        assert_eq!(v, Vec4::new(0.0, 0.0, 0.0, 0.0));
+        assert_eq!(v.normalise(), Vec4::new(0.0, 0.0, 0.0, 0.0));
     }
 
     #[test]
@@ -313,20 +297,16 @@ mod tests {
 
     #[test]
     fn homogenize_divides_by_w_and_sets_w_to_one() {
-        let mut v = Vec4::new(2.0, 4.0, 6.0, 2.0);
+        let v = Vec4::new(2.0, 4.0, 6.0, 2.0);
 
-        v.homogenize();
-
-        assert_vec4_approx_eq(v, Vec4::new(1.0, 2.0, 3.0, 1.0));
+        assert_vec4_approx_eq(v.homogenize(), Vec4::new(1.0, 2.0, 3.0, 1.0));
     }
 
     #[test]
     fn homogenize_does_nothing_when_w_is_zero() {
-        let mut v = Vec4::new(2.0, 4.0, 6.0, 0.0);
+        let v = Vec4::new(2.0, 4.0, 6.0, 0.0);
 
-        v.homogenize();
-
-        assert_eq!(v, Vec4::new(2.0, 4.0, 6.0, 0.0));
+        assert_eq!(v.homogenize(), Vec4::new(2.0, 4.0, 6.0, 0.0));
     }
 
     #[test]
