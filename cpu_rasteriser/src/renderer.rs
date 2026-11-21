@@ -158,6 +158,13 @@ impl Renderer {
         self.tile_pool.recycle(framebuffer, depthbuffer);
     }
 }
+impl std::fmt::Debug for Renderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Renderer")
+            .field("threads", &self.thread_pool.max_count())
+            .finish_non_exhaustive()
+    }
+}
 
 /// Tile buffers reused across render passes. Buffers taken from the pool keep stale contents, so
 /// callers must overwrite or clear them.
@@ -296,13 +303,23 @@ impl RenderTarget {
         }
     }
 }
+impl std::fmt::Debug for RenderTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RenderTarget")
+            .field("extent", &self.extent())
+            .field("has_depth_buffer", &self.depthbuffer.is_some())
+            .finish_non_exhaustive()
+    }
+}
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderPassDescriptor {
     pub viewport: Viewport,
     pub colour_load_op: LoadOp<Colour>,
     pub depth_load_op: Option<LoadOp<f32>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadOp<T> {
     /// Keeps the existing data in the framebuffer / depth buffer.
     Load,
@@ -310,6 +327,7 @@ pub enum LoadOp<T> {
     Clear(T),
 }
 
+#[derive(Debug)]
 struct PipelineState {
     culling_mode: CullingMode,
     /// Optional blending configuration.
@@ -392,6 +410,17 @@ where
         self
     }
 }
+impl<VS, FS> std::fmt::Debug for Pipeline<VS, FS>
+where
+    VS: VertexShader,
+    FS: FragmentShader<VS::Varyings>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pipeline")
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
 
 /// A rendering pipeline that uses SIMD rasterisation and fragment shading.
 ///
@@ -467,12 +496,24 @@ where
         self
     }
 }
+impl<VS, FS> std::fmt::Debug for SimdPipeline<VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: SimdInterpolate,
+    FS: FragmentShaderSimd<VS::Varyings>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SimdPipeline")
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
 
 /// Controls whether primitives are removed based on their winding direction before rasterisation.
 ///
 /// Back-face culling can improve rendering performance by avoiding rasterisation of triangles
 /// facing away from the camera.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CullingMode {
     /// No culling is performed; all triangles are rendered.
     None,
@@ -481,7 +522,7 @@ pub enum CullingMode {
 }
 
 /// Rendering depth-test and depth-write configuration.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DepthState {
     pub test_enabled: bool,
     pub write_enabled: bool,
@@ -513,7 +554,7 @@ impl DepthState {
 }
 
 /// Determines how a source or destination colour contributes to the blend result.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlendFactor {
     Zero,
     One,
@@ -627,7 +668,7 @@ impl BlendFactor {
 }
 
 /// Determines the arithmetic operation used to combine the scaled source and destination colours.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlendOp {
     Add,
     Subtract,
@@ -640,7 +681,7 @@ pub enum BlendOp {
 ///
 /// A blend state determines how a fragment's source colour is combined with
 /// the existing destination colour in the framebuffer.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlendState {
     pub src_factor: BlendFactor,
     pub dst_factor: BlendFactor,
@@ -917,6 +958,16 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
             .render_tiles(self.tile_binner, self.render_target);
     }
 }
+impl std::fmt::Debug for RenderPass<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RenderPass")
+            .field("render_target", &self.render_target)
+            .field("has_depth_buffer", &self.has_depth_buffer)
+            .field("viewport", &self.viewport)
+            .field("queued_draws", &self.queued_draws.len())
+            .finish_non_exhaustive()
+    }
+}
 
 /// Internal type-erased command queued during a render pass.
 ///
@@ -1128,6 +1179,15 @@ where
 
     fn primitive_mode(&self) -> PrimitiveMode {
         self.primitive.primitive_mode
+    }
+}
+impl<V: Clone, U> std::fmt::Debug for DrawCall<'_, V, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DrawCall")
+            .field("vertices", &self.primitive.vertices.len())
+            .field("indices", &self.primitive.indices.len())
+            .field("primitive_mode", &self.primitive.primitive_mode)
+            .finish_non_exhaustive()
     }
 }
 

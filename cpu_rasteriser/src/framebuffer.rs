@@ -478,6 +478,14 @@ impl FrameBuffer {
         }
     }
 }
+impl std::fmt::Debug for FrameBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FrameBuffer")
+            .field("width", &self.width())
+            .field("height", &self.height())
+            .finish_non_exhaustive()
+    }
+}
 
 /// Accessors that only the benches use, through the `internals` feature.
 #[cfg(feature = "internals")]

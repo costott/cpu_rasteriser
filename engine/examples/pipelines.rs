@@ -330,7 +330,7 @@ impl Application for PipelinesApp {
         });
 
         let scene_uniforms = std::sync::Arc::new(SceneUniforms {
-            camera: self.camera.clone(),
+            camera: self.camera,
             lights: self.lights.clone(),
         });
 

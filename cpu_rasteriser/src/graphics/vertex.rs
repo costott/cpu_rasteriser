@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 /// Represents a 2D vertex in screen space
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RasterVertex<V>
 where
     V: Interpolate,
@@ -26,7 +26,7 @@ impl<V: Interpolate> RasterVertex<V> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClipVertex<V>
 where
     V: Interpolate,
@@ -54,7 +54,7 @@ impl<V: Interpolate> ClipVertex<V> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ObjVertex {
     pub position: Vec3,
     pub colour: Colour,

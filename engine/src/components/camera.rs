@@ -3,7 +3,7 @@ use cpu_rasteriser::prelude::*;
 use crate::app::AppEvent;
 use crate::input::{CameraControlInput, InputKey, InputState};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
     pub eye: Vec3,
     pub lookat: Vec3,
@@ -42,7 +42,7 @@ impl Camera {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Projection {
     Perspective(PerspectiveProjection),
     Orthographic(OrthographicProjection),
@@ -56,7 +56,7 @@ impl Projection {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrthographicProjection {
     pub left: f32,
     pub right: f32,
@@ -89,7 +89,7 @@ impl OrthographicProjection {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PerspectiveProjection {
     pub fov: f32,
     pub aspect_ratio: f32,
@@ -127,6 +127,7 @@ impl PerspectiveProjection {
 ///     controls.update_from_events(&mut camera, dt);
 /// }
 /// ```
+#[derive(Debug, Clone)]
 pub struct OrbitControls {
     pub radius: f32,
     pub azimuth: f32,
@@ -202,6 +203,7 @@ impl OrbitControls {
 /// Move: WASD or arrow keys
 /// Look: Mouse movement
 /// Rise/Fall: Space/Shift
+#[derive(Debug, Clone)]
 pub struct FirstPersonControls {
     pub yaw: f32,
     pub pitch: f32,
