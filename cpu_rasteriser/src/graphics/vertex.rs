@@ -40,7 +40,7 @@ impl<V: Interpolate> ClipVertex<V> {
         V: Interpolate,
     {
         Self {
-            position: self.position.lerp(&other.position, t),
+            position: self.position.lerp(other.position, t),
             varyings: self.varyings.interpolate(&other.varyings, t),
         }
     }
