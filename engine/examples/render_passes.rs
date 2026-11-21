@@ -713,5 +713,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             resize: true,
             ..Default::default()
         })
-        .run(MultipassApp::new()?)
+        .run(MultipassApp::new()?)?;
+    Ok(())
 }

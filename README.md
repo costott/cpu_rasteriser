@@ -324,7 +324,7 @@ impl Application for MyApp {
 MinifbEngine::new()
     .with_title("My App")
     .with_size(640, 360)
-    .run(MyApp::new()?)
+    .run(MyApp::new()?)?;
 ```
 
 Built-in `OrbitControls` and `FirstPersonControls` camera controllers consume this normalised input to drive a `Camera` without any backend-specific code.

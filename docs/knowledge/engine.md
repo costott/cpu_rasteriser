@@ -8,9 +8,10 @@ sources:
   - engine/src/components/mesh.rs
   - engine/src/components/material.rs
   - engine/src/components/texture.rs
+  - engine/src/loaders/values.rs
   - engine/src/loaders/obj.rs
   - engine/src/loaders/mtl.rs
-verified: 178eef3
+verified: ffed0e7
 ---
 
 # Engine crate
@@ -31,6 +32,7 @@ The user-facing API is described in `engine/README.md`. This document covers int
   - The resize check runs every frame.
 - **Input mapping:** both backends map only a fixed set of keys (arrows, WASD, Space, LeftShift, Escape) and mouse buttons to `InputKey`/`MouseButton`. Adding a key needs a change in both mappers.
 - **Window state:** `Application::window_state` is applied every frame (cursor visibility and grab). Minifb ignores cursor grab.
+- **Errors:** `run` returns an `EngineError`. A failure during startup is returned directly. winit reports failures inside its callbacks (creating the window, creating or resizing the surface, presenting a frame), which can't return errors: the backend stores the first one, asks the event loop to exit, and `WinitEngine::run` returns it once the loop has ended.
 
 ## `RenderContext` and `PresentedFrame` (`app.rs`)
 
@@ -57,4 +59,8 @@ The default `render` implementation does construct one without rendering. **Infe
 
 ## Loaders
 
-`load_obj` and `load_mtl` are hand-written parsers. They produce `Model<ObjVertex>` and `Vec<Material>`, with typed errors (`ObjError`, `MtlError`).
+`load_obj` and `load_mtl` are hand-written parsers. They produce `Model<ObjVertex>` and `Vec<Material>`.
+
+- **Errors:** `ObjError` and `MtlError` carry the 1-based line number of the failing statement and chain their causes through `source()`. A failed `mtllib` becomes `ObjError::MaterialLibrary` over the `MtlError`, and a failed texture map becomes `MtlError::Texture` over the `TextureError`.
+- **Unsupported statements** are skipped with a warning on stderr, and so is a `usemtl` naming an unknown material.
+- **Face vertices** must have all three indices (`v/vt/vn`). OBJ indices count from 1, so index 0 is reported as out of bounds.
