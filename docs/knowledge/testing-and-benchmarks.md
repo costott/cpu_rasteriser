@@ -8,7 +8,7 @@ sources:
   - cpu_rasteriser/benches/raster_command.rs
   - engine/benches/texture_sampling.rs
   - engine/examples/bloom.rs
-verified: 1659598
+verified: ffed0e7
 ---
 
 # Testing, benchmarks and build flags
@@ -23,7 +23,7 @@ There is no custom `[profile.release]`. The only formatting configuration is rus
 
 - **Location:** unit tests sit in `#[cfg(test)] mod tests` beside the code. Names are descriptive behaviour phrases, e.g. `rasterise_respects_bounds`, `process_triangle_culls_back_facing_triangles`.
 - **Coverage:** concentrated on maths, geometry processing, triangle rasterisation, blending and SIMD/scalar equivalence. There are no integration tests that render a whole pass and compare images.
-- **Fakes:** the unit tests and benches write `SimdInterpolate` implementations by hand. See `simd.md`.
+- **Fakes:** the `graphics/triangle.rs` unit tests and the benches write `SimdInterpolate` implementations by hand; the `renderer.rs` tests use the derive. See `simd.md`.
 - **Doctests:** most doc examples are marked `ignore`. The one on `Renderer` isn't, and it doesn't compile ([#25](https://github.com/costott/cpu_rasteriser/issues/25)).
 - **Baseline:** the current pass and fail baseline is in the project `CLAUDE.md`.
 
@@ -35,7 +35,7 @@ There is no custom `[profile.release]`. The only formatting configuration is rus
 | `cpu_rasteriser/benches/raster_command.rs` | Whole raster commands in groups `pre_simd`, `simd_scalar_shader` and `simd_shader` |
 | `engine/benches/texture_sampling.rs` | Texture sampler variants. Some benchmark functions are defined but unused (clippy `dead_code`). |
 
-**The benches contain their own copies of the raster command logic.** The renderer's `RasterCommand` types are private, so the benches re-implement them. Changing `TriangleRasterCommand(Simd)` in `renderer.rs` doesn't change what the benches measure. Keep the copies in sync deliberately, or say that they diverge. `pre_simd` is a frozen historical baseline.
+**The benches contain their own copies of the raster command logic.** The renderer's `RasterCommand` types are private, so the benches re-implement them. Changing `TriangleRasterCommand(Simd)` in `renderer.rs` doesn't change what the benches measure. Keep the copies in sync deliberately, or say that they diverge. `pre_simd` is a frozen historical baseline. The copies' depth-buffer `expect` messages describe a missing buffer as a failure, because the benches build raster commands directly and skip the check that `draw` and `draw_simd` make.
 
 ## Measuring performance
 

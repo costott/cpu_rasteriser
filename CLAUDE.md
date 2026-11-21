@@ -47,7 +47,7 @@ Run these from the workspace root.
 `target-cpu=native` applies to every build in the workspace, whichever directory cargo runs from; see `testing-and-benchmarks.md`. Compare performance only between builds with the same build configuration.
 
 **Test baseline**, so new failures can be told apart from old ones:
-- 85 tests pass in `cpu_rasteriser`.
+- 88 tests pass in `cpu_rasteriser`.
 - 3 fail: `graphics::triangle::tests::rasterise_simd_matches_scalar` ([#21](https://github.com/costott/cpu_rasteriser/issues/21)), `renderer::tests::blend_factor_resolve` and `renderer::tests::blend_state_reverse_subtract` ([#18](https://github.com/costott/cpu_rasteriser/issues/18)).
 - The doctest on `renderer::Renderer` fails to compile ([#25](https://github.com/costott/cpu_rasteriser/issues/25)).
 - The `engine` tests pass.
