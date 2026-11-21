@@ -2,6 +2,7 @@ use wide::f32x8;
 
 use crate::prelude::*;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Fragment<V> {
     pub position: Vec2,
     pub depth: f32,
@@ -17,6 +18,7 @@ impl<V> Fragment<V> {
     }
 }
 
+#[derive(Debug)]
 pub struct FragmentSimd<V: SimdInterpolate> {
     pub x_start: i32,
     pub y: i32,

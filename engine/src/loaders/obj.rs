@@ -325,7 +325,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("model.obj");
         std::fs::write(&path, contents).unwrap();
-        load_obj(&path).err().expect("loading the OBJ should fail")
+        load_obj(&path).unwrap_err()
     }
 
     #[test]

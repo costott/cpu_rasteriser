@@ -53,7 +53,9 @@ impl Material {
         )
     }
 
-    pub fn default(name: String) -> Self {
+    /// Creates a material with white ambient, diffuse and specular colours, zero shininess and no
+    /// textures.
+    pub fn named(name: String) -> Self {
         Self::new(
             name,
             Colour::WHITE,

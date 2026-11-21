@@ -179,3 +179,11 @@ impl DepthBuffer {
         f32x8::new(values)
     }
 }
+impl std::fmt::Debug for DepthBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DepthBuffer")
+            .field("width", &self.depths.width())
+            .field("height", &self.depths.height())
+            .finish_non_exhaustive()
+    }
+}

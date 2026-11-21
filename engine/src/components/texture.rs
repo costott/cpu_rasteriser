@@ -403,13 +403,13 @@ pub enum TextureError {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WrapMode {
     Repeat,
     Clamp,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterMode {
     Nearest,
     Linear,

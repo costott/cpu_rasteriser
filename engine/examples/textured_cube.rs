@@ -186,7 +186,7 @@ impl Application for TexturedCubeApp {
         };
 
         let scene_uniforms = Arc::new(SceneUniforms {
-            camera: self.camera.clone(),
+            camera: self.camera,
             lights: vec![DirectionalLight::new(
                 Vec3::new(-0.5, -1.0, 2.0).normalise(),
                 Colour::from_u32(0xfffde8),

@@ -1,3 +1,5 @@
+#![warn(missing_debug_implementations)]
+
 pub mod app;
 pub mod components;
 pub mod engine;

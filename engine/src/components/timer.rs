@@ -1,3 +1,4 @@
+#[derive(Debug, Clone)]
 pub struct Timer {
     start_time: std::time::Instant,
     previous_time: std::time::Instant,

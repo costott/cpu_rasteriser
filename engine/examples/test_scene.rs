@@ -233,7 +233,7 @@ impl Application for TestSceneApp {
         });
 
         let scene_uniforms = Arc::new(SceneUniforms {
-            camera: self.camera.clone(),
+            camera: self.camera,
             lights: self.lights.clone(),
         });
 
