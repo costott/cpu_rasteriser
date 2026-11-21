@@ -112,8 +112,8 @@ impl MandelbulbFragmentShader {
         //
         // This prevents us from evaluating the expensive Mandelbulb DE
         // for points that are definitely nowhere near the fractal.
-        let b = origin.dot(&direction);
-        let c = origin.dot(&origin) - BOUNDING_RADIUS * BOUNDING_RADIUS;
+        let b = origin.dot(direction);
+        let c = origin.dot(origin) - BOUNDING_RADIUS * BOUNDING_RADIUS;
 
         let discriminant = b * b - c;
 
@@ -210,15 +210,15 @@ impl MandelbulbFragmentShader {
 
         let view_direction = -ray_direction;
 
-        let diffuse = normal.dot(&light_direction).max(0.0);
+        let diffuse = normal.dot(light_direction).max(0.0);
 
         let half_vector = (light_direction + view_direction).normalise();
 
-        let specular = normal.dot(&half_vector).max(0.0).powf(32.0);
+        let specular = normal.dot(half_vector).max(0.0).powf(32.0);
 
         // Fresnel/rim term: grazing angles (normal nearly perpendicular to
         // view) get brighter. Power controls how tight the rim is.
-        let fresnel = (1.0 - normal.dot(&view_direction).max(0.0)).powf(2.5);
+        let fresnel = (1.0 - normal.dot(view_direction).max(0.0)).powf(2.5);
 
         let ambient = 0.06;
 

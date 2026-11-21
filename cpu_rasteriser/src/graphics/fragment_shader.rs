@@ -19,7 +19,7 @@ use crate::prelude::*;
 ///
 /// /// Reflects a vector around a normal, using the formula: R = V - 2 * (V . N) * N
 /// fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
-///     vector - normal * 2.0 * vector.dot(&normal)
+///     vector - normal * 2.0 * vector.dot(normal)
 /// }
 ///
 /// struct PhongFragmentShader;
@@ -40,7 +40,7 @@ use crate::prelude::*;
 ///                 let light_dir = (-light.direction).normalise();
 ///
 ///                 // Diffuse
-///                 let diffuse_strength = normal.dot(&light_dir).max(0.0);
+///                 let diffuse_strength = normal.dot(light_dir).max(0.0);
 ///
 ///                 let diffuse = material.diffuse * light.colour * diffuse_strength;
 ///
@@ -48,7 +48,7 @@ use crate::prelude::*;
 ///                 let reflect_dir = reflect(-light_dir, normal);
 ///
 ///                 let specular_strength =
-///                     view_dir.dot(&reflect_dir).max(0.0).powf(material.shininess);
+///                     view_dir.dot(reflect_dir).max(0.0).powf(material.shininess);
 ///
 ///                 let specular = material.specular * light.colour * specular_strength;
 ///

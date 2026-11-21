@@ -305,7 +305,7 @@ impl FirstPersonControls {
         forward.y = 0.0;
         forward = forward.normalise();
 
-        let mut right = forward.cross(&camera.up).normalise();
+        let mut right = forward.cross(camera.up).normalise();
         right.y = 0.0;
         right = right.normalise();
 

@@ -426,7 +426,7 @@ impl Triangle3D<ObjVertex> {
         let ab = self.b.position - self.a.position;
         let ac = self.c.position - self.a.position;
 
-        ab.cross(&ac).normalise()
+        ab.cross(ac).normalise()
     }
 }
 
