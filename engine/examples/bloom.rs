@@ -964,5 +964,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             resize: true,
             ..Default::default()
         })
-        .run(BloomApp::new()?)
+        .run(BloomApp::new()?)?;
+    Ok(())
 }

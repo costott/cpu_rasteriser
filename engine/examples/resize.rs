@@ -123,5 +123,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             resize: true,
             ..Default::default()
         })
-        .run(TeapotApp::new()?)
+        .run(TeapotApp::new()?)?;
+    Ok(())
 }

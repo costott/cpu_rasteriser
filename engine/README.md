@@ -20,6 +20,7 @@ It introduces concepts that intentionally do not exist in the rasteriser itself,
 - Render-to-texture: any `RenderTarget` can be copied into a `Texture` (`Texture::from_render_target`) and sampled in a later pass; `Texture::update_from` refills it every frame without reallocating
 - Multipass rendering and post-processing pipelines (chromatic aberration, vignette, greyscale, invert, Gaussian blur, Sobel edge detection are demonstrated as examples)
 - Automatic window-resize handling
+- Typed errors with chained causes: `EngineError` from the backends, `ObjError` and `MtlError` with line numbers from the loaders, `TextureError` and `ModelError`
 
 ## Architecture
 

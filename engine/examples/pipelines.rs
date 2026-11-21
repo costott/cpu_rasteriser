@@ -408,5 +408,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     MinifbEngine::new()
         .with_title("Pipelines Demo - ESC to exit")
         .with_size(WIDTH, HEIGHT)
-        .run(PipelinesApp::new()?)
+        .run(PipelinesApp::new()?)?;
+    Ok(())
 }
