@@ -49,6 +49,7 @@ pub enum EngineError {
     Minifb(#[from] minifb::Error),
 }
 
+#[derive(Debug)]
 pub struct WinitEngine {
     window_attributes: winit::window::WindowAttributes,
 }
@@ -88,6 +89,7 @@ impl EngineBackend for WinitEngine {
     }
 }
 
+#[derive(Debug)]
 pub struct MinifbEngine {
     title: String,
     width: usize,

@@ -324,9 +324,7 @@ mod tests {
 
     fn load_error(test_name: &str, contents: &str) -> ObjError {
         let file = TempFile::new(test_name, "model.obj", contents);
-        load_obj(&file.path)
-            .err()
-            .expect("loading the OBJ should fail")
+        load_obj(&file.path).unwrap_err()
     }
 
     #[test]

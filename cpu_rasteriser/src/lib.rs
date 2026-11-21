@@ -1,3 +1,5 @@
+#![warn(missing_debug_implementations)]
+
 // The `rasteriser_macros` derives emit `::cpu_rasteriser` paths; this lets the unit tests use them.
 #[cfg(test)]
 extern crate self as cpu_rasteriser;
