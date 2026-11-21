@@ -7,6 +7,7 @@ use crate::prelude::*;
 use crate::depthbuffer::DepthBuffer;
 use crate::framebuffer::FrameBuffer;
 use crate::graphics::geometry_processing::GeometryProcessor;
+use crate::graphics::triangle::Triangle2D;
 
 /// A CPU-based renderer responsible for executing draw calls and producing a final framebuffer.
 ///

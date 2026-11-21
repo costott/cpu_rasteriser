@@ -52,7 +52,7 @@ impl<V: Clone> Model<V> {
             DrawCall::new(
                 &mesh.vertices,
                 &mesh.indices,
-                cpu_rasteriser::renderer::PrimitiveMode::TRIANGLES,
+                PrimitiveMode::TRIANGLES,
                 make_uniforms(mesh),
             )
         })

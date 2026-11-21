@@ -2,7 +2,8 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-use cpu_rasteriser::{depthbuffer::DepthBuffer, framebuffer::FrameBuffer, prelude::*};
+use cpu_rasteriser::internals::{DepthBuffer, FrameBuffer, RasterVertex, Rect, Triangle2D};
+use cpu_rasteriser::prelude::*;
 use wide::f32x8;
 
 // -----------------------------------------------------------------------------
