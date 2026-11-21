@@ -9,8 +9,19 @@ pub struct Texture {
     pub pixels: Arc<[Colour]>,
 }
 impl Texture {
+    /// Loads a texture from an image file, in any format the `image` crate supports.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TextureError::Image`] if the file can't be opened or decoded.
     pub fn from_image(path: impl AsRef<std::path::Path>) -> Result<Self, TextureError> {
-        let image = image::open(path).map_err(TextureError::Image)?.to_rgba8();
+        let path = path.as_ref();
+        let image = image::open(path)
+            .map_err(|source| TextureError::Image {
+                path: path.to_path_buf(),
+                source,
+            })?
+            .to_rgba8();
 
         let pixels = image
             .pixels()
@@ -377,18 +388,20 @@ impl TextureSampler {
     }
 }
 
-#[derive(Debug)]
+/// An error loading a [`Texture`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum TextureError {
-    Image(image::ImageError),
+    /// The image file couldn't be opened or decoded.
+    #[error("failed to load the image `{}`", path.display())]
+    Image {
+        /// The image file's path.
+        path: std::path::PathBuf,
+        /// Why it couldn't be opened or decoded.
+        #[source]
+        source: image::ImageError,
+    },
 }
-impl std::fmt::Display for TextureError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TextureError::Image(e) => write!(f, "Image error: {}", e),
-        }
-    }
-}
-impl std::error::Error for TextureError {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WrapMode {

@@ -321,5 +321,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             winit::window::Window::default_attributes()
                 .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None))),
         )
-        .run(app)
+        .run(app)?;
+    Ok(())
 }

@@ -10,6 +10,11 @@ pub struct Model<V: Clone> {
 }
 impl<V: Clone> Model<V> {
     /// Creates a new model with the given meshes, materials, and transform.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModelError::InvalidMaterialIndex`] if a mesh uses a material index that
+    /// `materials` doesn't have.
     pub fn new(
         meshes: Vec<Mesh<V>>,
         materials: Vec<Material>,
@@ -28,7 +33,11 @@ impl<V: Clone> Model<V> {
         for (i, mesh) in self.meshes.iter().enumerate() {
             if let Some(material_index) = mesh.material_index {
                 if material_index >= self.materials.len() {
-                    return Err(ModelError::InvalidMaterialIndex(i, material_index));
+                    return Err(ModelError::InvalidMaterialIndex {
+                        mesh: i,
+                        material: material_index,
+                        material_count: self.materials.len(),
+                    });
                 }
             }
         }
@@ -92,22 +101,21 @@ impl Model<ObjVertex> {
     }
 }
 
-#[derive(Debug)]
+/// An error constructing a [`Model`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ModelError {
-    InvalidMaterialIndex(usize, usize), // (mesh_index, material_index)
+    /// A mesh refers to a material the model doesn't have.
+    #[error("mesh {mesh} uses material {material}, but the model has {material_count} materials")]
+    InvalidMaterialIndex {
+        /// The mesh's index in the model.
+        mesh: usize,
+        /// The material index the mesh uses.
+        material: usize,
+        /// The number of materials the model has.
+        material_count: usize,
+    },
 }
-impl std::fmt::Display for ModelError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ModelError::InvalidMaterialIndex(mesh_index, material_index) => write!(
-                f,
-                "Mesh {} has an invalid material index: {}",
-                mesh_index, material_index
-            ),
-        }
-    }
-}
-impl std::error::Error for ModelError {}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelTransform {
