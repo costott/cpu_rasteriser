@@ -11,7 +11,7 @@ sources:
   - engine/Cargo.toml
   - engine/src/lib.rs
   - engine/src/app.rs
-verified: 4e5fb07
+verified: ffed0e7
 ---
 
 # Architecture
@@ -29,7 +29,7 @@ verified: 4e5fb07
 All rendering goes through one flow in `renderer.rs`:
 
 1. **`Renderer::begin_render_pass(&mut target, RenderPassDescriptor)`** borrows the renderer mutably, so only one pass can exist at a time. It immediately builds a `TileBinner` for the whole target. Each tile takes a colour buffer, and optionally a depth buffer, from the renderer's tile pool, seeded from the pass's load operations. See `tiling-and-threading.md`.
-2. **`RenderPass::draw` / `draw_simd`** only queue work. Each call boxes a `QueuedDraw` or `QueuedDrawSimd` as a `Box<dyn RenderPassCommand>`. The trait object erases the pipeline's shader types, so one pass can mix any number of pipelines, scalar and SIMD alike.
+2. **`RenderPass::draw` / `draw_simd`** only queue work. They first check that a pipeline which tests or writes depth is drawn in a pass with a depth buffer, and panic on the calling thread if it isn't. Each call then boxes a `QueuedDraw` or `QueuedDrawSimd` as a `Box<dyn RenderPassCommand>`. The trait object erases the pipeline's shader types, so one pass can mix any number of pipelines, scalar and SIMD alike.
 3. **`RenderPass::finish`** runs in two stages:
    1. *Serial, on the calling thread:* for each queued draw, in submission order:
       1. assemble triangles from the index buffer;
