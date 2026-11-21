@@ -1,6 +1,6 @@
 [package]
 name = "engine"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 
 [dependencies]
@@ -10,9 +10,11 @@ winit = "0.30.13"
 cpu_rasteriser = { path = "../cpu_rasteriser" }
 rasteriser_macros = { path = "../rasteriser_macros" }
 image = "0.25.10"
+thiserror = "2"
 
 [dev-dependencies]
 criterion = "0.7"
+tempfile = "3.27"
 
 [[bench]]
 name = "texture_sampling"

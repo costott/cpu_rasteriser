@@ -220,5 +220,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     HEIGHT as u32,
                 ))),
         )
-        .run(TexturedCubeApp::new()?)
+        .run(TexturedCubeApp::new()?)?;
+    Ok(())
 }

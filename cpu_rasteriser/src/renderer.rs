@@ -64,8 +64,13 @@ pub struct Renderer {
     tile_pool: TilePool,
 }
 impl Renderer {
-    /// Creates a new renderer.
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    /// Creates a new renderer with one worker thread per available CPU thread.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error from [`std::thread::available_parallelism`] if the number of available
+    /// CPU threads can't be determined.
+    pub fn new() -> std::io::Result<Self> {
         Ok(Self {
             thread_pool: ThreadPool::new(std::thread::available_parallelism()?.get()),
             tile_pool: TilePool::default(),
