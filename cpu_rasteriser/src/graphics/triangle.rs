@@ -1,3 +1,4 @@
+use crate::graphics::vertex::{ClipVertex, RasterVertex};
 use crate::prelude::*;
 
 use crate::graphics::fragment::{Fragment, FragmentSimd};
@@ -14,10 +15,6 @@ where
     pub c: RasterVertex<V>,
 }
 impl<V: Interpolate> Triangle2D<V> {
-    pub fn new(a: RasterVertex<V>, b: RasterVertex<V>, c: RasterVertex<V>) -> Self {
-        Self { a, b, c }
-    }
-
     pub fn bounding_box(&self) -> (Vec2, Vec2) {
         let min_x = self
             .a
@@ -427,6 +424,13 @@ impl Triangle3D<ObjVertex> {
         let ac = self.c.position - self.a.position;
 
         ab.cross(ac).normalise()
+    }
+}
+
+#[cfg(any(test, feature = "internals"))]
+impl<V: Interpolate> Triangle2D<V> {
+    pub fn new(a: RasterVertex<V>, b: RasterVertex<V>, c: RasterVertex<V>) -> Self {
+        Self { a, b, c }
     }
 }
 

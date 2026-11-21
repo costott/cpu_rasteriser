@@ -39,9 +39,9 @@ Run these from the workspace root.
 | Task | Command |
 |---|---|
 | Format | `cargo fmt --all` |
-| Lint | `cargo clippy --workspace --all-targets` (there are existing warnings; changed code must add none) |
+| Lint | `cargo clippy --workspace --all-targets --features cpu_rasteriser/internals` (there are existing warnings; changed code must add none; the feature includes the benches) |
 | Test | `cargo test --workspace --no-fail-fast` |
-| Bench | `cargo bench -p cpu_rasteriser --bench rasterise_segment` (also `raster_command`, and `-p engine --bench texture_sampling`) |
+| Bench | `cargo bench -p cpu_rasteriser --features internals --bench rasterise_segment` (also `raster_command`, and `-p engine --bench texture_sampling`) |
 | Example | `cargo run --release -p <crate> --example <name>` (see the READMEs) |
 
 `target-cpu=native` applies to every build in the workspace, whichever directory cargo runs from; see `testing-and-benchmarks.md`. Compare performance only between builds with the same build configuration.

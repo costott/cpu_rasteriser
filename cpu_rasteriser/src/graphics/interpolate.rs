@@ -52,6 +52,10 @@ pub trait SimdInterpolate: Interpolate {
     fn simd_extract_all(value: &Self::Simd) -> [Self; 8];
 }
 
+#[expect(
+    dead_code,
+    reason = "unused internally; kept rather than deleted for now"
+)]
 pub trait SimdInterpolateField {
     type Simd;
 

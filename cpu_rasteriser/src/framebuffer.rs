@@ -27,10 +27,6 @@ impl FrameBuffer {
         Extent::new(self.width(), self.height())
     }
 
-    pub fn pixels(&self) -> &[Colour] {
-        self.pixels.as_slice()
-    }
-
     pub fn pixels_compact(&self) -> Vec<Colour> {
         let mut pixels = Vec::with_capacity(self.width() * self.height());
 
@@ -153,6 +149,10 @@ impl FrameBuffer {
     /// `p` must lie inside the framebuffer: `p.x as usize < self.width()` and
     /// `p.y as usize < self.height()`.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn set_pixel_unchecked(&mut self, p: Vec2, colour: Colour) {
         let index = self.index(p.x as usize, p.y as usize);
         // SAFETY: the caller guarantees `p` lies inside the framebuffer, so `index` is in bounds.
@@ -182,6 +182,10 @@ impl FrameBuffer {
     /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
     /// isn't part of the image.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn set8_r_unchecked(&mut self, index: usize, reds: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -206,6 +210,10 @@ impl FrameBuffer {
     ///
     /// The same as [`set8_r_unchecked`](Self::set8_r_unchecked).
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn set8_r_unchecked_with_mask(&mut self, index: usize, reds: f32x8, mask: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -222,6 +230,10 @@ impl FrameBuffer {
     /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
     /// isn't part of the image.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn set8_g_unchecked(&mut self, index: usize, greens: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -246,6 +258,10 @@ impl FrameBuffer {
     ///
     /// The same as [`set8_g_unchecked`](Self::set8_g_unchecked).
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn set8_g_unchecked_with_mask(&mut self, index: usize, greens: f32x8, mask: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -262,6 +278,10 @@ impl FrameBuffer {
     /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
     /// isn't part of the image.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn set8_b_unchecked(&mut self, index: usize, blues: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -286,6 +306,10 @@ impl FrameBuffer {
     ///
     /// The same as [`set8_b_unchecked`](Self::set8_b_unchecked).
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn set8_b_unchecked_with_mask(&mut self, index: usize, blues: f32x8, mask: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -315,6 +339,10 @@ impl FrameBuffer {
     /// `p` must lie inside the framebuffer: `p.x as usize < self.width()` and
     /// `p.y as usize < self.height()`.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn get_pixel_unchecked(&self, p: Vec2) -> Colour {
         let index = self.index(p.x as usize, p.y as usize);
 
@@ -324,22 +352,14 @@ impl FrameBuffer {
 
     /// # Safety
     ///
-    /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,
-    /// `y < self.height()` and `i < 8`. An index past the end of row `y` reads the row's
-    /// padding, whose value is unspecified.
-    #[inline(always)]
-    pub unsafe fn get_pixel_index_unchecked(&self, index: usize) -> Colour {
-        // SAFETY: the caller guarantees `index` is one of the eight elements starting at an
-        // in-bounds pixel, and `Grid` pads every row so that all eight are inside the allocation.
-        unsafe { *self.pixels.as_slice().get_unchecked(index) }
-    }
-
-    /// # Safety
-    ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
     /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
     /// are unspecified.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn get8_r_unchecked(&self, index: usize) -> f32x8 {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -367,6 +387,10 @@ impl FrameBuffer {
     /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
     /// are unspecified.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn get8_g_unchecked(&self, index: usize) -> f32x8 {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -394,6 +418,10 @@ impl FrameBuffer {
     /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
     /// are unspecified.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn get8_b_unchecked(&self, index: usize) -> f32x8 {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
@@ -448,6 +476,25 @@ impl FrameBuffer {
             b: f32x8::new([p0.b, p1.b, p2.b, p3.b, p4.b, p5.b, p6.b, p7.b]),
             a: f32x8::new([p0.a, p1.a, p2.a, p3.a, p4.a, p5.a, p6.a, p7.a]),
         }
+    }
+}
+
+#[cfg(feature = "internals")]
+impl FrameBuffer {
+    pub fn pixels(&self) -> &[Colour] {
+        self.pixels.as_slice()
+    }
+
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,
+    /// `y < self.height()` and `i < 8`. An index past the end of row `y` reads the row's
+    /// padding, whose value is unspecified.
+    #[inline(always)]
+    pub unsafe fn get_pixel_index_unchecked(&self, index: usize) -> Colour {
+        // SAFETY: the caller guarantees `index` is one of the eight elements starting at an
+        // in-bounds pixel, and `Grid` pads every row so that all eight are inside the allocation.
+        unsafe { *self.pixels.as_slice().get_unchecked(index) }
     }
 }
 

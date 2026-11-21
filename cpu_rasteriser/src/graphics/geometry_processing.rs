@@ -1,7 +1,8 @@
+use crate::graphics::triangle::{Triangle2D, TriangleClip};
+use crate::graphics::vertex::{ClipVertex, RasterVertex};
 use crate::prelude::*;
 
 use crate::graphics::clipping::*;
-use crate::graphics::vertex_shader::*;
 use crate::renderer::CullingMode;
 
 pub struct GeometryProcessor;

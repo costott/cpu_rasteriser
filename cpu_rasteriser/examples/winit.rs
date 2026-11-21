@@ -231,7 +231,7 @@ impl winit::application::ApplicationHandler for App {
                     DrawCall::new(
                         &self.triangle,
                         &self.triangle_indices,
-                        cpu_rasteriser::renderer::PrimitiveMode::TRIANGLES,
+                        PrimitiveMode::TRIANGLES,
                         FragmentUniforms,
                     ),
                     vertex_uniforms,

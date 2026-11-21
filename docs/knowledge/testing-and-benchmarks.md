@@ -35,6 +35,8 @@ There is no custom `[profile.release]`. The only formatting configuration is rus
 | `cpu_rasteriser/benches/raster_command.rs` | Whole raster commands in groups `pre_simd`, `simd_scalar_shader` and `simd_shader` |
 | `engine/benches/texture_sampling.rs` | Texture sampler variants. Some benchmark functions are defined but unused (clippy `dead_code`). |
 
+**The `cpu_rasteriser` benches need the `internals` feature.** They use internal types (`FrameBuffer`, `DepthBuffer`, `Triangle2D`, `RasterVertex`, `Rect`) from the `#[doc(hidden)]` `internals` module, and declare `required-features = ["internals"]`, so cargo skips them, clippy included, unless the feature is on. Otherwise the feature only compiles in the three methods the benches use (`FrameBuffer::pixels`, `FrameBuffer::get_pixel_index_unchecked`, and `Triangle2D::new`, which the unit tests also use) and lifts the `expect(dead_code)` on items the re-exports make reachable, so it doesn't change the measured code.
+
 **The benches contain their own copies of the raster command logic.** The renderer's `RasterCommand` types are private, so the benches re-implement them. Changing `TriangleRasterCommand(Simd)` in `renderer.rs` doesn't change what the benches measure. Keep the copies in sync deliberately, or say that they diverge. `pre_simd` is a frozen historical baseline. The copies' depth-buffer `expect` messages describe a missing buffer as a failure, because the benches build raster commands directly and skip the check that `draw` and `draw_simd` make.
 
 ## Measuring performance

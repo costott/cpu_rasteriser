@@ -5,13 +5,14 @@ sources:
   - cpu_rasteriser/src/depthbuffer.rs
   - cpu_rasteriser/src/colour.rs
   - cpu_rasteriser/src/renderer.rs
-verified: 4e5fb07
+verified: ffed0e7
 ---
 
 # Buffers, colour and blending
 
 ## `FrameBuffer` and `DepthBuffer`
 
+- **Visibility:** both are crate-private. The benches reach them through the `internals` feature, and accessors that only the benches use sit in an impl block compiled only with that feature.
 - **Layout:** both wrap a crate-private `Grid<T>` (`grid.rs`): a row-major `Vec` with a padded stride (see `simd.md` for the invariant), row access, a row-wise region copy (`blit_from`) and in-place `resize`. `FrameBuffer` stores `Colour`, so its layout is an array of structs (AoS). `DepthBuffer` stores `f32`.
 - **Shared layout:** stride, indexing, `fill`, `resize` and region copies live once in `Grid`. The `*8_unchecked` accessors stay in each buffer, because they depend on the element type.
 - **Planned layout change:** `FrameBuffer` carries a TODO to move to a struct-of-arrays layout (separate channel `Vec`s) for SIMD loads and stores. A shared abstraction must not block that. `Grid` is generic over its element, so a struct-of-arrays `FrameBuffer` can hold one `Grid<f32>` per channel.

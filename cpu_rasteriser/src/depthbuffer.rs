@@ -16,10 +16,18 @@ impl DepthBuffer {
         }
     }
 
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub fn width(&self) -> usize {
         self.depths.width()
     }
 
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub fn height(&self) -> usize {
         self.depths.height()
     }
@@ -66,6 +74,10 @@ impl DepthBuffer {
     ///
     /// `p` must lie inside the buffer: `p.x as usize < self.width()` and
     /// `p.y as usize < self.height()`.
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn set_depth_unchecked(&mut self, p: Vec2, depth: f32) {
         let index = self.index_unchecked(p.x as usize, p.y as usize);
 
@@ -128,6 +140,10 @@ impl DepthBuffer {
     /// `p` must lie inside the buffer: `p.x as usize < self.width()` and
     /// `p.y as usize < self.height()`.
     #[inline(always)]
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub unsafe fn get_unchecked(&self, p: Vec2) -> f32 {
         let index = self.index_unchecked(p.x as usize, p.y as usize);
 

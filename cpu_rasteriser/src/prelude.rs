@@ -1,15 +1,8 @@
-pub use crate::colour::*;
-pub use crate::extent::*;
-pub use crate::graphics::circle::*;
-pub use crate::graphics::fragment_shader::*;
-pub use crate::graphics::interpolate::*;
-// pub use crate::graphics::line::*;
-pub use crate::graphics::triangle::*;
-pub use crate::graphics::vertex::*;
-pub use crate::graphics::vertex_shader::*;
-pub use crate::maths::*;
-pub use crate::renderer::*;
-pub use crate::viewport::*;
+//! The crate's types, traits and derive macros, for glob import with `use cpu_rasteriser::prelude::*`.
 
-pub use rasteriser_macros::Interpolate;
-pub use rasteriser_macros::SimdInterpolate;
+pub use crate::{
+    BlendFactor, BlendOp, BlendState, Colour, ColourSimd, CullingMode, DepthState, DrawCall,
+    Extent, FragmentShader, FragmentShaderSimd, Interpolate, LoadOp, Mat4, ObjVertex, Pipeline,
+    PrimitiveMode, RenderPass, RenderPassDescriptor, RenderTarget, Renderer, SimdInterpolate,
+    SimdPipeline, Triangle3D, Vec2, Vec3, Vec3Simd, Vec4, VertexShader, Viewport,
+};
