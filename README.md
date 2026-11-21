@@ -177,12 +177,12 @@ Supported features:
 The rasteriser includes custom implementations of:
 
 - Triangle scanline rasterisation
-- Bresenham line drawing
-- Circle rasterisation
 - Barycentric interpolation
 - Perspective-correct interpolation
 
 Perspective correction ensures attributes such as normals, colours, and depth values are correctly interpolated across projected triangles.
+
+Line and circle rasterisation are not currently supported ([#28](https://github.com/costott/cpu_rasteriser/issues/28)).
 
 ---
 
@@ -339,7 +339,7 @@ Built-in `OrbitControls` and `FirstPersonControls` camera controllers consume th
 | ------------------------------------------------ | ------ |
 | 3D transformations                               | ✅     |
 | Triangle rasterisation                           | ✅     |
-| Line and circle rasterisation                    | ✅     |
+| Line and circle rasterisation ([#28](https://github.com/costott/cpu_rasteriser/issues/28)) | ❌     |
 | Depth buffering                                  | ✅     |
 | Configurable depth test/write state              | ✅     |
 | Backface culling                                 | ✅     |

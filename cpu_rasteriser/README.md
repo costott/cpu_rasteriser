@@ -24,6 +24,10 @@ The renderer provides a low-level rendering API inspired by modern graphics APIs
 - Strongly typed shader interfaces
 - `#[derive(Interpolate)]` and `#[derive(SimdInterpolate)]` macros (via the `rasteriser_macros` crate) for generating scalar and SIMD interpolation implementations for custom vertex/varying types
 
+## Usage
+
+Every public item is exported at the crate root, and `use cpu_rasteriser::prelude::*;` imports them all at once. The crate also re-exports `wide`, whose `f32x8` SIMD shaders use.
+
 ## Examples
 
 ```bash

@@ -12,6 +12,10 @@ where
     pub varyings: V,
 }
 impl<V: Interpolate> RasterVertex<V> {
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
+    )]
     pub fn new(position: Vec2, depth: f32, inv_w: f32, varyings: V) -> Self {
         Self {
             position,
@@ -31,6 +35,10 @@ where
     pub varyings: V,
 }
 impl<V: Interpolate> ClipVertex<V> {
+    #[expect(
+        dead_code,
+        reason = "unused internally; kept rather than deleted for now"
+    )]
     pub fn new(position: Vec4, varyings: V) -> Self {
         Self { position, varyings }
     }
