@@ -86,14 +86,14 @@ impl FragmentShader<Varyings> for PhongFragmentShader {
             let light_dir = (-light.direction).normalise();
 
             // Diffuse
-            let diffuse_strength = normal.dot(&light_dir).max(0.0);
+            let diffuse_strength = normal.dot(light_dir).max(0.0);
 
             let diffuse = albedo * light.colour * diffuse_strength;
 
             // Specular
             let reflect_dir = reflect(-light_dir, normal);
 
-            let specular_strength = view_dir.dot(&reflect_dir).max(0.0).powf(material.shininess);
+            let specular_strength = view_dir.dot(reflect_dir).max(0.0).powf(material.shininess);
 
             let specular = match &material.specular_texture {
                 Some(texture) => texture.sample(varyings.uv),
@@ -110,7 +110,7 @@ impl FragmentShader<Varyings> for PhongFragmentShader {
 
 /// Reflects a vector around a normal, using the formula: R = V - 2 * (V . N) * N
 fn reflect(vector: Vec3, normal: Vec3) -> Vec3 {
-    vector - normal * 2.0 * vector.dot(&normal)
+    vector - normal * 2.0 * vector.dot(normal)
 }
 
 struct TexturedCubeApp {

@@ -15,15 +15,15 @@ impl Vec2 {
         Self { x, y }
     }
 
-    pub fn lerp(&self, other: &Self, t: f32) -> Self {
-        *self * (1.0 - t) + *other * t
+    pub fn lerp(self, other: Self, t: f32) -> Self {
+        self * (1.0 - t) + other * t
     }
 
-    pub fn cross(&self, other: &Self) -> f32 {
+    pub fn cross(self, other: Self) -> f32 {
         self.x * other.y - self.y * other.x
     }
 
-    pub fn length(&self) -> f32 {
+    pub fn length(self) -> f32 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
 }
@@ -145,7 +145,7 @@ mod tests {
         let a = Vec2::new(-2.0, 5.0);
         let b = Vec2::new(8.0, -1.0);
 
-        let result = a.lerp(&b, 0.0);
+        let result = a.lerp(b, 0.0);
 
         assert_eq!(result, a);
     }
@@ -155,7 +155,7 @@ mod tests {
         let a = Vec2::new(-2.0, 5.0);
         let b = Vec2::new(8.0, -1.0);
 
-        let result = a.lerp(&b, 1.0);
+        let result = a.lerp(b, 1.0);
 
         assert_eq!(result, b);
     }
@@ -165,7 +165,7 @@ mod tests {
         let a = Vec2::new(2.0, 4.0);
         let b = Vec2::new(6.0, 8.0);
 
-        let result = a.lerp(&b, 0.5);
+        let result = a.lerp(b, 0.5);
 
         assert_vec2_approx_eq(result, Vec2::new(4.0, 6.0));
     }

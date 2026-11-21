@@ -146,7 +146,7 @@ impl Mat4 {
 
     /// Inverts the matrix using Gaussian elimination.
     /// Returns the identity matrix if the matrix is singular (non-invertible).
-    pub fn inverse(&self) -> Self {
+    pub fn inverse(self) -> Self {
         let mut m = self.data;
         let mut inv = [
             [1.0, 0.0, 0.0, 0.0],
@@ -202,7 +202,7 @@ impl Mat4 {
         Self { data: inv }
     }
 
-    pub fn transpose(&self) -> Self {
+    pub fn transpose(self) -> Self {
         let mut transposed = [[0.0; 4]; 4];
         for i in 0..4 {
             for j in 0..4 {
@@ -215,13 +215,13 @@ impl Mat4 {
     /// Creates a new Mat4 for a view transformation
     pub fn look_at(eye: Vec3, target: Vec3, up: Vec3) -> Self {
         let n = (eye - target).normalise();
-        let u = up.cross(&n).normalise();
-        let v = n.cross(&u);
+        let u = up.cross(n).normalise();
+        let v = n.cross(u);
 
         Self::new([
-            [u.x, u.y, u.z, -u.dot(&eye)],
-            [v.x, v.y, v.z, -v.dot(&eye)],
-            [n.x, n.y, n.z, -n.dot(&eye)],
+            [u.x, u.y, u.z, -u.dot(eye)],
+            [v.x, v.y, v.z, -v.dot(eye)],
+            [n.x, n.y, n.z, -n.dot(eye)],
             [0.0, 0.0, 0.0, 1.0],
         ])
     }
