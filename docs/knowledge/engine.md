@@ -10,7 +10,7 @@ sources:
   - engine/src/components/texture.rs
   - engine/src/loaders/obj.rs
   - engine/src/loaders/mtl.rs
-verified: 4e5fb07
+verified: 178eef3
 ---
 
 # Engine crate
@@ -51,7 +51,8 @@ The default `render` implementation does construct one without rendering. **Infe
 - **UV mapping:** `TextureSampler` maps `v` to a row with `(1 − v)`, so the UV origin is the bottom-left.
 - **Wrap modes:** `Repeat` uses `fract()`, which doesn't wrap negative coordinates ([#24](https://github.com/costott/cpu_rasteriser/issues/24)), and `Clamp` clamps to [0, 1].
 - **Scalar sampling:** `sample` dispatches on wrap and filter mode at run time. The specialised `sample_linear_clamp` and `sample_nearest_clamp` skip that dispatch, and `sample_linear_clamp` reads texels unchecked.
-- **SIMD sampling:** `sample_linear_clamp_simd` and `sample_nearest_clamp_simd` clamp, then gather 8 texels with scalar unchecked loads. The bilinear variant also clamps its `x1`/`y1` to the edge, so every index stays in bounds.
+- **SIMD sampling:** `sample_linear_clamp_simd` and `sample_nearest_clamp_simd` clamp, then gather 8 texels with scalar unchecked loads. The bilinear variant also clamps its `x1`/`y1` to the edge.
+- **Why the unchecked reads are sound:** `TextureSampler::new` panics unless both dimensions are between 1 and 2^24 and `pixels` holds at least `width * height` texels. The upper limit keeps `width - 1` and `height - 1` exact in `f32`, so a UV clamped to [0, 1] never maps past the last texel. Every sampler, including those from `Texture::sampler`, is built through `new`, so `Texture`'s public fields can't bypass the check.
 - **Render targets as textures:** `Texture::from_render_target` copies a target's pixels into a texture, and `Texture::update_from` refills it with `write_pixels`. This is how multipass post-processing samples an earlier pass. `update_from` overwrites the storage in place only when it is the right size and `Arc::get_mut` shows no clone or sampler shares it, so a live sampler's pixels never change; otherwise new storage replaces it. Reuse across frames therefore needs one app-held `Texture` per place a target is sampled, with that place's samplers dropped before the next update: bloom samples `bloom_half` twice per frame and holds two. Engine-owned storage, so apps hold nothing, is [#32](https://github.com/costott/cpu_rasteriser/issues/32).
 
 ## Loaders

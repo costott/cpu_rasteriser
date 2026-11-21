@@ -1103,6 +1103,10 @@ where
 }
 
 trait RasterCommand: Send + Sync {
+    /// Rasterises the part of the command inside `bounds` into tile-local buffers.
+    ///
+    /// `framebuffer` and `depthbuffer` must be exactly `bounds` in size, with their origin at
+    /// `(bounds.min_x, bounds.min_y)`. The SIMD command's unchecked buffer accesses rely on this.
     fn rasterise(
         &self,
         framebuffer: &mut FrameBuffer,
@@ -1216,6 +1220,9 @@ where
                         (fragment_simd.y - bounds.min_y) as usize,
                     );
 
+                    // SAFETY: `rasterise_segment_simd` keeps `x_start` and `y` inside `bounds`, and
+                    // the buffers are exactly `bounds` in size (the `RasterCommand::rasterise`
+                    // contract), so `index` is an in-bounds pixel.
                     let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
                     fragment_simd.mask & fragment_simd.depth.simd_lt(stored)
@@ -1239,6 +1246,7 @@ where
                     .shade_simd(fragment_simd.varyings, self.uniforms.as_ref());
 
                 let colour = if let Some(blend_state) = self.blend_state {
+                    // SAFETY: `base` is an in-bounds pixel, as for the depth test.
                     let dst = unsafe { framebuffer.get8_unchecked(base) };
 
                     blend_state.apply_simd(src, dst)
@@ -1258,6 +1266,9 @@ where
 
                     let frag_colour = Colour::new(r[lane], g[lane], b[lane], a[lane]);
 
+                    // SAFETY: `pass` only includes lanes of the coverage mask, which lie within the
+                    // span and so inside `bounds`. `base + lane` is therefore an in-bounds pixel,
+                    // as for the depth test.
                     unsafe {
                         framebuffer.set_pixel_index_unchecked(base + lane, frag_colour);
                     }
@@ -1273,6 +1284,7 @@ where
                         (fragment_simd.y - bounds.min_y) as usize,
                     );
 
+                    // SAFETY: `index` is an in-bounds pixel, as for the depth test.
                     unsafe {
                         depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
                     }

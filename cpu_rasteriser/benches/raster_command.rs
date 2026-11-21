@@ -269,6 +269,9 @@ where
                     let index = depthbuffer
                         .index_unchecked(fragment_simd.x_start as usize, fragment_simd.y as usize);
 
+                    // SAFETY: the benches pass `full_bounds()`, whose origin is (0, 0), with
+                    // buffers of the same size, and `rasterise_segment_simd` keeps `x_start` and
+                    // `y` inside `bounds`, so `index` is an in-bounds pixel.
                     let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
                     // Only covered lanes can pass.
@@ -303,6 +306,8 @@ where
 
                     let colour = match self.blend_state {
                         Some(blend_state) => {
+                            // SAFETY: `base` is an in-bounds pixel, as for the depth load, and
+                            // `lane < 8`.
                             let dst = unsafe { framebuffer.get_pixel_index_unchecked(base + lane) };
 
                             blend_state.apply(src, dst)
@@ -311,6 +316,7 @@ where
                         None => src,
                     };
 
+                    // SAFETY: `base` is an in-bounds pixel, as for the depth load, and `lane < 8`.
                     unsafe {
                         framebuffer.set_pixel_index_unchecked(base + lane, colour);
                     }
@@ -324,6 +330,7 @@ where
                     let index = depthbuffer
                         .index_unchecked(fragment_simd.x_start as usize, fragment_simd.y as usize);
 
+                    // SAFETY: `index` is an in-bounds pixel, as for the depth load.
                     unsafe {
                         depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
                     }
@@ -398,6 +405,9 @@ where
                     let index = depthbuffer
                         .index_unchecked(fragment_simd.x_start as usize, fragment_simd.y as usize);
 
+                    // SAFETY: the benches pass `full_bounds()`, whose origin is (0, 0), with
+                    // buffers of the same size, and `rasterise_segment_simd` keeps `x_start` and
+                    // `y` inside `bounds`, so `index` is an in-bounds pixel.
                     let stored = unsafe { depthbuffer.get8_unchecked(index) };
 
                     fragment_simd.mask & fragment_simd.depth.simd_lt(stored)
@@ -421,6 +431,7 @@ where
                     .shade_simd(fragment_simd.varyings, self.uniforms.as_ref());
 
                 let colour = if let Some(blend_state) = self.blend_state {
+                    // SAFETY: `base` is an in-bounds pixel, as for the depth load.
                     let dst = unsafe { framebuffer.get8_unchecked(base) };
 
                     blend_state.apply_simd(src, dst)
@@ -440,6 +451,7 @@ where
 
                     let frag_colour = Colour::new(r[lane], g[lane], b[lane], a[lane]);
 
+                    // SAFETY: `base` is an in-bounds pixel, as for the depth load, and `lane < 8`.
                     unsafe {
                         framebuffer.set_pixel_index_unchecked(base + lane, frag_colour);
                     }
@@ -453,6 +465,7 @@ where
                     let index = depthbuffer
                         .index_unchecked(fragment_simd.x_start as usize, fragment_simd.y as usize);
 
+                    // SAFETY: `index` is an in-bounds pixel, as for the depth load.
                     unsafe {
                         depthbuffer.set8_unchecked_with_mask(index, fragment_simd.depth, pass);
                     }

@@ -148,22 +148,39 @@ impl FrameBuffer {
         self.pixels.as_mut_slice()[index] = colour;
     }
 
+    /// # Safety
+    ///
+    /// `p` must lie inside the framebuffer: `p.x as usize < self.width()` and
+    /// `p.y as usize < self.height()`.
     #[inline(always)]
     pub unsafe fn set_pixel_unchecked(&mut self, p: Vec2, colour: Colour) {
         let index = self.index(p.x as usize, p.y as usize);
+        // SAFETY: the caller guarantees `p` lies inside the framebuffer, so `index` is in bounds.
         unsafe {
             *self.pixels.as_mut_slice().get_unchecked_mut(index) = colour;
         }
     }
 
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,
+    /// `y < self.height()` and `i < 8`. An index past the end of row `y` writes into the row's
+    /// padding, which isn't part of the image.
     pub unsafe fn set_pixel_index_unchecked(&mut self, index: usize, colour: Colour) {
         debug_assert!(index < self.pixels.as_slice().len());
 
+        // SAFETY: the caller guarantees `index` is one of the eight elements starting at an
+        // in-bounds pixel, and `Grid` pads every row so that all eight are inside the allocation.
         unsafe {
             *self.pixels.as_mut_slice().get_unchecked_mut(index) = colour;
         }
     }
 
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
+    /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
+    /// isn't part of the image.
     #[inline(always)]
     pub unsafe fn set8_r_unchecked(&mut self, index: usize, reds: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
@@ -171,6 +188,8 @@ impl FrameBuffer {
         // check if stores auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD store
         let values = reds.to_array();
         let pixels = self.pixels.as_mut_slice();
+        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
+        // that the eight elements starting at any in-bounds pixel are inside the allocation.
         unsafe {
             *pixels.get_unchecked_mut(index) = Colour::new(values[0], 0.0, 0.0, 1.0);
             *pixels.get_unchecked_mut(index + 1) = Colour::new(values[1], 0.0, 0.0, 1.0);
@@ -183,15 +202,25 @@ impl FrameBuffer {
         }
     }
 
+    /// # Safety
+    ///
+    /// The same as [`set8_r_unchecked`](Self::set8_r_unchecked).
     #[inline(always)]
     pub unsafe fn set8_r_unchecked_with_mask(&mut self, index: usize, reds: f32x8, mask: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
+        // SAFETY: `get8_r_unchecked` and `set8_r_unchecked` share this function's contract.
         let current = unsafe { self.get8_r_unchecked(index) };
         let new_pixels = mask.select(reds, current);
 
+        // SAFETY: as above.
         unsafe { self.set8_r_unchecked(index, new_pixels) };
     }
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
+    /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
+    /// isn't part of the image.
     #[inline(always)]
     pub unsafe fn set8_g_unchecked(&mut self, index: usize, greens: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
@@ -199,6 +228,8 @@ impl FrameBuffer {
         // check if stores auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD store
         let values = greens.to_array();
         let pixels = self.pixels.as_mut_slice();
+        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
+        // that the eight elements starting at any in-bounds pixel are inside the allocation.
         unsafe {
             *pixels.get_unchecked_mut(index) = Colour::new(values[0], 0.0, 0.0, 1.0);
             *pixels.get_unchecked_mut(index + 1) = Colour::new(values[1], 0.0, 0.0, 1.0);
@@ -211,15 +242,25 @@ impl FrameBuffer {
         }
     }
 
+    /// # Safety
+    ///
+    /// The same as [`set8_g_unchecked`](Self::set8_g_unchecked).
     #[inline(always)]
     pub unsafe fn set8_g_unchecked_with_mask(&mut self, index: usize, greens: f32x8, mask: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
+        // SAFETY: `get8_g_unchecked` and `set8_g_unchecked` share this function's contract.
         let current = unsafe { self.get8_g_unchecked(index) };
         let new_pixels = mask.select(greens, current);
 
+        // SAFETY: as above.
         unsafe { self.set8_g_unchecked(index, new_pixels) };
     }
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
+    /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
+    /// isn't part of the image.
     #[inline(always)]
     pub unsafe fn set8_b_unchecked(&mut self, index: usize, blues: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
@@ -227,6 +268,8 @@ impl FrameBuffer {
         // check if stores auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD store
         let values = blues.to_array();
         let pixels = self.pixels.as_mut_slice();
+        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
+        // that the eight elements starting at any in-bounds pixel are inside the allocation.
         unsafe {
             *pixels.get_unchecked_mut(index) = Colour::new(values[0], 0.0, 0.0, 1.0);
             *pixels.get_unchecked_mut(index + 1) = Colour::new(values[1], 0.0, 0.0, 1.0);
@@ -239,13 +282,18 @@ impl FrameBuffer {
         }
     }
 
+    /// # Safety
+    ///
+    /// The same as [`set8_b_unchecked`](Self::set8_b_unchecked).
     #[inline(always)]
     pub unsafe fn set8_b_unchecked_with_mask(&mut self, index: usize, blues: f32x8, mask: f32x8) {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
+        // SAFETY: `get8_b_unchecked` and `set8_b_unchecked` share this function's contract.
         let current = unsafe { self.get8_b_unchecked(index) };
         let new_pixels = mask.select(blues, current);
 
+        // SAFETY: as above.
         unsafe { self.set8_b_unchecked(index, new_pixels) };
     }
 
@@ -262,87 +310,137 @@ impl FrameBuffer {
         Some(self.pixels.as_slice()[index])
     }
 
+    /// # Safety
+    ///
+    /// `p` must lie inside the framebuffer: `p.x as usize < self.width()` and
+    /// `p.y as usize < self.height()`.
     #[inline(always)]
     pub unsafe fn get_pixel_unchecked(&self, p: Vec2) -> Colour {
         let index = self.index(p.x as usize, p.y as usize);
 
+        // SAFETY: the caller guarantees `p` lies inside the framebuffer, so `index` is in bounds.
         unsafe { *self.pixels.as_slice().get_unchecked(index) }
     }
 
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,
+    /// `y < self.height()` and `i < 8`. An index past the end of row `y` reads the row's
+    /// padding, whose value is unspecified.
     #[inline(always)]
     pub unsafe fn get_pixel_index_unchecked(&self, index: usize) -> Colour {
+        // SAFETY: the caller guarantees `index` is one of the eight elements starting at an
+        // in-bounds pixel, and `Grid` pads every row so that all eight are inside the allocation.
         unsafe { *self.pixels.as_slice().get_unchecked(index) }
     }
 
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
+    /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
+    /// are unspecified.
     #[inline(always)]
     pub unsafe fn get8_r_unchecked(&self, index: usize) -> f32x8 {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
         // check if loads auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD load
         let pixels = self.pixels.as_slice();
-        let values = [
-            unsafe { pixels.get_unchecked(index).r },
-            unsafe { pixels.get_unchecked(index + 1).r },
-            unsafe { pixels.get_unchecked(index + 2).r },
-            unsafe { pixels.get_unchecked(index + 3).r },
-            unsafe { pixels.get_unchecked(index + 4).r },
-            unsafe { pixels.get_unchecked(index + 5).r },
-            unsafe { pixels.get_unchecked(index + 6).r },
-            unsafe { pixels.get_unchecked(index + 7).r },
-        ];
+        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
+        // that the eight elements starting at any in-bounds pixel are inside the allocation.
+        let values = unsafe {
+            [
+                pixels.get_unchecked(index).r,
+                pixels.get_unchecked(index + 1).r,
+                pixels.get_unchecked(index + 2).r,
+                pixels.get_unchecked(index + 3).r,
+                pixels.get_unchecked(index + 4).r,
+                pixels.get_unchecked(index + 5).r,
+                pixels.get_unchecked(index + 6).r,
+                pixels.get_unchecked(index + 7).r,
+            ]
+        };
         f32x8::new(values)
     }
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
+    /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
+    /// are unspecified.
     #[inline(always)]
     pub unsafe fn get8_g_unchecked(&self, index: usize) -> f32x8 {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
         // check if loads auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD load
         let pixels = self.pixels.as_slice();
-        let values = [
-            unsafe { pixels.get_unchecked(index).g },
-            unsafe { pixels.get_unchecked(index + 1).g },
-            unsafe { pixels.get_unchecked(index + 2).g },
-            unsafe { pixels.get_unchecked(index + 3).g },
-            unsafe { pixels.get_unchecked(index + 4).g },
-            unsafe { pixels.get_unchecked(index + 5).g },
-            unsafe { pixels.get_unchecked(index + 6).g },
-            unsafe { pixels.get_unchecked(index + 7).g },
-        ];
+        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
+        // that the eight elements starting at any in-bounds pixel are inside the allocation.
+        let values = unsafe {
+            [
+                pixels.get_unchecked(index).g,
+                pixels.get_unchecked(index + 1).g,
+                pixels.get_unchecked(index + 2).g,
+                pixels.get_unchecked(index + 3).g,
+                pixels.get_unchecked(index + 4).g,
+                pixels.get_unchecked(index + 5).g,
+                pixels.get_unchecked(index + 6).g,
+                pixels.get_unchecked(index + 7).g,
+            ]
+        };
         f32x8::new(values)
     }
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
+    /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
+    /// are unspecified.
     #[inline(always)]
     pub unsafe fn get8_b_unchecked(&self, index: usize) -> f32x8 {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
         // check if loads auto vectorise with LLVM, otherwise look into finding out how to get as 1 SIMD load
         let pixels = self.pixels.as_slice();
-        let values = [
-            unsafe { pixels.get_unchecked(index).b },
-            unsafe { pixels.get_unchecked(index + 1).b },
-            unsafe { pixels.get_unchecked(index + 2).b },
-            unsafe { pixels.get_unchecked(index + 3).b },
-            unsafe { pixels.get_unchecked(index + 4).b },
-            unsafe { pixels.get_unchecked(index + 5).b },
-            unsafe { pixels.get_unchecked(index + 6).b },
-            unsafe { pixels.get_unchecked(index + 7).b },
-        ];
+        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
+        // that the eight elements starting at any in-bounds pixel are inside the allocation.
+        let values = unsafe {
+            [
+                pixels.get_unchecked(index).b,
+                pixels.get_unchecked(index + 1).b,
+                pixels.get_unchecked(index + 2).b,
+                pixels.get_unchecked(index + 3).b,
+                pixels.get_unchecked(index + 4).b,
+                pixels.get_unchecked(index + 5).b,
+                pixels.get_unchecked(index + 6).b,
+                pixels.get_unchecked(index + 7).b,
+            ]
+        };
         f32x8::new(values)
     }
 
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
+    /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
+    /// are unspecified.
     #[inline(always)]
     pub unsafe fn get8_unchecked(&self, index: usize) -> ColourSimd {
         debug_assert!(index + 8 <= self.pixels.as_slice().len());
 
         // TODO: look into different storage layout of framebuffer to make this more efficient, e.g. SoA instead of AoS
         let pixels = self.pixels.as_slice();
-        let p0 = unsafe { pixels.get_unchecked(index) };
-        let p1 = unsafe { pixels.get_unchecked(index + 1) };
-        let p2 = unsafe { pixels.get_unchecked(index + 2) };
-        let p3 = unsafe { pixels.get_unchecked(index + 3) };
-        let p4 = unsafe { pixels.get_unchecked(index + 4) };
-        let p5 = unsafe { pixels.get_unchecked(index + 5) };
-        let p6 = unsafe { pixels.get_unchecked(index + 6) };
-        let p7 = unsafe { pixels.get_unchecked(index + 7) };
+        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
+        // that the eight elements starting at any in-bounds pixel are inside the allocation.
+        let [p0, p1, p2, p3, p4, p5, p6, p7] = unsafe {
+            [
+                pixels.get_unchecked(index),
+                pixels.get_unchecked(index + 1),
+                pixels.get_unchecked(index + 2),
+                pixels.get_unchecked(index + 3),
+                pixels.get_unchecked(index + 4),
+                pixels.get_unchecked(index + 5),
+                pixels.get_unchecked(index + 6),
+                pixels.get_unchecked(index + 7),
+            ]
+        };
 
         ColourSimd {
             r: f32x8::new([p0.r, p1.r, p2.r, p3.r, p4.r, p5.r, p6.r, p7.r]),
