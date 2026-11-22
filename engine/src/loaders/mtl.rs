@@ -5,16 +5,6 @@ use cpu_rasteriser::prelude::*;
 use crate::loaders::values::{ValuesError, parse_floats};
 use crate::prelude::*;
 
-fn load_texture(texture_path: &str, mtl_path: &Path) -> Result<TextureSampler, TextureError> {
-    let texture_path = Path::new(texture_path);
-    let texture_full_path = match mtl_path.parent() {
-        Some(parent) => parent.join(texture_path),
-        None => texture_path.to_path_buf(),
-    };
-
-    Ok(Texture::from_image(&texture_full_path)?.sampler(WrapMode::Repeat, FilterMode::Linear))
-}
-
 /// Loads the materials of an MTL material library, with the textures it names.
 ///
 /// # Errors
@@ -118,6 +108,16 @@ pub fn load_mtl(path: impl AsRef<std::path::Path>) -> Result<Vec<Material>, MtlE
     }
 
     Ok(materials)
+}
+
+fn load_texture(texture_path: &str, mtl_path: &Path) -> Result<TextureSampler, TextureError> {
+    let texture_path = Path::new(texture_path);
+    let texture_full_path = match mtl_path.parent() {
+        Some(parent) => parent.join(texture_path),
+        None => texture_path.to_path_buf(),
+    };
+
+    Ok(Texture::from_image(&texture_full_path)?.sampler(WrapMode::Repeat, FilterMode::Linear))
 }
 
 /// An error loading an MTL material library with [`load_mtl`].

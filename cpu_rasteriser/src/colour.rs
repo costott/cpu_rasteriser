@@ -1,7 +1,8 @@
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub};
+
 use wide::f32x8;
 
 use crate::prelude::*;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub};
 
 // Basically a wrapper over a vec4 that doesn't affect the alpha channel when doing operations like addition,
 // subtraction, multiplication, and division. This is useful for colour blending where we don't want to change
@@ -60,16 +61,6 @@ impl Colour {
     }
 
     #[inline(always)]
-    pub fn to_u32(self) -> u32 {
-        let r = (self.r.clamp(0.0, 1.0) * 255.0) as u32;
-        let g = (self.g.clamp(0.0, 1.0) * 255.0) as u32;
-        let b = (self.b.clamp(0.0, 1.0) * 255.0) as u32;
-        let a = (self.a.clamp(0.0, 1.0) * 255.0) as u32;
-
-        (a << 24) | (r << 16) | (g << 8) | b
-    }
-
-    #[inline(always)]
     pub fn from_u32(value: u32) -> Self {
         let r = (value & 0xff) as f32 / 255.0;
         let g = ((value >> 8) & 0xff) as f32 / 255.0;
@@ -77,6 +68,16 @@ impl Colour {
         let a = ((value >> 24) & 0xff) as f32 / 255.0;
 
         Self::new(r, g, b, a)
+    }
+
+    #[inline(always)]
+    pub fn to_u32(self) -> u32 {
+        let r = (self.r.clamp(0.0, 1.0) * 255.0) as u32;
+        let g = (self.g.clamp(0.0, 1.0) * 255.0) as u32;
+        let b = (self.b.clamp(0.0, 1.0) * 255.0) as u32;
+        let a = (self.a.clamp(0.0, 1.0) * 255.0) as u32;
+
+        (a << 24) | (r << 16) | (g << 8) | b
     }
 
     pub fn scale_all(self, scale: f32) -> Self {

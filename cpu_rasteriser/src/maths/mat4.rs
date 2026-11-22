@@ -1,5 +1,6 @@
-use crate::maths::{Vec3, Vec4};
 use std::ops::{Add, Mul, Sub};
+
+use crate::maths::{Vec3, Vec4};
 
 /// Represents a 4x4 matrix, stored in row-major order
 /// Assumes vectors will be column vectors, so matrix multiplication is done as M * v
@@ -144,6 +145,70 @@ impl Mat4 {
         rz * ry * rx
     }
 
+    /// Creates a new Mat4 for a view transformation
+    pub fn look_at(eye: Vec3, target: Vec3, up: Vec3) -> Self {
+        let n = (eye - target).normalise();
+        let u = up.cross(n).normalise();
+        let v = n.cross(u);
+
+        Self::new([
+            [u.x, u.y, u.z, -u.dot(eye)],
+            [v.x, v.y, v.z, -v.dot(eye)],
+            [n.x, n.y, n.z, -n.dot(eye)],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
+    /// Creates a new Mat4 for a perspective projection
+    pub fn perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> Self {
+        let top = near * (fov_y / 2.0).tan();
+        let bottom = -top;
+
+        let right = top * aspect;
+        let left = -right;
+
+        Self::new([
+            [
+                (2.0 * near) / (right - left),
+                0.0,
+                (right + left) / (right - left),
+                0.0,
+            ],
+            [
+                0.0,
+                (2.0 * near) / (top - bottom),
+                (top + bottom) / (top - bottom),
+                0.0,
+            ],
+            [
+                0.0,
+                0.0,
+                -(far + near) / (far - near),
+                -(2.0 * far * near) / (far - near),
+            ],
+            [0.0, 0.0, -1.0, 0.0],
+        ])
+    }
+
+    pub fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
+        Self::new([
+            [
+                2.0 / (right - left),
+                0.0,
+                0.0,
+                -(right + left) / (right - left),
+            ],
+            [
+                0.0,
+                2.0 / (top - bottom),
+                0.0,
+                -(top + bottom) / (top - bottom),
+            ],
+            [0.0, 0.0, -2.0 / (far - near), -(far + near) / (far - near)],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+    }
+
     /// Inverts the matrix using Gaussian elimination.
     /// Returns the identity matrix if the matrix is singular (non-invertible).
     pub fn inverse(self) -> Self {
@@ -210,70 +275,6 @@ impl Mat4 {
             }
         }
         Self { data: transposed }
-    }
-
-    /// Creates a new Mat4 for a view transformation
-    pub fn look_at(eye: Vec3, target: Vec3, up: Vec3) -> Self {
-        let n = (eye - target).normalise();
-        let u = up.cross(n).normalise();
-        let v = n.cross(u);
-
-        Self::new([
-            [u.x, u.y, u.z, -u.dot(eye)],
-            [v.x, v.y, v.z, -v.dot(eye)],
-            [n.x, n.y, n.z, -n.dot(eye)],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-    }
-
-    /// Creates a new Mat4 for a perspective projection
-    pub fn perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> Self {
-        let top = near * (fov_y / 2.0).tan();
-        let bottom = -top;
-
-        let right = top * aspect;
-        let left = -right;
-
-        Self::new([
-            [
-                (2.0 * near) / (right - left),
-                0.0,
-                (right + left) / (right - left),
-                0.0,
-            ],
-            [
-                0.0,
-                (2.0 * near) / (top - bottom),
-                (top + bottom) / (top - bottom),
-                0.0,
-            ],
-            [
-                0.0,
-                0.0,
-                -(far + near) / (far - near),
-                -(2.0 * far * near) / (far - near),
-            ],
-            [0.0, 0.0, -1.0, 0.0],
-        ])
-    }
-
-    pub fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
-        Self::new([
-            [
-                2.0 / (right - left),
-                0.0,
-                0.0,
-                -(right + left) / (right - left),
-            ],
-            [
-                0.0,
-                2.0 / (top - bottom),
-                0.0,
-                -(top + bottom) / (top - bottom),
-            ],
-            [0.0, 0.0, -2.0 / (far - near), -(far + near) / (far - near)],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
     }
 }
 
@@ -356,8 +357,9 @@ impl Mul<Vec4> for Mat4 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Mat4, Vec4};
     use std::f32::consts::FRAC_PI_2;
+
+    use super::{Mat4, Vec4};
 
     const EPSILON: f32 = 1e-6;
 

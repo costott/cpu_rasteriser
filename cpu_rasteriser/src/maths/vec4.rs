@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use std::ops::{Add, AddAssign, Div, Mul, Sub};
+
+use crate::prelude::*;
 
 /// Represents a 4D (column) vector
 #[derive(Debug, Copy, PartialEq, Interpolate)]

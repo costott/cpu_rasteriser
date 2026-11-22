@@ -4,7 +4,6 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use cpu_rasteriser::prelude::*;
-
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -89,60 +88,6 @@ impl EngineBackend for WinitEngine {
     }
 }
 
-#[derive(Debug)]
-pub struct MinifbEngine {
-    title: String,
-    width: usize,
-    height: usize,
-    options: minifb::WindowOptions,
-}
-
-impl MinifbEngine {
-    pub fn new() -> Self {
-        Self {
-            title: "Engine".into(),
-            width: 640,
-            height: 360,
-            options: minifb::WindowOptions::default(),
-        }
-    }
-
-    pub fn with_title(mut self, title: impl Into<String>) -> Self {
-        self.title = title.into();
-        self
-    }
-
-    pub fn with_size(mut self, width: usize, height: usize) -> Self {
-        self.width = width;
-        self.height = height;
-        self
-    }
-
-    pub fn with_options(mut self, options: minifb::WindowOptions) -> Self {
-        self.options = options;
-        self
-    }
-}
-
-impl Default for MinifbEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl EngineBackend for MinifbEngine {
-    fn run<A>(self, app: A) -> Result<(), EngineError>
-    where
-        A: Application + 'static,
-    {
-        let mut window = minifb::Window::new(&self.title, self.width, self.height, self.options)?;
-        window.set_target_fps(60);
-
-        let mut app_runner = MinifbEngineApp::new(window, app)?;
-        app_runner.run()
-    }
-}
-
 struct WinitEngineApp<A>
 where
     A: Application,
@@ -159,16 +104,6 @@ where
     /// The first error raised inside an event loop callback. Raising it exits the event loop,
     /// and [`WinitEngine::run`] returns it.
     error: Option<EngineError>,
-}
-
-enum AppState {
-    Initial,
-    Suspended {
-        window: Rc<Window>,
-    },
-    Running {
-        surface: softbuffer::Surface<winit::event_loop::OwnedDisplayHandle, Rc<Window>>,
-    },
 }
 
 impl<A> WinitEngineApp<A>
@@ -402,6 +337,16 @@ where
     }
 }
 
+enum AppState {
+    Initial,
+    Suspended {
+        window: Rc<Window>,
+    },
+    Running {
+        surface: softbuffer::Surface<winit::event_loop::OwnedDisplayHandle, Rc<Window>>,
+    },
+}
+
 struct WinitInputMapper;
 impl WinitInputMapper {
     fn map_winit_key_code(key_code: winit::keyboard::KeyCode) -> Option<InputKey> {
@@ -445,22 +390,6 @@ impl WinitInputMapper {
     }
 }
 
-struct MinifbEngineApp<A>
-where
-    A: Application,
-{
-    app: A,
-    app_handle: AppHandle,
-    renderer: Renderer,
-    presentation_target: RenderTarget,
-    pixel_buffer: Vec<u32>,
-    window: minifb::Window,
-    last_frame: Instant,
-    input_state: InputState,
-    previous_keys: HashSet<InputKey>,
-    previous_buttons: HashSet<MouseButton>,
-}
-
 fn apply_winit_window_state(state: crate::app::WindowState, window: &Window) {
     apply_winit_cursor_settings(state.cursor, window);
 }
@@ -475,6 +404,76 @@ fn apply_winit_cursor_settings(settings: crate::app::WindowCursorSettings, windo
             .set_cursor_grab(winit::window::CursorGrabMode::Locked)
             .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined)),
     };
+}
+
+#[derive(Debug)]
+pub struct MinifbEngine {
+    title: String,
+    width: usize,
+    height: usize,
+    options: minifb::WindowOptions,
+}
+
+impl MinifbEngine {
+    pub fn new() -> Self {
+        Self {
+            title: "Engine".into(),
+            width: 640,
+            height: 360,
+            options: minifb::WindowOptions::default(),
+        }
+    }
+
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    pub fn with_size(mut self, width: usize, height: usize) -> Self {
+        self.width = width;
+        self.height = height;
+        self
+    }
+
+    pub fn with_options(mut self, options: minifb::WindowOptions) -> Self {
+        self.options = options;
+        self
+    }
+}
+
+impl Default for MinifbEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EngineBackend for MinifbEngine {
+    fn run<A>(self, app: A) -> Result<(), EngineError>
+    where
+        A: Application + 'static,
+    {
+        let mut window = minifb::Window::new(&self.title, self.width, self.height, self.options)?;
+        window.set_target_fps(60);
+
+        let mut app_runner = MinifbEngineApp::new(window, app)?;
+        app_runner.run()
+    }
+}
+
+struct MinifbEngineApp<A>
+where
+    A: Application,
+{
+    app: A,
+    app_handle: AppHandle,
+    renderer: Renderer,
+    presentation_target: RenderTarget,
+    pixel_buffer: Vec<u32>,
+    window: minifb::Window,
+    last_frame: Instant,
+    input_state: InputState,
+    previous_keys: HashSet<InputKey>,
+    previous_buttons: HashSet<MouseButton>,
 }
 
 impl<A> MinifbEngineApp<A>
@@ -497,9 +496,24 @@ where
         })
     }
 
-    fn handle_input_event(&mut self, event: InputEvent) {
-        self.input_state.handle_event(event);
-        self.app.event(AppEvent::Input(event), &mut self.app_handle);
+    fn run(&mut self) -> Result<(), EngineError> {
+        self.app.event(AppEvent::Resumed, &mut self.app_handle);
+
+        while self.window.is_open() {
+            self.emit_input_events();
+
+            if self.app_handle.should_exit() {
+                break;
+            }
+
+            self.apply_resize();
+            self.apply_window_state();
+            self.render_frame()?;
+        }
+
+        self.app
+            .event(AppEvent::CloseRequested, &mut self.app_handle);
+        Ok(())
     }
 
     fn emit_input_events(&mut self) {
@@ -580,6 +594,11 @@ where
         }
     }
 
+    fn handle_input_event(&mut self, event: InputEvent) {
+        self.input_state.handle_event(event);
+        self.app.event(AppEvent::Input(event), &mut self.app_handle);
+    }
+
     fn apply_resize(&mut self) {
         let (width, height) = self.window.get_size();
         if width == 0 || height == 0 {
@@ -619,26 +638,6 @@ where
 
         self.window
             .update_with_buffer(&self.pixel_buffer, width, height)?;
-        Ok(())
-    }
-
-    fn run(&mut self) -> Result<(), EngineError> {
-        self.app.event(AppEvent::Resumed, &mut self.app_handle);
-
-        while self.window.is_open() {
-            self.emit_input_events();
-
-            if self.app_handle.should_exit() {
-                break;
-            }
-
-            self.apply_resize();
-            self.apply_window_state();
-            self.render_frame()?;
-        }
-
-        self.app
-            .event(AppEvent::CloseRequested, &mut self.app_handle);
         Ok(())
     }
 }

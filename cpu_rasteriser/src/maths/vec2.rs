@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use std::ops::{Add, Mul, Sub};
+
+use crate::prelude::*;
 
 #[derive(Debug, Copy, PartialEq, Interpolate)]
 pub struct Vec2 {

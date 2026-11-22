@@ -1,5 +1,4 @@
 use cpu_rasteriser::prelude::*;
-
 use minifb::{Key, Window, WindowOptions};
 use wide::f32x8;
 

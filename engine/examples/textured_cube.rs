@@ -1,8 +1,7 @@
-use engine::prelude::*;
+use std::sync::Arc;
 
 use cpu_rasteriser::prelude::*;
-
-use std::sync::Arc;
+use engine::prelude::*;
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 360;

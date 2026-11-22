@@ -37,6 +37,104 @@ impl FrameBuffer {
         pixels
     }
 
+    pub fn pixels_u32(&self) -> Vec<u32> {
+        let mut pixels = vec![0; self.width() * self.height()];
+        self.write_pixels_u32(&mut pixels);
+        pixels
+    }
+
+    pub fn clear(&mut self, colour: Colour) {
+        self.pixels.fill(colour);
+    }
+
+    pub fn resize(&mut self, width: usize, height: usize) {
+        self.pixels.resize(width, height, Colour::BLACK);
+    }
+
+    #[inline(always)]
+    pub fn index_unchecked(&self, x: usize, y: usize) -> usize {
+        self.pixels.index_unchecked(x, y)
+    }
+
+    pub fn set_pixel(&mut self, p: Vec2, colour: Colour) {
+        let x = p.x as usize;
+        let y = p.y as usize;
+
+        if x >= self.width() || y >= self.height() {
+            return;
+        }
+
+        let index = self.index(x, y);
+        self.pixels.as_mut_slice()[index] = colour;
+    }
+
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,
+    /// `y < self.height()` and `i < 8`. An index past the end of row `y` writes into the row's
+    /// padding, which isn't part of the image.
+    pub unsafe fn set_pixel_index_unchecked(&mut self, index: usize, colour: Colour) {
+        debug_assert!(index < self.pixels.as_slice().len());
+
+        // SAFETY: the caller guarantees `index` is one of the eight elements starting at an
+        // in-bounds pixel, and `Grid` pads every row so that all eight are inside the allocation.
+        unsafe {
+            *self.pixels.as_mut_slice().get_unchecked_mut(index) = colour;
+        }
+    }
+
+    #[inline(always)]
+    pub fn get_pixel(&self, p: Vec2) -> Option<Colour> {
+        let x = p.x as usize;
+        let y = p.y as usize;
+
+        if x >= self.width() || y >= self.height() {
+            return None;
+        }
+
+        let index = self.index(x, y);
+        Some(self.pixels.as_slice()[index])
+    }
+
+    #[inline(always)]
+    fn index(&self, x: usize, y: usize) -> usize {
+        self.pixels.index(x, y)
+    }
+
+    /// # Safety
+    ///
+    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
+    /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
+    /// are unspecified.
+    #[inline(always)]
+    pub unsafe fn get8_unchecked(&self, index: usize) -> ColourSimd {
+        debug_assert!(index + 8 <= self.pixels.as_slice().len());
+
+        // TODO: look into different storage layout of framebuffer to make this more efficient, e.g. SoA instead of AoS
+        let pixels = self.pixels.as_slice();
+        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
+        // that the eight elements starting at any in-bounds pixel are inside the allocation.
+        let [p0, p1, p2, p3, p4, p5, p6, p7] = unsafe {
+            [
+                pixels.get_unchecked(index),
+                pixels.get_unchecked(index + 1),
+                pixels.get_unchecked(index + 2),
+                pixels.get_unchecked(index + 3),
+                pixels.get_unchecked(index + 4),
+                pixels.get_unchecked(index + 5),
+                pixels.get_unchecked(index + 6),
+                pixels.get_unchecked(index + 7),
+            ]
+        };
+
+        ColourSimd {
+            r: f32x8::new([p0.r, p1.r, p2.r, p3.r, p4.r, p5.r, p6.r, p7.r]),
+            g: f32x8::new([p0.g, p1.g, p2.g, p3.g, p4.g, p5.g, p6.g, p7.g]),
+            b: f32x8::new([p0.b, p1.b, p2.b, p3.b, p4.b, p5.b, p6.b, p7.b]),
+            a: f32x8::new([p0.a, p1.a, p2.a, p3.a, p4.a, p5.a, p6.a, p7.a]),
+        }
+    }
+
     pub(crate) fn write_pixels(&self, out: &mut [Colour]) {
         let width = self.width();
         assert!(out.len() >= width * self.height());
@@ -44,12 +142,6 @@ impl FrameBuffer {
         for y in 0..self.height() {
             out[y * width..(y + 1) * width].copy_from_slice(self.pixels.row(y));
         }
-    }
-
-    pub fn pixels_u32(&self) -> Vec<u32> {
-        let mut pixels = vec![0; self.width() * self.height()];
-        self.write_pixels_u32(&mut pixels);
-        pixels
     }
 
     pub(crate) fn write_pixels_u32(&self, out: &mut [u32]) {
@@ -103,14 +195,6 @@ impl FrameBuffer {
         }
     }
 
-    pub fn clear(&mut self, colour: Colour) {
-        self.pixels.fill(colour);
-    }
-
-    pub fn resize(&mut self, width: usize, height: usize) {
-        self.pixels.resize(width, height, Colour::BLACK);
-    }
-
     pub(crate) fn blit_from(
         &mut self,
         dst_origin: (usize, usize),
@@ -121,29 +205,9 @@ impl FrameBuffer {
         self.pixels
             .blit_from(dst_origin, &src.pixels, src_origin, size);
     }
-
-    #[inline(always)]
-    fn index(&self, x: usize, y: usize) -> usize {
-        self.pixels.index(x, y)
-    }
-
-    #[inline(always)]
-    pub fn index_unchecked(&self, x: usize, y: usize) -> usize {
-        self.pixels.index_unchecked(x, y)
-    }
-
-    pub fn set_pixel(&mut self, p: Vec2, colour: Colour) {
-        let x = p.x as usize;
-        let y = p.y as usize;
-
-        if x >= self.width() || y >= self.height() {
-            return;
-        }
-
-        let index = self.index(x, y);
-        self.pixels.as_mut_slice()[index] = colour;
-    }
-
+}
+/// Unused methods, kept for now.
+impl FrameBuffer {
     /// # Safety
     ///
     /// `p` must lie inside the framebuffer: `p.x as usize < self.width()` and
@@ -156,21 +220,6 @@ impl FrameBuffer {
     pub unsafe fn set_pixel_unchecked(&mut self, p: Vec2, colour: Colour) {
         let index = self.index(p.x as usize, p.y as usize);
         // SAFETY: the caller guarantees `p` lies inside the framebuffer, so `index` is in bounds.
-        unsafe {
-            *self.pixels.as_mut_slice().get_unchecked_mut(index) = colour;
-        }
-    }
-
-    /// # Safety
-    ///
-    /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,
-    /// `y < self.height()` and `i < 8`. An index past the end of row `y` writes into the row's
-    /// padding, which isn't part of the image.
-    pub unsafe fn set_pixel_index_unchecked(&mut self, index: usize, colour: Colour) {
-        debug_assert!(index < self.pixels.as_slice().len());
-
-        // SAFETY: the caller guarantees `index` is one of the eight elements starting at an
-        // in-bounds pixel, and `Grid` pads every row so that all eight are inside the allocation.
         unsafe {
             *self.pixels.as_mut_slice().get_unchecked_mut(index) = colour;
         }
@@ -321,19 +370,6 @@ impl FrameBuffer {
         unsafe { self.set8_b_unchecked(index, new_pixels) };
     }
 
-    #[inline(always)]
-    pub fn get_pixel(&self, p: Vec2) -> Option<Colour> {
-        let x = p.x as usize;
-        let y = p.y as usize;
-
-        if x >= self.width() || y >= self.height() {
-            return None;
-        }
-
-        let index = self.index(x, y);
-        Some(self.pixels.as_slice()[index])
-    }
-
     /// # Safety
     ///
     /// `p` must lie inside the framebuffer: `p.x as usize < self.width()` and
@@ -443,50 +479,8 @@ impl FrameBuffer {
         };
         f32x8::new(values)
     }
-
-    /// # Safety
-    ///
-    /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
-    /// `y < self.height()`. Lanes past the end of row `y` read the row's padding, whose values
-    /// are unspecified.
-    #[inline(always)]
-    pub unsafe fn get8_unchecked(&self, index: usize) -> ColourSimd {
-        debug_assert!(index + 8 <= self.pixels.as_slice().len());
-
-        // TODO: look into different storage layout of framebuffer to make this more efficient, e.g. SoA instead of AoS
-        let pixels = self.pixels.as_slice();
-        // SAFETY: the caller guarantees `index` is an in-bounds pixel, and `Grid` pads every row so
-        // that the eight elements starting at any in-bounds pixel are inside the allocation.
-        let [p0, p1, p2, p3, p4, p5, p6, p7] = unsafe {
-            [
-                pixels.get_unchecked(index),
-                pixels.get_unchecked(index + 1),
-                pixels.get_unchecked(index + 2),
-                pixels.get_unchecked(index + 3),
-                pixels.get_unchecked(index + 4),
-                pixels.get_unchecked(index + 5),
-                pixels.get_unchecked(index + 6),
-                pixels.get_unchecked(index + 7),
-            ]
-        };
-
-        ColourSimd {
-            r: f32x8::new([p0.r, p1.r, p2.r, p3.r, p4.r, p5.r, p6.r, p7.r]),
-            g: f32x8::new([p0.g, p1.g, p2.g, p3.g, p4.g, p5.g, p6.g, p7.g]),
-            b: f32x8::new([p0.b, p1.b, p2.b, p3.b, p4.b, p5.b, p6.b, p7.b]),
-            a: f32x8::new([p0.a, p1.a, p2.a, p3.a, p4.a, p5.a, p6.a, p7.a]),
-        }
-    }
 }
-impl std::fmt::Debug for FrameBuffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FrameBuffer")
-            .field("width", &self.width())
-            .field("height", &self.height())
-            .finish_non_exhaustive()
-    }
-}
-
+/// Raw pixel access for the benchmarks.
 #[cfg(feature = "internals")]
 impl FrameBuffer {
     pub fn pixels(&self) -> &[Colour] {
@@ -503,6 +497,14 @@ impl FrameBuffer {
         // SAFETY: the caller guarantees `index` is one of the eight elements starting at an
         // in-bounds pixel, and `Grid` pads every row so that all eight are inside the allocation.
         unsafe { *self.pixels.as_slice().get_unchecked(index) }
+    }
+}
+impl std::fmt::Debug for FrameBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FrameBuffer")
+            .field("width", &self.width())
+            .field("height", &self.height())
+            .finish_non_exhaustive()
     }
 }
 

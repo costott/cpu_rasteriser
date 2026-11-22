@@ -1,13 +1,13 @@
 use std::sync::Arc;
+
 use threadpool::ThreadPool;
 use wide::f32x8;
-
-use crate::prelude::*;
 
 use crate::depthbuffer::DepthBuffer;
 use crate::framebuffer::FrameBuffer;
 use crate::graphics::geometry_processing::GeometryProcessor;
 use crate::graphics::triangle::Triangle2D;
+use crate::prelude::*;
 
 /// A CPU-based renderer responsible for executing draw calls and producing a final framebuffer.
 ///
@@ -162,40 +162,29 @@ impl std::fmt::Debug for Renderer {
     }
 }
 
-/// Tile buffers reused across render passes. Buffers taken from the pool keep stale contents, so
-/// callers must overwrite or clear them.
-#[derive(Default)]
-struct TilePool {
-    framebuffers: Vec<FrameBuffer>,
-    depthbuffers: Vec<DepthBuffer>,
+fn render_tile(tile: Tile) -> TileResult {
+    let mut tile = tile;
+
+    for command in tile.commands {
+        command.rasterise(
+            &mut tile.framebuffer,
+            tile.depthbuffer.as_mut(),
+            tile.bounds,
+        );
+    }
+
+    TileResult {
+        bounds: tile.bounds,
+        framebuffer: tile.framebuffer,
+        depthbuffer: tile.depthbuffer,
+    }
 }
-impl TilePool {
-    fn take_framebuffer(&mut self, width: usize, height: usize) -> FrameBuffer {
-        match self.framebuffers.pop() {
-            Some(mut framebuffer) => {
-                framebuffer.resize(width, height);
-                framebuffer
-            }
-            None => FrameBuffer::new(width, height),
-        }
-    }
 
-    fn take_depthbuffer(&mut self, width: usize, height: usize) -> DepthBuffer {
-        match self.depthbuffers.pop() {
-            Some(mut depthbuffer) => {
-                depthbuffer.resize(width, height);
-                depthbuffer
-            }
-            None => DepthBuffer::new(width, height),
-        }
-    }
-
-    fn recycle(&mut self, framebuffer: FrameBuffer, depthbuffer: Option<DepthBuffer>) {
-        self.framebuffers.push(framebuffer);
-        if let Some(depthbuffer) = depthbuffer {
-            self.depthbuffers.push(depthbuffer);
-        }
-    }
+/// A tile result is the output of rendering a single tile, used for merging into the main framebuffer.
+struct TileResult {
+    bounds: Rect,
+    framebuffer: FrameBuffer,
+    depthbuffer: Option<DepthBuffer>,
 }
 
 pub struct RenderTarget {
@@ -321,17 +310,6 @@ pub enum LoadOp<T> {
     Load,
     /// Clears the existing data to the provided value before rendering.
     Clear(T),
-}
-
-#[derive(Debug)]
-struct PipelineState {
-    culling_mode: CullingMode,
-    /// Optional blending configuration.
-    ///
-    /// When `None`, the source colour replaces the destination colour.
-    /// When `Some`, the configured blend factors and operation are applied.
-    blend_state: Option<BlendState>,
-    depth_state: DepthState,
 }
 
 /// A collection of shader stages and fixed-function rendering state used to process draw calls.
@@ -503,6 +481,17 @@ where
             .field("state", &self.state)
             .finish_non_exhaustive()
     }
+}
+
+#[derive(Debug)]
+struct PipelineState {
+    culling_mode: CullingMode,
+    /// Optional blending configuration.
+    ///
+    /// When `None`, the source colour replaces the destination colour.
+    /// When `Some`, the configured blend factors and operation are applied.
+    blend_state: Option<BlendState>,
+    depth_state: DepthState,
 }
 
 /// Controls whether primitives are removed based on their winding direction before rasterisation.
@@ -930,6 +919,15 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
         }));
     }
 
+    fn assert_depth_buffer_for(&self, depth_state: DepthState) {
+        assert!(
+            self.descriptor.depth_load_op.is_some()
+                || !(depth_state.test_enabled || depth_state.write_enabled),
+            "the pipeline tests or writes depth, but the render pass has no depth buffer \
+             (its `depth_load_op` is `None`)"
+        );
+    }
+
     /// Executes all queued draw calls and renders the completed render pass.
     ///
     /// This performs geometry processing, triangle binning, parallel tile rasterisation, and merges
@@ -944,15 +942,6 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
         self.renderer
             .render_tiles(self.tile_binner, self.render_target);
     }
-
-    fn assert_depth_buffer_for(&self, depth_state: DepthState) {
-        assert!(
-            self.descriptor.depth_load_op.is_some()
-                || !(depth_state.test_enabled || depth_state.write_enabled),
-            "the pipeline tests or writes depth, but the render pass has no depth buffer \
-             (its `depth_load_op` is `None`)"
-        );
-    }
 }
 impl std::fmt::Debug for RenderPass<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -964,22 +953,101 @@ impl std::fmt::Debug for RenderPass<'_, '_> {
     }
 }
 
-/// Internal type-erased command queued during a render pass.
+/// The topology used when assembling indexed geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimitiveMode {
+    /// Every group of three indices defines a triangle.
+    TRIANGLES,
+    // TODO: support other primitive modes (LINES, POINTS, etc.)
+}
+
+/// A geometry submission describing what to render and the associated fragment shader data.
 ///
-/// This allows scalar and SIMD draw commands to coexist in the same render pass
-/// without exposing their concrete types to the renderer's scheduling machinery.
+/// A draw call combines a primitive with the uniforms required when shading fragments.
 ///
-/// `RenderPassCommand` provides the interface required by [`RenderPass`] to defer rendering
-/// operations until [`RenderPass::finish`] is called.
+/// Draw calls are submitted through [`RenderPass::draw`].
+pub struct DrawCall<'a, V, U>
+where
+    V: Clone,
+{
+    primitive: Primitive<'a, V>,
+    fragment_uniforms: U,
+}
+impl<'a, V, U> DrawCall<'a, V, U>
+where
+    V: Clone,
+{
+    /// Creates a new draw call.
+    ///
+    /// # Arguments
+    ///
+    /// * `vertices` - Vertex buffer containing geometry data.
+    /// * `indices` - Index buffer describing primitive connectivity.
+    /// * `primitive_mode` - Topology used to assemble primitives.
+    /// * `fragment_uniforms` - Uniform data passed to the fragment shader.
+    pub fn new(
+        vertices: &'a [V],
+        indices: &'a [u32],
+        primitive_mode: PrimitiveMode,
+        fragment_uniforms: U,
+    ) -> DrawCall<'a, V, U> {
+        DrawCall {
+            primitive: Primitive::new(vertices, indices, primitive_mode),
+            fragment_uniforms,
+        }
+    }
+
+    fn primitive_mode(&self) -> PrimitiveMode {
+        self.primitive.primitive_mode
+    }
+}
+impl<V: Clone, U> std::fmt::Debug for DrawCall<'_, V, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DrawCall")
+            .field("vertices", &self.primitive.vertices.len())
+            .field("indices", &self.primitive.indices.len())
+            .field("primitive_mode", &self.primitive.primitive_mode)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A collection of indexed geometry.
 ///
-/// Commands are stored as trait objects because a single render pass may contain draw
-/// calls using different combinations of vertex and fragment shader types. The
-/// concrete shader types are hidden behind this interface until execution.
+/// A primitive consists of a vertex buffer, index buffer, and topology describing how vertices
+/// should be assembled into renderable shapes.
 ///
-/// Implementors should perform any CPU-side preparation required to convert the
-/// command into rasterisation work and submit it to the tile scheduler.
-trait RenderPassCommand {
-    fn execute(self: Box<Self>, tile_binner: &mut TileBinner, viewport: &Viewport);
+/// Currently only triangle primitives are supported.
+pub struct Primitive<'a, V>
+where
+    V: Clone,
+{
+    vertices: &'a [V],
+    indices: &'a [u32],
+    primitive_mode: PrimitiveMode,
+}
+impl<'a, V> Primitive<'a, V>
+where
+    V: Clone,
+{
+    pub fn new(
+        vertices: &'a [V],
+        indices: &'a [u32],
+        primitive_mode: PrimitiveMode,
+    ) -> Primitive<'a, V> {
+        Primitive {
+            vertices,
+            indices,
+            primitive_mode,
+        }
+    }
+
+    fn triangles(&self) -> impl Iterator<Item = Triangle3D<V>> {
+        self.indices.chunks_exact(3).map(|indices| Triangle3D {
+            a: self.vertices[indices[0] as usize].clone(),
+            b: self.vertices[indices[1] as usize].clone(),
+            c: self.vertices[indices[2] as usize].clone(),
+        })
+    }
 }
 
 /// Internal type-erased command used to execute a scalar [`Pipeline`] draw.
@@ -1039,168 +1107,6 @@ where
             }
         }
     }
-}
-
-/// Internal type-erased command used to execute a SIMD [`SimdPipeline`] draw.
-///
-/// `QueuedDrawSimd` stores the pipeline, draw call, and vertex uniforms until the
-/// render pass is executed.
-struct QueuedDrawSimd<'a, VS, FS>
-where
-    VS: VertexShader,
-    VS::Varyings: SimdInterpolate,
-    FS: FragmentShaderSimd<VS::Varyings>,
-{
-    pipeline: &'a SimdPipeline<VS, FS>,
-    draw_call: DrawCall<'a, VS::Vertex, FS::Uniforms>,
-    vertex_uniforms: VS::Uniforms,
-}
-
-impl<VS, FS> RenderPassCommand for QueuedDrawSimd<'_, VS, FS>
-where
-    VS: VertexShader,
-    VS::Varyings: SimdInterpolate + Send + Sync + 'static,
-    FS: FragmentShaderSimd<VS::Varyings> + Send + Sync + 'static,
-{
-    fn execute(self: Box<Self>, tile_binner: &mut TileBinner, viewport: &Viewport) {
-        let uniforms = Arc::new(self.draw_call.fragment_uniforms);
-
-        for triangle in self.draw_call.primitive.triangles() {
-            let triangles = GeometryProcessor::process_triangle(
-                triangle,
-                &self.pipeline.vertex_shader,
-                &self.vertex_uniforms,
-                viewport,
-                self.pipeline.state.culling_mode,
-            );
-
-            for triangle in triangles {
-                let command = Arc::new(TriangleRasterCommandSimd {
-                    triangle,
-                    uniforms: uniforms.clone(),
-                    shader: self.pipeline.fragment_shader.clone(),
-                    blend_state: self.pipeline.state.blend_state,
-                    depth_state: self.pipeline.state.depth_state,
-                });
-
-                tile_binner.bin_command(command);
-            }
-        }
-    }
-}
-
-/// The topology used when assembling indexed geometry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrimitiveMode {
-    /// Every group of three indices defines a triangle.
-    TRIANGLES,
-    // TODO: support other primitive modes (LINES, POINTS, etc.)
-}
-
-/// A collection of indexed geometry.
-///
-/// A primitive consists of a vertex buffer, index buffer, and topology describing how vertices
-/// should be assembled into renderable shapes.
-///
-/// Currently only triangle primitives are supported.
-pub struct Primitive<'a, V>
-where
-    V: Clone,
-{
-    vertices: &'a [V],
-    indices: &'a [u32],
-    primitive_mode: PrimitiveMode,
-}
-impl<'a, V> Primitive<'a, V>
-where
-    V: Clone,
-{
-    pub fn new(
-        vertices: &'a [V],
-        indices: &'a [u32],
-        primitive_mode: PrimitiveMode,
-    ) -> Primitive<'a, V> {
-        Primitive {
-            vertices,
-            indices,
-            primitive_mode,
-        }
-    }
-
-    fn triangles(&self) -> impl Iterator<Item = Triangle3D<V>> {
-        self.indices.chunks_exact(3).map(|indices| Triangle3D {
-            a: self.vertices[indices[0] as usize].clone(),
-            b: self.vertices[indices[1] as usize].clone(),
-            c: self.vertices[indices[2] as usize].clone(),
-        })
-    }
-}
-
-/// A geometry submission describing what to render and the associated fragment shader data.
-///
-/// A draw call combines a primitive with the uniforms required when shading fragments.
-///
-/// Draw calls are submitted through [`RenderPass::draw`].
-pub struct DrawCall<'a, V, U>
-where
-    V: Clone,
-{
-    primitive: Primitive<'a, V>,
-    fragment_uniforms: U,
-}
-impl<'a, V, U> DrawCall<'a, V, U>
-where
-    V: Clone,
-{
-    /// Creates a new draw call.
-    ///
-    /// # Arguments
-    ///
-    /// * `vertices` - Vertex buffer containing geometry data.
-    /// * `indices` - Index buffer describing primitive connectivity.
-    /// * `primitive_mode` - Topology used to assemble primitives.
-    /// * `fragment_uniforms` - Uniform data passed to the fragment shader.
-    pub fn new(
-        vertices: &'a [V],
-        indices: &'a [u32],
-        primitive_mode: PrimitiveMode,
-        fragment_uniforms: U,
-    ) -> DrawCall<'a, V, U> {
-        DrawCall {
-            primitive: Primitive::new(vertices, indices, primitive_mode),
-            fragment_uniforms,
-        }
-    }
-
-    fn primitive_mode(&self) -> PrimitiveMode {
-        self.primitive.primitive_mode
-    }
-}
-impl<V: Clone, U> std::fmt::Debug for DrawCall<'_, V, U> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DrawCall")
-            .field("vertices", &self.primitive.vertices.len())
-            .field("indices", &self.primitive.indices.len())
-            .field("primitive_mode", &self.primitive.primitive_mode)
-            .finish_non_exhaustive()
-    }
-}
-
-trait RasterCommand: Send + Sync {
-    /// Rasterises the part of the command inside `bounds` into tile-local buffers.
-    ///
-    /// `framebuffer` and `depthbuffer` must be exactly `bounds` in size, with their origin at
-    /// `(bounds.min_x, bounds.min_y)`. The SIMD command's unchecked buffer accesses rely on this.
-    fn rasterise(
-        &self,
-        framebuffer: &mut FrameBuffer,
-        depthbuffer: Option<&mut DepthBuffer>,
-        bounds: Rect,
-    );
-    /// Returns the axis-aligned bounding box of the raster command in pixel space.
-    fn bounding_box(&self) -> (Vec2, Vec2);
-    /// Returns true if the raster command intersects the given rectangle in pixel space.
-    fn intersects(&self, rect: Rect) -> bool;
 }
 
 struct TriangleRasterCommand<V, FS>
@@ -1266,6 +1172,54 @@ where
 
     fn intersects(&self, rect: Rect) -> bool {
         self.triangle.intersects_rect(rect)
+    }
+}
+
+/// Internal type-erased command used to execute a SIMD [`SimdPipeline`] draw.
+///
+/// `QueuedDrawSimd` stores the pipeline, draw call, and vertex uniforms until the
+/// render pass is executed.
+struct QueuedDrawSimd<'a, VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: SimdInterpolate,
+    FS: FragmentShaderSimd<VS::Varyings>,
+{
+    pipeline: &'a SimdPipeline<VS, FS>,
+    draw_call: DrawCall<'a, VS::Vertex, FS::Uniforms>,
+    vertex_uniforms: VS::Uniforms,
+}
+
+impl<VS, FS> RenderPassCommand for QueuedDrawSimd<'_, VS, FS>
+where
+    VS: VertexShader,
+    VS::Varyings: SimdInterpolate + Send + Sync + 'static,
+    FS: FragmentShaderSimd<VS::Varyings> + Send + Sync + 'static,
+{
+    fn execute(self: Box<Self>, tile_binner: &mut TileBinner, viewport: &Viewport) {
+        let uniforms = Arc::new(self.draw_call.fragment_uniforms);
+
+        for triangle in self.draw_call.primitive.triangles() {
+            let triangles = GeometryProcessor::process_triangle(
+                triangle,
+                &self.pipeline.vertex_shader,
+                &self.vertex_uniforms,
+                viewport,
+                self.pipeline.state.culling_mode,
+            );
+
+            for triangle in triangles {
+                let command = Arc::new(TriangleRasterCommandSimd {
+                    triangle,
+                    uniforms: uniforms.clone(),
+                    shader: self.pipeline.fragment_shader.clone(),
+                    blend_state: self.pipeline.state.blend_state,
+                    depth_state: self.pipeline.state.depth_state,
+                });
+
+                tile_binner.bin_command(command);
+            }
+        }
     }
 }
 
@@ -1417,6 +1371,24 @@ where
     fn intersects(&self, rect: Rect) -> bool {
         self.triangle.intersects_rect(rect)
     }
+}
+
+/// Internal type-erased command queued during a render pass.
+///
+/// This allows scalar and SIMD draw commands to coexist in the same render pass
+/// without exposing their concrete types to the renderer's scheduling machinery.
+///
+/// `RenderPassCommand` provides the interface required by [`RenderPass`] to defer rendering
+/// operations until [`RenderPass::finish`] is called.
+///
+/// Commands are stored as trait objects because a single render pass may contain draw
+/// calls using different combinations of vertex and fragment shader types. The
+/// concrete shader types are hidden behind this interface until execution.
+///
+/// Implementors should perform any CPU-side preparation required to convert the
+/// command into rasterisation work and submit it to the tile scheduler.
+trait RenderPassCommand {
+    fn execute(self: Box<Self>, tile_binner: &mut TileBinner, viewport: &Viewport);
 }
 
 /// A tile-based triangle scheduler.
@@ -1571,29 +1543,57 @@ impl Tile {
     }
 }
 
-fn render_tile(tile: Tile) -> TileResult {
-    let mut tile = tile;
-
-    for command in tile.commands {
-        command.rasterise(
-            &mut tile.framebuffer,
-            tile.depthbuffer.as_mut(),
-            tile.bounds,
-        );
-    }
-
-    TileResult {
-        bounds: tile.bounds,
-        framebuffer: tile.framebuffer,
-        depthbuffer: tile.depthbuffer,
-    }
+trait RasterCommand: Send + Sync {
+    /// Rasterises the part of the command inside `bounds` into tile-local buffers.
+    ///
+    /// `framebuffer` and `depthbuffer` must be exactly `bounds` in size, with their origin at
+    /// `(bounds.min_x, bounds.min_y)`. The SIMD command's unchecked buffer accesses rely on this.
+    fn rasterise(
+        &self,
+        framebuffer: &mut FrameBuffer,
+        depthbuffer: Option<&mut DepthBuffer>,
+        bounds: Rect,
+    );
+    /// Returns the axis-aligned bounding box of the raster command in pixel space.
+    fn bounding_box(&self) -> (Vec2, Vec2);
+    /// Returns true if the raster command intersects the given rectangle in pixel space.
+    fn intersects(&self, rect: Rect) -> bool;
 }
 
-/// A tile result is the output of rendering a single tile, used for merging into the main framebuffer.
-struct TileResult {
-    bounds: Rect,
-    framebuffer: FrameBuffer,
-    depthbuffer: Option<DepthBuffer>,
+/// Tile buffers reused across render passes. Buffers taken from the pool keep stale contents, so
+/// callers must overwrite or clear them.
+#[derive(Default)]
+struct TilePool {
+    framebuffers: Vec<FrameBuffer>,
+    depthbuffers: Vec<DepthBuffer>,
+}
+impl TilePool {
+    fn take_framebuffer(&mut self, width: usize, height: usize) -> FrameBuffer {
+        match self.framebuffers.pop() {
+            Some(mut framebuffer) => {
+                framebuffer.resize(width, height);
+                framebuffer
+            }
+            None => FrameBuffer::new(width, height),
+        }
+    }
+
+    fn take_depthbuffer(&mut self, width: usize, height: usize) -> DepthBuffer {
+        match self.depthbuffers.pop() {
+            Some(mut depthbuffer) => {
+                depthbuffer.resize(width, height);
+                depthbuffer
+            }
+            None => DepthBuffer::new(width, height),
+        }
+    }
+
+    fn recycle(&mut self, framebuffer: FrameBuffer, depthbuffer: Option<DepthBuffer>) {
+        self.framebuffers.push(framebuffer);
+        if let Some(depthbuffer) = depthbuffer {
+            self.depthbuffers.push(depthbuffer);
+        }
+    }
 }
 
 /// A rectangular pixel-space region.

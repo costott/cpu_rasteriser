@@ -1,6 +1,6 @@
-use crate::prelude::*;
-
 use cpu_rasteriser::prelude::*;
+
+use crate::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Material {

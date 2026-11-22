@@ -2,16 +2,6 @@ use crate::graphics::triangle::TriangleClip;
 use crate::graphics::vertex::ClipVertex;
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Copy)]
-enum ClipPlane {
-    Left,
-    Right,
-    Top,
-    Bottom,
-    Near,
-    Far,
-}
-
 const PLANES: [ClipPlane; 6] = [
     ClipPlane::Left,
     ClipPlane::Right,
@@ -21,28 +11,18 @@ const PLANES: [ClipPlane; 6] = [
     ClipPlane::Far,
 ];
 
-fn signed_distance<V: Interpolate>(v: &ClipVertex<V>, plane: ClipPlane) -> f32 {
-    match plane {
-        ClipPlane::Left => v.position.x + v.position.w,
-        ClipPlane::Right => -v.position.x + v.position.w,
-        ClipPlane::Top => -v.position.y + v.position.w,
-        ClipPlane::Bottom => v.position.y + v.position.w,
-        ClipPlane::Near => v.position.z + v.position.w,
-        ClipPlane::Far => -v.position.z + v.position.w,
+/// Sutherland-Hodgman polygon clipping algorithm for triangles against the view frustum defined by the clip planes.
+pub fn clip_triangle<V: Interpolate>(triangle: TriangleClip<V>) -> Vec<TriangleClip<V>> {
+    let mut triangles = vec![triangle];
+
+    for plane in PLANES.iter() {
+        triangles = triangles
+            .into_iter()
+            .flat_map(|triangle| clip_triangle_against_plane(triangle, *plane))
+            .collect();
     }
-}
 
-fn intersection<V: Interpolate>(
-    a: ClipVertex<V>,
-    b: ClipVertex<V>,
-    plane: ClipPlane,
-) -> ClipVertex<V> {
-    let da = signed_distance(&a, plane);
-    let db = signed_distance(&b, plane);
-
-    let t = da / (da - db);
-
-    a.interpolate(&b, t)
+    triangles
 }
 
 fn clip_triangle_against_plane<V: Interpolate>(
@@ -85,18 +65,38 @@ fn clip_triangle_against_plane<V: Interpolate>(
     triangulate(output)
 }
 
-/// Sutherland-Hodgman polygon clipping algorithm for triangles against the view frustum defined by the clip planes.
-pub fn clip_triangle<V: Interpolate>(triangle: TriangleClip<V>) -> Vec<TriangleClip<V>> {
-    let mut triangles = vec![triangle];
+fn intersection<V: Interpolate>(
+    a: ClipVertex<V>,
+    b: ClipVertex<V>,
+    plane: ClipPlane,
+) -> ClipVertex<V> {
+    let da = signed_distance(&a, plane);
+    let db = signed_distance(&b, plane);
 
-    for plane in PLANES.iter() {
-        triangles = triangles
-            .into_iter()
-            .flat_map(|triangle| clip_triangle_against_plane(triangle, *plane))
-            .collect();
+    let t = da / (da - db);
+
+    a.interpolate(&b, t)
+}
+
+fn signed_distance<V: Interpolate>(v: &ClipVertex<V>, plane: ClipPlane) -> f32 {
+    match plane {
+        ClipPlane::Left => v.position.x + v.position.w,
+        ClipPlane::Right => -v.position.x + v.position.w,
+        ClipPlane::Top => -v.position.y + v.position.w,
+        ClipPlane::Bottom => v.position.y + v.position.w,
+        ClipPlane::Near => v.position.z + v.position.w,
+        ClipPlane::Far => -v.position.z + v.position.w,
     }
+}
 
-    triangles
+#[derive(Debug, Clone, Copy)]
+enum ClipPlane {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    Near,
+    Far,
 }
 
 /// Triangulates a polygon represented by a list of vertices into triangles.
