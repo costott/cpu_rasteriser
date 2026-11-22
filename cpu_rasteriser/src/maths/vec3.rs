@@ -239,8 +239,7 @@ impl std::ops::Mul<f32x8> for Vec3Simd {
 
 #[cfg(test)]
 mod tests {
-    use super::Vec3;
-    use crate::graphics::interpolate::Interpolate;
+    use super::*;
 
     const EPSILON: f32 = 1e-6;
 

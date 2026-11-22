@@ -4,21 +4,22 @@
 #[cfg(test)]
 extern crate self as cpu_rasteriser;
 
-pub use colour::{Colour, ColourSimd};
-pub use extent::Extent;
-pub use graphics::fragment_shader::{FragmentShader, FragmentShaderSimd};
-pub use graphics::interpolate::{Interpolate, SimdInterpolate};
-pub use graphics::triangle::Triangle3D;
-pub use graphics::vertex::ObjVertex;
-pub use graphics::vertex_shader::VertexShader;
-pub use maths::{Mat4, Vec2, Vec3, Vec3Simd, Vec4};
 pub use rasteriser_macros::{Interpolate, SimdInterpolate};
-pub use renderer::{
+pub use wide;
+
+pub use crate::colour::{Colour, ColourSimd};
+pub use crate::extent::Extent;
+pub use crate::graphics::fragment_shader::{FragmentShader, FragmentShaderSimd};
+pub use crate::graphics::interpolate::{Interpolate, SimdInterpolate};
+pub use crate::graphics::triangle::Triangle3D;
+pub use crate::graphics::vertex::ObjVertex;
+pub use crate::graphics::vertex_shader::VertexShader;
+pub use crate::maths::{Mat4, Vec2, Vec3, Vec3Simd, Vec4};
+pub use crate::renderer::{
     BlendFactor, BlendOp, BlendState, CullingMode, DepthState, DrawCall, LoadOp, Pipeline,
     PrimitiveMode, RenderPass, RenderPassDescriptor, RenderTarget, Renderer, SimdPipeline,
 };
-pub use viewport::Viewport;
-pub use wide;
+pub use crate::viewport::Viewport;
 
 pub mod prelude;
 

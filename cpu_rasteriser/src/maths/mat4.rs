@@ -359,7 +359,7 @@ impl Mul<Vec4> for Mat4 {
 mod tests {
     use std::f32::consts::FRAC_PI_2;
 
-    use super::{Mat4, Vec4};
+    use super::*;
 
     const EPSILON: f32 = 1e-6;
 

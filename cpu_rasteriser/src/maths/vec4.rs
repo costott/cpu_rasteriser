@@ -143,7 +143,7 @@ impl From<(i32, i32, i32, i32)> for Vec4 {
 
 #[cfg(test)]
 mod tests {
-    use super::Vec4;
+    use super::*;
 
     const EPSILON: f32 = 1e-6;
 

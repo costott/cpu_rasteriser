@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use cpu_rasteriser::{prelude::*, wide::f32x8};
+use cpu_rasteriser::prelude::*;
+use cpu_rasteriser::wide::f32x8;
 use engine::prelude::*;
 
 const WIDTH: usize = 640;
