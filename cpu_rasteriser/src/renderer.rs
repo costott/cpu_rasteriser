@@ -9,68 +9,103 @@ use crate::graphics::geometry_processing::GeometryProcessor;
 use crate::graphics::triangle::Triangle2D;
 use crate::prelude::*;
 
-/// A CPU-based renderer responsible for executing draw calls and producing a final framebuffer.
+/// The entry point for rendering: begins render passes that draw into a [`RenderTarget`].
 ///
-/// The renderer owns the framebuffer and depth buffer used during rendering, and uses a thread
-/// pool to parallelise tile rasterisation. Rendering is performed in frames:
+/// The target belongs to the caller, so one renderer can serve any number of targets. Create the
+/// renderer once and keep it for the lifetime of the application.
 ///
-/// 1. Call [`Renderer::begin_render_pass`] to begin recording draw commands.
-/// 2. Submit draw calls through [`RenderPass::draw`].
-/// 3. Call [`RenderPass::finish`] to execute the queued commands and rasterise the frame.
+/// Rendering happens in render passes:
 ///
-/// # Example
+/// 1. [`Renderer::begin_render_pass`] binds a target and returns a [`RenderPass`].
+/// 2. [`RenderPass::draw`] (for a [`Pipeline`]) and [`RenderPass::draw_simd`] (for a
+///    [`SimdPipeline`]) queue draw calls.
+/// 3. [`RenderPass::finish`] renders the queued draw calls into the target.
+///
+/// # Examples
+///
+/// Draws a red triangle over the bottom-left half of a 4×4 target, then reads the pixels back:
 ///
 /// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// /// Passes clip-space positions straight through.
+/// struct PassThrough;
+/// impl VertexShader for PassThrough {
+///     type Vertex = Vec4;
+///     type Uniforms = ();
+///     type Varyings = f32;
+///
+///     fn shade(&self, position: Vec4, _: &()) -> (Vec4, f32) {
+///         (position, 0.0)
+///     }
+/// }
+///
+/// /// Fills every fragment with the draw call's colour.
+/// struct FlatColour;
+/// impl FragmentShader<f32> for FlatColour {
+///     type Uniforms = Colour;
+///
+///     fn shade(&self, _: f32, colour: &Colour) -> Colour {
+///         *colour
+///     }
+/// }
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut renderer = Renderer::new()?;
+/// let extent = Extent::new(4, 4);
+/// let mut target = RenderTarget::new(extent);
+/// let pipeline = Pipeline::new(PassThrough, FlatColour);
 ///
-/// let extent = Extent::new(WIDTH, HEIGHT);
-/// let screen_target = RenderTarget::new(extent).with_depth();
+/// let vertices = [
+///     Vec4::new(-1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(-1.0, 1.0, 0.0, 1.0),
+/// ];
 ///
-/// let pipeline = Pipeline::new(
-///     vertex_shader,
-///     fragment_shader
-/// ).with_culling_mode(CullingMode::BackFace)
-///  .with_depth_state(DepthState::DEFAULT)
-///
-/// let mut render_pass = renderer.begin_render_pass(RenderPassDescriptor {
-///     viewport: Viewport::full(&screen_target),
-///     target: &mut screen_target,
-///     colour_load_op: LoadOp::Clear(Colour::BLACK),
-///     depth_load_op: LoadOp::Clear(1.0),
-/// });
-///
-/// render_pass.draw(
-///     &pipeline,
-///     DrawCall::new(
-///         &vertices,
-///         &indices,
-///         PrimitiveMode::TRIANGLES,
-///         fragment_uniforms,
-///     ),
-///     &vertex_uniforms,
+/// let mut pass = renderer.begin_render_pass(
+///     &mut target,
+///     RenderPassDescriptor {
+///         viewport: Viewport::full(&extent),
+///         colour_load_op: LoadOp::Clear(Colour::BLACK),
+///         depth_load_op: None,
+///     },
 /// );
+/// pass.draw(
+///     &pipeline,
+///     DrawCall::new(&vertices, &[0, 1, 2], PrimitiveMode::TRIANGLES, Colour::RED),
+///     (),
+/// );
+/// pass.finish();
 ///
-/// render_pass.finish();
-///
-/// let pixels = screen_target.pixels();
+/// let pixels = target.pixels();
+/// assert_eq!(pixels[3 * 4], Colour::RED); // bottom-left corner
+/// assert_eq!(pixels[3], Colour::BLACK); // top-right corner
+/// # Ok(())
+/// # }
 /// ```
-///
-/// For SIMD rendering, construct a [`SimdPipeline`] and submit it with
-/// [`RenderPass::draw_simd`].
-///
-/// The renderer is not thread-safe and should only be accessed from the thread performing
-/// rendering. Internal rasterisation work is dispatched across worker threads automatically.
 pub struct Renderer {
     thread_pool: ThreadPool,
     tile_pool: TilePool,
 }
 impl Renderer {
-    /// Creates a new renderer with one worker thread per available CPU thread.
+    /// Creates a renderer that makes use of the available CPU parallelism.
     ///
     /// # Errors
     ///
-    /// Returns the error from [`std::thread::available_parallelism`] if the number of available
-    /// CPU threads can't be determined.
+    /// Returns the error from [`std::thread::available_parallelism`] if the amount of available
+    /// parallelism can't be determined.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let renderer = Renderer::new()?;
+    /// # let _ = renderer;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new() -> std::io::Result<Self> {
         Ok(Self {
             thread_pool: ThreadPool::new(std::thread::available_parallelism()?.get()),
@@ -78,19 +113,47 @@ impl Renderer {
         })
     }
 
-    /// Begins a new render pass.
+    /// Begins a render pass that draws into `target`.
     ///
-    /// Only one render pass may be active at a time because the renderer is mutably
-    /// borrowed while the render pass exist.
+    /// The descriptor's load operations set each attachment's starting contents for the pass:
+    /// cleared, or the target's existing contents. With a `depth_load_op` of `None` the pass has
+    /// no depth buffer, and a depth buffer the target already has is left unchanged.
     ///
-    /// # Example
-    /// ```ignore
-    /// let mut render_pass = renderer.begin_render_pass(RenderPassDescriptor{
-    ///     viewport: Viewport::full(&render_target),
-    ///     target: &mut render_target,
-    ///     colour_load_op: LoadOp::Clear(Colour::BLACK),
-    ///     depth_load_op: LoadOp::Clear(1.0),
-    /// });
+    /// The pass borrows the renderer and the target mutably, so only one pass can be active at a
+    /// time and the target can't be read until the pass ends. Nothing is written to the target,
+    /// clears included, until [`RenderPass::finish`]; dropping the pass without finishing it
+    /// leaves the target unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `descriptor.depth_load_op` is `Some` and `target` has no depth buffer (it wasn't
+    /// created with [`RenderTarget::with_depth`]).
+    ///
+    /// # Examples
+    ///
+    /// Clears a target with a depth buffer and finishes the pass with no draws:
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut renderer = Renderer::new()?;
+    /// let extent = Extent::new(8, 8);
+    /// let mut target = RenderTarget::new(extent).with_depth();
+    ///
+    /// let pass = renderer.begin_render_pass(
+    ///     &mut target,
+    ///     RenderPassDescriptor {
+    ///         viewport: Viewport::full(&extent),
+    ///         colour_load_op: LoadOp::Clear(Colour::BLUE),
+    ///         depth_load_op: Some(LoadOp::Clear(1.0)),
+    ///     },
+    /// );
+    /// pass.finish();
+    ///
+    /// assert!(target.pixels().iter().all(|&pixel| pixel == Colour::BLUE));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn begin_render_pass<'renderer, 'target>(
         &'renderer mut self,
@@ -187,11 +250,38 @@ struct TileResult {
     depthbuffer: Option<DepthBuffer>,
 }
 
+/// The destination of a render pass: a colour buffer and an optional depth buffer.
+///
+/// Render into a target with [`Renderer::begin_render_pass`], then read the result back with
+/// [`RenderTarget::pixels`] or [`RenderTarget::pixels_u32`] (or their allocation-free forms).
+/// Pixels are addressed from the top-left corner, row by row. The colour buffer holds
+/// [`Colour`]s.
+///
+/// # Examples
+///
+/// A target for 3D rendering needs a depth buffer for depth testing:
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// let target = RenderTarget::new(Extent::new(320, 180)).with_depth();
+///
+/// assert_eq!(target.extent(), Extent::new(320, 180));
+/// assert!(target.pixels().iter().all(|&pixel| pixel == Colour::BLACK));
+/// ```
 pub struct RenderTarget {
     framebuffer: FrameBuffer,
     depthbuffer: Option<DepthBuffer>,
 }
 impl RenderTarget {
+    /// Creates a target of the given size with a colour buffer and no depth buffer.
+    ///
+    /// Every pixel starts as [`Colour::BLACK`]. Add a depth buffer with
+    /// [`RenderTarget::with_depth`].
+    ///
+    /// # Examples
+    ///
+    /// See [`RenderTarget`].
     pub fn new(extent: Extent) -> Self {
         Self {
             framebuffer: FrameBuffer::new(extent.width, extent.height),
@@ -199,6 +289,14 @@ impl RenderTarget {
         }
     }
 
+    /// Adds a depth buffer of the same size, with every depth set to 1.0 (the far plane).
+    ///
+    /// A target needs a depth buffer for any pass whose
+    /// [`RenderPassDescriptor::depth_load_op`] is `Some`.
+    ///
+    /// # Examples
+    ///
+    /// See [`RenderTarget`].
     pub fn with_depth(mut self) -> Self {
         self.depthbuffer = Some(DepthBuffer::new(
             self.framebuffer.width(),
@@ -207,6 +305,23 @@ impl RenderTarget {
         self
     }
 
+    /// Returns a copy of the pixels, row by row from the top-left corner.
+    ///
+    /// The result has `width * height` elements, and the pixel at `(x, y)` is at index
+    /// `y * width + x`. This allocates on every call; [`RenderTarget::write_pixels`] reuses a
+    /// buffer instead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let target = RenderTarget::new(Extent::new(4, 2));
+    /// let pixels = target.pixels();
+    ///
+    /// assert_eq!(pixels.len(), 4 * 2);
+    /// assert_eq!(pixels[2 * 4 - 1], Colour::BLACK); // the bottom-right pixel
+    /// ```
     pub fn pixels(&self) -> Vec<Colour> {
         self.framebuffer.pixels_compact()
     }
@@ -236,15 +351,28 @@ impl RenderTarget {
         self.framebuffer.write_pixels(out);
     }
 
+    /// Returns a copy of the pixels packed into `u32`s by [`Colour::to_u32`], row by row.
+    ///
+    /// The result has `width * height` elements, laid out as in [`RenderTarget::pixels`]. This
+    /// allocates on every call; [`RenderTarget::write_pixels_u32`] reuses a buffer instead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let target = RenderTarget::new(Extent::new(4, 2));
+    ///
+    /// assert_eq!(target.pixels_u32(), vec![Colour::BLACK.to_u32(); 4 * 2]);
+    /// ```
     pub fn pixels_u32(&self) -> Vec<u32> {
         self.framebuffer.pixels_u32()
     }
 
-    /// Writes the pixels into `out` as packed `0xAARRGGBB` values, row by row, without allocating.
+    /// Writes the pixels into `out`, packed by [`Colour::to_u32`], row by row, without allocating.
     ///
-    /// Each channel is clamped to `[0, 1]` and NaN becomes 0, as in [`Colour::to_u32`]. Elements
-    /// of `out` past `width * height` are left untouched. This is the allocation-free form of
-    /// [`RenderTarget::pixels_u32`], for writing straight into a presentation buffer.
+    /// Elements of `out` past `width * height` are left untouched. This is the allocation-free
+    /// form of [`RenderTarget::pixels_u32`], for reusing one buffer across reads.
     ///
     /// # Panics
     ///
@@ -266,21 +394,66 @@ impl RenderTarget {
         self.framebuffer.write_pixels_u32(out);
     }
 
+    /// Returns the width in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// assert_eq!(RenderTarget::new(Extent::new(4, 2)).width(), 4);
+    /// ```
     pub fn width(&self) -> usize {
         self.framebuffer.width()
     }
 
+    /// Returns the height in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// assert_eq!(RenderTarget::new(Extent::new(4, 2)).height(), 2);
+    /// ```
     pub fn height(&self) -> usize {
         self.framebuffer.height()
     }
 
+    /// Returns the size in pixels.
+    ///
+    /// This is the usual source of a viewport covering the whole target, through
+    /// [`Viewport::full`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let target = RenderTarget::new(Extent::new(4, 2));
+    ///
+    /// assert_eq!(Viewport::full(&target.extent()), Viewport::new(0, 0, 4, 2));
+    /// ```
     pub fn extent(&self) -> Extent {
         self.framebuffer.extent()
     }
 
-    /// Resizes the framebuffer and depth buffer to match the new extent.
+    /// Resizes the colour buffer, and the depth buffer if there is one, to `extent`.
     ///
-    /// Existing framebuffer contents are discarded.
+    /// Existing contents are discarded: afterwards the pixels and depths are unspecified until a
+    /// render pass clears or draws over them, so the next pass should use [`LoadOp::Clear`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let mut target = RenderTarget::new(Extent::new(640, 360)).with_depth();
+    ///
+    /// target.resize(Extent::new(1280, 720));
+    ///
+    /// assert_eq!(target.extent(), Extent::new(1280, 720));
+    /// ```
     pub fn resize(&mut self, extent: Extent) {
         self.framebuffer.resize(extent.width, extent.height);
         if let Some(depthbuffer) = &mut self.depthbuffer {
@@ -297,35 +470,124 @@ impl std::fmt::Debug for RenderTarget {
     }
 }
 
+/// The configuration of a render pass, passed to [`Renderer::begin_render_pass`].
+///
+/// # Examples
+///
+/// A typical 3D pass clears colour and depth; [`LoadOp`] shows passes that keep the previous
+/// contents.
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// let target = RenderTarget::new(Extent::new(640, 360)).with_depth();
+///
+/// let descriptor = RenderPassDescriptor {
+///     viewport: Viewport::full(&target.extent()),
+///     colour_load_op: LoadOp::Clear(Colour::BLACK),
+///     depth_load_op: Some(LoadOp::Clear(1.0)),
+/// };
+/// # let _ = descriptor;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderPassDescriptor {
+    /// The region of the target, in pixels, that normalised device coordinates map onto.
     pub viewport: Viewport,
+    /// How the target's colour buffer is initialised at the start of the pass.
     pub colour_load_op: LoadOp<Colour>,
+    /// How the target's depth buffer is initialised, or `None` for a pass without depth.
+    ///
+    /// `Some` requires a target with a depth buffer ([`RenderTarget::with_depth`]). With `None`,
+    /// pipelines drawn in the pass must not test or write depth, and the target's depth buffer, if
+    /// it has one, is left unchanged. For ordinary depth testing, clear with `LoadOp::Clear(1.0)`,
+    /// the far plane (see [`DepthState`]).
     pub depth_load_op: Option<LoadOp<f32>>,
 }
 
+/// How a render pass initialises an attachment (the colour or depth buffer) before drawing.
+///
+/// `T` is the attachment's element type: [`Colour`] for the colour buffer and `f32` for depth.
+///
+/// # Examples
+///
+/// Multipass rendering: a second pass with [`LoadOp::Load`] keeps what the first pass produced.
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut renderer = Renderer::new()?;
+/// let extent = Extent::new(4, 4);
+/// let mut target = RenderTarget::new(extent);
+///
+/// for colour_load_op in [LoadOp::Clear(Colour::GREEN), LoadOp::Load] {
+///     let pass = renderer.begin_render_pass(
+///         &mut target,
+///         RenderPassDescriptor {
+///             viewport: Viewport::full(&extent),
+///             colour_load_op,
+///             depth_load_op: None,
+///         },
+///     );
+///     pass.finish();
+/// }
+///
+/// assert!(target.pixels().iter().all(|&pixel| pixel == Colour::GREEN));
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadOp<T> {
-    /// Keeps the existing data in the framebuffer / depth buffer.
+    /// Keeps the attachment's existing contents.
     Load,
-    /// Clears the existing data to the provided value before rendering.
+    /// Fills the attachment with the given value.
     Clear(T),
 }
 
-/// A collection of shader stages and fixed-function rendering state used to process draw calls.
-///
-/// `Pipeline` uses the scalar fragment-shading path. Fragment shaders only need to implement
-/// [`FragmentShader`].
+/// A pair of shaders and the fixed-function state used to draw with them, shading one fragment at
+/// a time.
 ///
 /// A pipeline contains:
 ///
-/// - A vertex shader, responsible for transforming input vertices and producing interpolated data.
-/// - A fragment shader, responsible for calculating the final colour of each rasterised fragment.
-/// - Rasterisation state such as back-face culling, blending, and depth testing.
+/// - a [`VertexShader`], which transforms each vertex into clip space and produces the varyings
+///   interpolated across the triangle;
+/// - a [`FragmentShader`], which calculates the colour of each rasterised fragment;
+/// - fixed-function state: back-face culling ([`CullingMode`]), blending ([`BlendState`]), and
+///   depth testing ([`DepthState`]).
 ///
-/// Pipelines are intended to be created once and reused across multiple render passes.
+/// Create a pipeline once and reuse it across draw calls and render passes; draw with it through
+/// [`RenderPass::draw`]. For a shader that shades eight fragments at once, use [`SimdPipeline`].
 ///
-/// For SIMD rasterisation and fragment shading, use [`SimdPipeline`] instead.
+/// # Examples
+///
+/// A pipeline for opaque 3D geometry, with depth testing and both sides of each triangle drawn:
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// # struct PassThrough;
+/// # impl VertexShader for PassThrough {
+/// #     type Vertex = Vec4;
+/// #     type Uniforms = ();
+/// #     type Varyings = f32;
+/// #     fn shade(&self, position: Vec4, _: &()) -> (Vec4, f32) {
+/// #         (position, 0.0)
+/// #     }
+/// # }
+/// # struct FlatColour;
+/// # impl FragmentShader<f32> for FlatColour {
+/// #     type Uniforms = Colour;
+/// #     fn shade(&self, _: f32, colour: &Colour) -> Colour {
+/// #         *colour
+/// #     }
+/// # }
+/// let pipeline = Pipeline::new(PassThrough, FlatColour)
+///     .with_culling_mode(CullingMode::None)
+///     .with_depth_state(DepthState::DEFAULT);
+/// # let _ = pipeline;
+/// ```
+///
+/// [`Renderer`] shows a complete draw with the shaders hidden here.
 pub struct Pipeline<VS, FS>
 where
     VS: VertexShader,
@@ -340,11 +602,14 @@ where
     VS: VertexShader,
     FS: FragmentShader<VS::Varyings>,
 {
-    /// Creates a new scalar rendering pipeline.
+    /// Creates a pipeline from a vertex shader and a fragment shader.
     ///
-    /// The pipeline uses scalar fragment shading and the scalar rasterisation path.
+    /// The pipeline starts with [`CullingMode::BackFace`], no blending (fragment colours replace
+    /// the target's), and [`DepthState::DISABLED`]. The builder methods change these.
     ///
-    /// SIMD rendering is available through [`SimdPipeline`].
+    /// # Examples
+    ///
+    /// See [`Pipeline`].
     pub fn new(vertex_shader: VS, fragment_shader: FS) -> Self {
         Self {
             vertex_shader,
@@ -357,28 +622,45 @@ where
         }
     }
 
-    /// Configures the back-face culling mode used by the pipeline.
+    /// Sets which triangles are culled by their winding before rasterisation.
+    ///
+    /// # Examples
+    ///
+    /// See [`CullingMode`].
     pub fn with_culling_mode(mut self, culling_mode: CullingMode) -> Self {
         self.state.culling_mode = culling_mode;
         self
     }
 
-    /// Configures the blending state used by the pipeline.
+    /// Sets how fragment colours are combined with the colours already in the target.
     ///
-    /// When set, fragment colours are combined with the existing framebuffer colour
-    /// according to the provided [`BlendState`].
+    /// # Examples
+    ///
+    /// See [`BlendState`].
     pub fn with_blend_state(mut self, blend_state: BlendState) -> Self {
         self.state.blend_state = Some(blend_state);
         self
     }
 
-    /// Removes any blending state from the pipeline, causing fragment colours to replace
-    /// the existing framebuffer colour.
+    /// Removes the blend state, so fragment colours replace the colours already in the target.
+    ///
+    /// This is the default.
+    ///
+    /// # Examples
+    ///
+    /// See [`BlendState`].
     pub fn without_blend_state(mut self) -> Self {
         self.state.blend_state = None;
         self
     }
 
+    /// Sets whether fragments are depth tested and whether they write their depth.
+    ///
+    /// A pipeline that tests or writes depth can only be drawn in a pass with a depth buffer.
+    ///
+    /// # Examples
+    ///
+    /// See [`DepthState`].
     pub fn with_depth_state(mut self, depth_state: DepthState) -> Self {
         self.state.depth_state = depth_state;
         self
@@ -396,28 +678,99 @@ where
     }
 }
 
-/// A rendering pipeline that uses SIMD rasterisation and fragment shading.
+/// A pair of shaders and the fixed-function state used to draw with them, shading eight fragments
+/// at a time.
 ///
-/// `SimdPipeline` requires the fragment shader to implement [`FragmentShaderSimd`].
-/// Unlike [`Pipeline`], it does not require a scalar [`FragmentShader`]
-/// implementation.
+/// The fragment shader receives eight fragments per call; [`FragmentShaderSimd`] describes how the
+/// lanes map to pixels. Otherwise it has the same shader stages and fixed-function state as
+/// [`Pipeline`], and the two can be drawn in the same [`RenderPass`]. Draw with it through
+/// [`RenderPass::draw_simd`].
 ///
-/// Rendering is performed in batches of SIMD lanes, with the rasteriser,
-/// depth operations, and fragment shader operating on multiple fragments at once.
-///
-/// A SIMD pipeline contains the same fixed-function state as [`Pipeline`]:
-///
-/// - A vertex shader, responsible for transforming input vertices and producing interpolated data.
-/// - A SIMD-capable fragment shader, responsible for calculating colours for multiple fragments.
-/// - Rasterisation state such as back-face culling, blending, and depth testing.
-///
-/// Pipelines are intended to be created once and reused across multiple render passes.
+/// The varyings a SIMD fragment shader receives can differ slightly from the ones a [`Pipeline`]
+/// gives the same fragment.
 ///
 /// # SIMD shader requirements
 ///
-/// The fragment shader must implement both [`FragmentShader`] and [`FragmentShaderSimd`].
-/// [`FragmentShader`] remains available for scalar use, while [`FragmentShaderSimd`] provides
-/// the SIMD implementation used by this pipeline.
+/// - The fragment shader implements [`FragmentShaderSimd`]. It doesn't need a scalar
+///   [`FragmentShader`] implementation; a shader may implement both to be usable in either
+///   pipeline.
+/// - The vertex shader's varyings implement [`SimdInterpolate`], usually through
+///   `#[derive(Interpolate, SimdInterpolate)]`, which also generates the eight-lane varyings type
+///   the fragment shader receives (`VaryingsSimd` for a struct named `Varyings`).
+/// - Both the fragment shader and the varyings are `Send + Sync + 'static`, which
+///   [`RenderPass::draw_simd`] requires because shading can run on other threads.
+///
+/// # Examples
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+/// use cpu_rasteriser::wide::f32x8;
+///
+/// #[derive(Interpolate, SimdInterpolate)]
+/// struct Varyings {
+///     brightness: f32,
+/// }
+///
+/// struct PassThrough;
+/// impl VertexShader for PassThrough {
+///     type Vertex = Vec4;
+///     type Uniforms = ();
+///     type Varyings = Varyings;
+///
+///     fn shade(&self, position: Vec4, _: &()) -> (Vec4, Varyings) {
+///         (position, Varyings { brightness: 1.0 })
+///     }
+/// }
+///
+/// /// Shades eight fragments at once in shades of grey.
+/// struct Greyscale;
+/// impl FragmentShaderSimd<Varyings> for Greyscale {
+///     type Uniforms = ();
+///
+///     fn shade_simd(&self, varyings: VaryingsSimd, _: &()) -> ColourSimd {
+///         let brightness = varyings.brightness;
+///         ColourSimd { r: brightness, g: brightness, b: brightness, a: f32x8::splat(1.0) }
+///     }
+/// }
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut renderer = Renderer::new()?;
+/// let extent = Extent::new(16, 16);
+/// let mut target = RenderTarget::new(extent);
+/// let pipeline = SimdPipeline::new(PassThrough, Greyscale);
+///
+/// let vertices = [
+///     Vec4::new(-1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(-1.0, 1.0, 0.0, 1.0),
+/// ];
+///
+/// let mut pass = renderer.begin_render_pass(
+///     &mut target,
+///     RenderPassDescriptor {
+///         viewport: Viewport::full(&extent),
+///         colour_load_op: LoadOp::Clear(Colour::BLACK),
+///         depth_load_op: None,
+///     },
+/// );
+/// pass.draw_simd(
+///     &pipeline,
+///     DrawCall::new(&vertices, &[0, 1, 2], PrimitiveMode::TRIANGLES, ()),
+///     (),
+/// );
+/// pass.finish();
+///
+/// let pixel = target.pixels()[15 * 16]; // bottom-left corner
+/// assert!((pixel.r - 1.0).abs() < 1e-3);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Known issues
+///
+/// - The varyings can differ from those a [`Pipeline`] gives the same pixel by more than expected;
+///   the cause hasn't been investigated
+///   ([#21](https://github.com/costott/cpu_rasteriser/issues/21)).
 pub struct SimdPipeline<VS, FS>
 where
     VS: VertexShader,
@@ -434,10 +787,15 @@ where
     VS::Varyings: SimdInterpolate,
     FS: FragmentShaderSimd<VS::Varyings>,
 {
-    /// Creates a new SIMD rendering pipeline.
+    /// Creates a SIMD pipeline from a vertex shader and a SIMD fragment shader.
     ///
-    /// The fragment shader must implement [`FragmentShaderSimd`].
-    /// The resulting pipeline uses SIMD rasterisation and SIMD fragment shading.
+    /// The pipeline starts with [`CullingMode::BackFace`], no blending (fragment colours replace
+    /// the target's), and [`DepthState::DISABLED`], as [`Pipeline::new`] does. The builder methods
+    /// change these.
+    ///
+    /// # Examples
+    ///
+    /// See [`SimdPipeline`].
     pub fn new(vertex_shader: VS, fragment_shader: FS) -> Self {
         Self {
             vertex_shader,
@@ -450,21 +808,45 @@ where
         }
     }
 
+    /// Sets which triangles are culled by their winding before rasterisation.
+    ///
+    /// # Examples
+    ///
+    /// See [`CullingMode`].
     pub fn with_culling_mode(mut self, culling_mode: CullingMode) -> Self {
         self.state.culling_mode = culling_mode;
         self
     }
 
+    /// Sets how fragment colours are combined with the colours already in the target.
+    ///
+    /// # Examples
+    ///
+    /// See [`BlendState`].
     pub fn with_blend_state(mut self, blend_state: BlendState) -> Self {
         self.state.blend_state = Some(blend_state);
         self
     }
 
+    /// Removes the blend state, so fragment colours replace the colours already in the target.
+    ///
+    /// This is the default.
+    ///
+    /// # Examples
+    ///
+    /// See [`BlendState`].
     pub fn without_blend_state(mut self) -> Self {
         self.state.blend_state = None;
         self
     }
 
+    /// Sets whether fragments are depth tested and whether they write their depth.
+    ///
+    /// A pipeline that tests or writes depth can only be drawn in a pass with a depth buffer.
+    ///
+    /// # Examples
+    ///
+    /// See [`DepthState`].
     pub fn with_depth_state(mut self, depth_state: DepthState) -> Self {
         self.state.depth_state = depth_state;
         self
@@ -494,62 +876,214 @@ struct PipelineState {
     depth_state: DepthState,
 }
 
-/// Controls whether primitives are removed based on their winding direction before rasterisation.
+/// Which triangles a pipeline discards by their winding before rasterisation.
 ///
-/// Back-face culling can improve rendering performance by avoiding rasterisation of triangles
-/// facing away from the camera.
+/// Which way a triangle faces follows the winding convention of the [`VertexShader`] contract:
+/// counter-clockwise triangles are front-facing. For closed meshes, back-face culling skips the
+/// triangles facing away from the camera, which are hidden anyway.
+///
+/// # Examples
+///
+/// A clockwise triangle is culled by [`CullingMode::BackFace`] (the default) and drawn with
+/// [`CullingMode::None`]:
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// # struct PassThrough;
+/// # impl VertexShader for PassThrough {
+/// #     type Vertex = Vec4;
+/// #     type Uniforms = ();
+/// #     type Varyings = f32;
+/// #     fn shade(&self, position: Vec4, _: &()) -> (Vec4, f32) {
+/// #         (position, 0.0)
+/// #     }
+/// # }
+/// # struct FlatColour;
+/// # impl FragmentShader<f32> for FlatColour {
+/// #     type Uniforms = Colour;
+/// #     fn shade(&self, _: f32, colour: &Colour) -> Colour {
+/// #         *colour
+/// #     }
+/// # }
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut renderer = Renderer::new()?;
+/// let extent = Extent::new(4, 4);
+/// let clockwise = [
+///     Vec4::new(-1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(-1.0, 1.0, 0.0, 1.0),
+///     Vec4::new(1.0, -1.0, 0.0, 1.0),
+/// ];
+///
+/// for (culling_mode, drawn) in [(CullingMode::BackFace, false), (CullingMode::None, true)] {
+///     let pipeline = Pipeline::new(PassThrough, FlatColour).with_culling_mode(culling_mode);
+///     let mut target = RenderTarget::new(extent);
+///
+///     let mut pass = renderer.begin_render_pass(
+///         &mut target,
+///         RenderPassDescriptor {
+///             viewport: Viewport::full(&extent),
+///             colour_load_op: LoadOp::Clear(Colour::BLACK),
+///             depth_load_op: None,
+///         },
+///     );
+///     pass.draw(
+///         &pipeline,
+///         DrawCall::new(&clockwise, &[0, 1, 2], PrimitiveMode::TRIANGLES, Colour::RED),
+///         (),
+///     );
+///     pass.finish();
+///
+///     assert_eq!(target.pixels().contains(&Colour::RED), drawn);
+/// }
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CullingMode {
-    /// No culling is performed; all triangles are rendered.
+    /// Draws every triangle, whichever way it faces.
     None,
-    /// Triangles facing away from the camera are culled.
+    /// Discards back-facing (clockwise) triangles, and triangles with zero area.
     BackFace,
 }
 
-/// Rendering depth-test and depth-write configuration.
+/// Whether a pipeline's fragments are depth tested and whether they write their depth.
+///
+/// A fragment's depth is the normalised device z of the [`VertexShader`] contract, where smaller
+/// is nearer. The depth test passes when a fragment's depth is less than the depth stored in the
+/// target, so a pass that tests depth usually clears it to 1.0. A fragment that fails the test is
+/// discarded.
+///
+/// A pipeline that tests or writes depth can only be drawn in a render pass with a depth buffer
+/// (a [`RenderPassDescriptor::depth_load_op`] of `Some`).
+///
+/// # Examples
+///
+/// With depth testing, the nearer of two overlapping triangles is visible whichever is drawn last:
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// # struct PassThrough;
+/// # impl VertexShader for PassThrough {
+/// #     type Vertex = Vec4;
+/// #     type Uniforms = ();
+/// #     type Varyings = f32;
+/// #     fn shade(&self, position: Vec4, _: &()) -> (Vec4, f32) {
+/// #         (position, 0.0)
+/// #     }
+/// # }
+/// # struct FlatColour;
+/// # impl FragmentShader<f32> for FlatColour {
+/// #     type Uniforms = Colour;
+/// #     fn shade(&self, _: f32, colour: &Colour) -> Colour {
+/// #         *colour
+/// #     }
+/// # }
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut renderer = Renderer::new()?;
+/// let extent = Extent::new(4, 4);
+/// let triangle_at = |depth| {
+///     [
+///         Vec4::new(-1.0, -1.0, depth, 1.0),
+///         Vec4::new(1.0, -1.0, depth, 1.0),
+///         Vec4::new(-1.0, 1.0, depth, 1.0),
+///     ]
+/// };
+/// let (near, far) = (triangle_at(0.0), triangle_at(0.5));
+///
+/// for (depth_state, visible) in [
+///     (DepthState::DEFAULT, Colour::RED),
+///     (DepthState::DISABLED, Colour::BLUE),
+/// ] {
+///     let pipeline = Pipeline::new(PassThrough, FlatColour).with_depth_state(depth_state);
+///     let mut target = RenderTarget::new(extent).with_depth();
+///
+///     let mut pass = renderer.begin_render_pass(
+///         &mut target,
+///         RenderPassDescriptor {
+///             viewport: Viewport::full(&extent),
+///             colour_load_op: LoadOp::Clear(Colour::BLACK),
+///             depth_load_op: Some(LoadOp::Clear(1.0)),
+///         },
+///     );
+///     for (vertices, colour) in [(&near, Colour::RED), (&far, Colour::BLUE)] {
+///         pass.draw(
+///             &pipeline,
+///             DrawCall::new(vertices, &[0, 1, 2], PrimitiveMode::TRIANGLES, colour),
+///             (),
+///         );
+///     }
+///     pass.finish();
+///
+///     assert_eq!(target.pixels()[3 * 4], visible); // bottom-left corner
+/// }
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DepthState {
+    /// Whether fragments at or behind the stored depth are discarded.
     pub test_enabled: bool,
+    /// Whether fragments that are drawn write their depth to the depth buffer.
     pub write_enabled: bool,
 }
 impl DepthState {
-    /// Default depth state with depth testing and depth writes enabled.
+    /// Tests and writes depth: the usual state for opaque geometry.
     pub const DEFAULT: DepthState = DepthState {
         test_enabled: true,
         write_enabled: true,
     };
 
-    /// Depth testing enabled with depth writes disabled.
+    /// Tests depth without writing it, for example for transparent geometry drawn after opaque
+    /// geometry.
     pub const READ_ONLY: DepthState = DepthState {
         test_enabled: true,
         write_enabled: false,
     };
 
-    /// Depth testing disabled with depth writes enabled.
+    /// Writes depth without testing it, so every fragment is drawn and records its depth.
     pub const WRITE_ONLY: DepthState = DepthState {
         test_enabled: false,
         write_enabled: true,
     };
 
-    /// Disables both depth testing and depth writes.
+    /// Neither tests nor writes depth: the state of a new pipeline.
     pub const DISABLED: DepthState = DepthState {
         test_enabled: false,
         write_enabled: false,
     };
 }
 
-/// Determines how a source or destination colour contributes to the blend result.
+/// The per-channel weight a [`BlendState`] multiplies a source or destination colour by.
+///
+/// The source (`Src`) is the colour the fragment shader produced; the destination (`Dst`) is the
+/// colour already in the target. Each factor resolves to one weight per channel.
+///
+/// # Examples
+///
+/// See [`BlendState`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlendFactor {
+    /// Weights every channel by 0.
     Zero,
+    /// Weights every channel by 1.
     One,
+    /// Weights each channel by the source's value of that channel.
     SrcColor,
+    /// Weights each channel by one minus the source's value of that channel.
     OneMinusSrcColor,
+    /// Weights each channel by the destination's value of that channel.
     DstColor,
+    /// Weights each channel by one minus the destination's value of that channel.
     OneMinusDstColor,
+    /// Weights every channel by the source alpha.
     SrcAlpha,
+    /// Weights every channel by one minus the source alpha.
     OneMinusSrcAlpha,
+    /// Weights every channel by the destination alpha.
     DstAlpha,
+    /// Weights every channel by one minus the destination alpha.
     OneMinusDstAlpha,
 }
 impl BlendFactor {
@@ -652,31 +1186,116 @@ impl BlendFactor {
     }
 }
 
-/// Determines the arithmetic operation used to combine the scaled source and destination colours.
+/// The operation a [`BlendState`] combines the weighted source and destination colours with.
+///
+/// In the descriptions, `src` and `dst` are the source and destination colours after weighting by
+/// their [`BlendFactor`]s. Each operation applies per channel.
+///
+/// # Examples
+///
+/// See [`BlendState`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlendOp {
+    /// `src + dst`.
     Add,
+    /// `src - dst`.
     Subtract,
+    /// `dst - src`.
     ReverseSubtract,
+    /// The smaller of `src` and `dst`.
     Min,
+    /// The larger of `src` and `dst`.
     Max,
 }
 
-/// A fixed-function blending configuration.
+/// How a pipeline combines each fragment's colour with the colour already in the target.
 ///
-/// A blend state determines how a fragment's source colour is combined with
-/// the existing destination colour in the framebuffer.
+/// The result is `op(src * src_factor, dst * dst_factor)`, per channel, where `src` is the
+/// fragment shader's colour and `dst` the target's. It isn't clamped. A pipeline without a blend
+/// state writes `src` unchanged.
+///
+/// # Examples
+///
+/// Additive blending adds each fragment's colour to the target's, for effects such as light and
+/// fire:
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// # struct PassThrough;
+/// # impl VertexShader for PassThrough {
+/// #     type Vertex = Vec4;
+/// #     type Uniforms = ();
+/// #     type Varyings = f32;
+/// #     fn shade(&self, position: Vec4, _: &()) -> (Vec4, f32) {
+/// #         (position, 0.0)
+/// #     }
+/// # }
+/// # struct FlatColour;
+/// # impl FragmentShader<f32> for FlatColour {
+/// #     type Uniforms = Colour;
+/// #     fn shade(&self, _: f32, colour: &Colour) -> Colour {
+/// #         *colour
+/// #     }
+/// # }
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut renderer = Renderer::new()?;
+/// let extent = Extent::new(4, 4);
+/// let mut target = RenderTarget::new(extent);
+/// let pipeline = Pipeline::new(PassThrough, FlatColour).with_blend_state(BlendState::ADDITIVE);
+/// let vertices = [
+///     Vec4::new(-1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(-1.0, 1.0, 0.0, 1.0),
+/// ];
+///
+/// let mut pass = renderer.begin_render_pass(
+///     &mut target,
+///     RenderPassDescriptor {
+///         viewport: Viewport::full(&extent),
+///         colour_load_op: LoadOp::Clear(Colour::rgb(0.25, 0.0, 0.5)),
+///         depth_load_op: None,
+///     },
+/// );
+/// let orange = Colour::rgb(0.5, 0.5, 0.0);
+/// pass.draw(
+///     &pipeline,
+///     DrawCall::new(&vertices, &[0, 1, 2], PrimitiveMode::TRIANGLES, orange),
+///     (),
+/// );
+/// pass.finish();
+///
+/// let pixel = target.pixels()[3 * 4]; // bottom-left corner
+/// assert_eq!((pixel.r, pixel.g, pixel.b), (0.75, 0.5, 0.5));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Known issues
+///
+/// - A [`Pipeline`] doesn't apply this rule to the alpha channel, so the alpha it leaves in the
+///   target differs from a [`SimdPipeline`]'s; see [`BlendState::apply`]
+///   ([#18](https://github.com/costott/cpu_rasteriser/issues/18)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlendState {
+    /// The weight of the fragment's colour.
     pub src_factor: BlendFactor,
+    /// The weight of the colour already in the target.
     pub dst_factor: BlendFactor,
+    /// How the two weighted colours are combined.
     pub op: BlendOp,
 }
 impl BlendState {
-    /// Common alpha blending configuration.
+    /// Alpha blending ("over"): `src * src.a + dst * (1 - src.a)`.
     ///
-    /// Uses source alpha for the source factor and one minus source alpha for
-    /// the destination factor.
+    /// Draws translucent fragments over the target. Draw translucent geometry back to front,
+    /// after opaque geometry.
+    ///
+    /// # Known issues
+    ///
+    /// - The colour channels blend as stated, but the alpha channel doesn't on a [`Pipeline`],
+    ///   which keeps `src.a`, so the alpha left in the target differs between [`Pipeline`] and
+    ///   [`SimdPipeline`] ([#18](https://github.com/costott/cpu_rasteriser/issues/18)).
     pub const ALPHA_BLEND: BlendState = BlendState {
         // TODO: currently broken
         src_factor: BlendFactor::SrcAlpha,
@@ -684,16 +1303,39 @@ impl BlendState {
         op: BlendOp::Add,
     };
 
-    /// Common additive blending configuration.
+    /// Additive blending: `src + dst`.
     ///
-    /// Adds the source and destination colours together.
+    /// Brightens the target, for effects such as light, glow, and fire.
     pub const ADDITIVE: BlendState = BlendState {
         src_factor: BlendFactor::One,
         dst_factor: BlendFactor::One,
         op: BlendOp::Add,
     };
 
-    /// Applies this blend state to a source and destination colour.
+    /// Blends a source colour onto a destination colour, as a [`Pipeline`] does for each
+    /// fragment.
+    ///
+    /// The red, green, and blue channels follow the equation in [`BlendState`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let src = Colour::new(1.0, 0.0, 0.0, 0.5);
+    /// let dst = Colour::new(0.0, 0.0, 1.0, 1.0);
+    ///
+    /// let blended = BlendState::ALPHA_BLEND.apply(src, dst);
+    ///
+    /// assert_eq!((blended.r, blended.g, blended.b), (0.5, 0.0, 0.5));
+    /// ```
+    ///
+    /// # Known issues
+    ///
+    /// - The alpha channel isn't weighted, unlike in [`BlendState::apply_simd`]: it is `src.a` for
+    ///   [`BlendOp::Add`] and [`BlendOp::Subtract`], `dst.a` for [`BlendOp::ReverseSubtract`], and
+    ///   the smaller or larger of the two for [`BlendOp::Min`] and [`BlendOp::Max`]
+    ///   ([#18](https://github.com/costott/cpu_rasteriser/issues/18)).
     pub fn apply(&self, src: Colour, dst: Colour) -> Colour {
         // TODO: need to decide if this should be public
         let src_term = src * self.src_factor.resolve(src, dst);
@@ -718,6 +1360,32 @@ impl BlendState {
         }
     }
 
+    /// Blends eight source colours onto eight destination colours, as a [`SimdPipeline`] does for
+    /// each group of fragments.
+    ///
+    /// Every channel, alpha included, follows the equation in [`BlendState`], lane by lane.
+    /// [`BlendOp::Min`] and [`BlendOp::Max`] don't specify which operand they return when one is
+    /// NaN.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let src = ColourSimd::splat(Colour::new(1.0, 0.0, 0.0, 0.5));
+    /// let dst = ColourSimd::splat(Colour::new(0.0, 0.0, 1.0, 1.0));
+    ///
+    /// let blended = BlendState::ALPHA_BLEND.apply_simd(src, dst);
+    ///
+    /// assert_eq!(blended.r.to_array(), [0.5; 8]);
+    /// assert_eq!(blended.b.to_array(), [0.5; 8]);
+    /// ```
+    ///
+    /// # Known issues
+    ///
+    /// - The alpha channel differs from [`BlendState::apply`]'s, which doesn't weight alpha, so a
+    ///   [`SimdPipeline`] and a [`Pipeline`] leave different alpha in the target
+    ///   ([#18](https://github.com/costott/cpu_rasteriser/issues/18)).
     #[inline(always)]
     pub fn apply_simd(&self, src: ColourSimd, dst: ColourSimd) -> ColourSimd {
         let src_factor = self.src_factor.resolve_simd(src, dst);
@@ -776,35 +1444,74 @@ impl BlendState {
     }
 }
 
-/// A single render pass.
+/// A render pass in progress: records draw calls into one [`RenderTarget`], then renders them.
 ///
-/// A render pass provides a temporary command recording context. Draw calls submitted through
-/// [`RenderPass::draw`] or [`RenderPass::draw_simd`] are queued and converted into rendering
-/// work when [`RenderPass::finish`] is called.
+/// Created by [`Renderer::begin_render_pass`]. [`RenderPass::draw`] and [`RenderPass::draw_simd`]
+/// queue draw calls, and [`RenderPass::finish`] renders them all. [`Pipeline`] and
+/// [`SimdPipeline`] draws can be mixed in one pass.
 ///
-/// Both scalar [`Pipeline`] and SIMD [`SimdPipeline`] draw calls may be submitted to the same
-/// render pass.
+/// Draw calls take effect in the order they were submitted: where two draws cover the same pixel,
+/// the later one is drawn over (or blended onto, or depth tested against) the earlier one.
 ///
-/// A render pass borrows the renderer mutably and must be completed before the renderer can be used
-/// again.
+/// The pass borrows the renderer and the target mutably until it is finished. `'renderer` is the
+/// borrow of the renderer; `'pass` is the borrow of the target, which the pipelines and the
+/// geometry of every draw call must outlive. Dropping a pass without calling
+/// [`RenderPass::finish`] discards its draws and leaves the target unchanged.
 ///
-/// # Example
+/// # Examples
 ///
-/// ```ignore
-/// let mut render_pass = renderer.begin_render_pass(RenderPassDescriptor {
-///     target: &mut screen_target,
-///     viewport: Viewport::new(0, 0, screen_target.width(), screen_target.height()),
-///     colour_load_op: LoadOp::Clear(Colour::BLACK),
-///     depth_load_op: LoadOp::Clear(1.0),
-/// });
+/// Two draws over the same pixels: the second, submitted later, is visible.
 ///
-/// render_pass.draw(
-///     &pipeline,
-///     draw_call,
-///     vertex_uniforms,
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// # struct PassThrough;
+/// # impl VertexShader for PassThrough {
+/// #     type Vertex = Vec4;
+/// #     type Uniforms = ();
+/// #     type Varyings = f32;
+/// #     fn shade(&self, position: Vec4, _: &()) -> (Vec4, f32) {
+/// #         (position, 0.0)
+/// #     }
+/// # }
+/// # struct FlatColour;
+/// # impl FragmentShader<f32> for FlatColour {
+/// #     type Uniforms = Colour;
+/// #     fn shade(&self, _: f32, colour: &Colour) -> Colour {
+/// #         *colour
+/// #     }
+/// # }
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut renderer = Renderer::new()?;
+/// let extent = Extent::new(4, 4);
+/// let mut target = RenderTarget::new(extent);
+/// let pipeline = Pipeline::new(PassThrough, FlatColour);
+/// let vertices = [
+///     Vec4::new(-1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(1.0, -1.0, 0.0, 1.0),
+///     Vec4::new(-1.0, 1.0, 0.0, 1.0),
+/// ];
+///
+/// let mut pass = renderer.begin_render_pass(
+///     &mut target,
+///     RenderPassDescriptor {
+///         viewport: Viewport::full(&extent),
+///         colour_load_op: LoadOp::Clear(Colour::BLACK),
+///         depth_load_op: None,
+///     },
 /// );
+/// for colour in [Colour::RED, Colour::GREEN] {
+///     pass.draw(
+///         &pipeline,
+///         DrawCall::new(&vertices, &[0, 1, 2], PrimitiveMode::TRIANGLES, colour),
+///         (),
+///     );
+/// }
+/// pass.finish();
 ///
-/// render_pass.finish();
+/// assert_eq!(target.pixels()[3 * 4], Colour::GREEN); // bottom-left corner
+/// # Ok(())
+/// # }
 /// ```
 pub struct RenderPass<'renderer, 'pass> {
     renderer: &'renderer mut Renderer,
@@ -817,37 +1524,76 @@ pub struct RenderPass<'renderer, 'pass> {
     tile_binner: TileBinner,
 }
 impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
-    /// Queues a draw call using a scalar [`Pipeline`].
+    /// Queues a draw call that renders `draw_call`'s geometry with a [`Pipeline`].
     ///
-    /// The draw call is not rendered immediately. It is stored and processed when
-    /// [`RenderPass::finish`] is called.
-    ///
-    /// For SIMD rasterisation and fragment shading, use [`RenderPass::draw_simd`].
+    /// `vertex_uniforms` is passed to the pipeline's vertex shader for every vertex of the draw;
+    /// the fragment shader's uniforms are part of the [`DrawCall`]. Nothing is rendered until
+    /// [`RenderPass::finish`].
     ///
     /// # Panics
     ///
-    /// Panics if the pipeline's [`DepthState`] tests or writes depth and the render pass has no
-    /// depth buffer, because its [`RenderPassDescriptor::depth_load_op`] is `None`.
+    /// Panics if the pipeline's [`DepthState`] tests or writes depth and the pass has no depth
+    /// buffer (its [`RenderPassDescriptor::depth_load_op`] is `None`).
     ///
-    /// # Arguments
+    /// # Examples
     ///
-    /// * `pipeline` - The scalar shader pipeline and rendering configuration.
-    /// * `draw_call` - Geometry and fragment shader uniforms.
-    /// * `vertex_uniforms` - Data passed to the vertex shader.
+    /// The vertex uniform scales the triangle to half its size, so it leaves the top-left corner
+    /// of the target uncovered:
     ///
-    /// # Example
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
     ///
-    /// ```ignore
-    /// render_pass.draw(
-    ///     &pipeline,
-    ///     DrawCall::new(
-    ///         vertices,
-    ///         indices,
-    ///         PrimitiveMode::TRIANGLES,
-    ///         material,
-    ///     ),
-    ///     transform,
+    /// struct Scale;
+    /// impl VertexShader for Scale {
+    ///     type Vertex = Vec4;
+    ///     type Uniforms = f32;
+    ///     type Varyings = f32;
+    ///
+    ///     fn shade(&self, position: Vec4, scale: &f32) -> (Vec4, f32) {
+    ///         (Vec4::new(position.x * scale, position.y * scale, position.z, position.w), 0.0)
+    ///     }
+    /// }
+    ///
+    /// struct FlatColour;
+    /// impl FragmentShader<f32> for FlatColour {
+    ///     type Uniforms = Colour;
+    ///
+    ///     fn shade(&self, _: f32, colour: &Colour) -> Colour {
+    ///         *colour
+    ///     }
+    /// }
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut renderer = Renderer::new()?;
+    /// let extent = Extent::new(8, 8);
+    /// let mut target = RenderTarget::new(extent);
+    /// let pipeline = Pipeline::new(Scale, FlatColour);
+    /// let vertices = [
+    ///     Vec4::new(-1.0, -1.0, 0.0, 1.0),
+    ///     Vec4::new(1.0, -1.0, 0.0, 1.0),
+    ///     Vec4::new(-1.0, 1.0, 0.0, 1.0),
+    /// ];
+    ///
+    /// let mut pass = renderer.begin_render_pass(
+    ///     &mut target,
+    ///     RenderPassDescriptor {
+    ///         viewport: Viewport::full(&extent),
+    ///         colour_load_op: LoadOp::Clear(Colour::BLACK),
+    ///         depth_load_op: None,
+    ///     },
     /// );
+    /// pass.draw(
+    ///     &pipeline,
+    ///     DrawCall::new(&vertices, &[0, 1, 2], PrimitiveMode::TRIANGLES, Colour::RED),
+    ///     0.5,
+    /// );
+    /// pass.finish();
+    ///
+    /// let pixels = target.pixels();
+    /// assert_eq!(pixels[5 * 8 + 2], Colour::RED);
+    /// assert_eq!(pixels[0], Colour::BLACK);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn draw<'pipeline, VS, FS>(
         &mut self,
@@ -867,38 +1613,82 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
         }));
     }
 
-    /// Queues a draw call using a SIMD [`SimdPipeline`].
+    /// Queues a draw call that renders `draw_call`'s geometry with a [`SimdPipeline`].
     ///
-    /// The draw call is not rendered immediately. It is stored and processed when
-    /// [`RenderPass::finish`] is called.
-    ///
-    /// The SIMD pipeline rasterises fragments in batches and invokes the shader's
-    /// [`FragmentShaderSimd::shade_simd`] implementation for those batches.
+    /// Fragments are shaded eight at a time with [`FragmentShaderSimd::shade_simd`]. Otherwise
+    /// this behaves as [`RenderPass::draw`]: `vertex_uniforms` is passed to the vertex shader for
+    /// every vertex, and nothing is rendered until [`RenderPass::finish`].
     ///
     /// # Panics
     ///
-    /// Panics if the pipeline's [`DepthState`] tests or writes depth and the render pass has no
-    /// depth buffer, because its [`RenderPassDescriptor::depth_load_op`] is `None`.
+    /// Panics if the pipeline's [`DepthState`] tests or writes depth and the pass has no depth
+    /// buffer (its [`RenderPassDescriptor::depth_load_op`] is `None`).
     ///
-    /// # Arguments
+    /// # Examples
     ///
-    /// * `pipeline` - The SIMD shader pipeline and rendering configuration.
-    /// * `draw_call` - Geometry and fragment shader uniforms.
-    /// * `vertex_uniforms` - Data passed to the vertex shader.
-    ///  
-    /// # Example
+    /// The vertex uniform scales the triangle to half its size, so it leaves the top-left corner
+    /// of the target uncovered:
     ///
-    /// ```ignore
-    /// render_pass.draw(
-    ///     &simd_pipeline,
-    ///     DrawCall::new(
-    ///         vertices,
-    ///         indices,
-    ///         PrimitiveMode::TRIANGLES,
-    ///         material,
-    ///     ),
-    ///     transform,
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// #[derive(Interpolate, SimdInterpolate)]
+    /// struct Varyings {
+    ///     unused: f32,
+    /// }
+    ///
+    /// struct Scale;
+    /// impl VertexShader for Scale {
+    ///     type Vertex = Vec4;
+    ///     type Uniforms = f32;
+    ///     type Varyings = Varyings;
+    ///
+    ///     fn shade(&self, position: Vec4, scale: &f32) -> (Vec4, Varyings) {
+    ///         let (x, y) = (position.x * scale, position.y * scale);
+    ///         (Vec4::new(x, y, position.z, position.w), Varyings { unused: 0.0 })
+    ///     }
+    /// }
+    ///
+    /// struct FlatColour;
+    /// impl FragmentShaderSimd<Varyings> for FlatColour {
+    ///     type Uniforms = Colour;
+    ///
+    ///     fn shade_simd(&self, _: VaryingsSimd, colour: &Colour) -> ColourSimd {
+    ///         ColourSimd::splat(*colour)
+    ///     }
+    /// }
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut renderer = Renderer::new()?;
+    /// let extent = Extent::new(8, 8);
+    /// let mut target = RenderTarget::new(extent);
+    /// let pipeline = SimdPipeline::new(Scale, FlatColour);
+    /// let vertices = [
+    ///     Vec4::new(-1.0, -1.0, 0.0, 1.0),
+    ///     Vec4::new(1.0, -1.0, 0.0, 1.0),
+    ///     Vec4::new(-1.0, 1.0, 0.0, 1.0),
+    /// ];
+    ///
+    /// let mut pass = renderer.begin_render_pass(
+    ///     &mut target,
+    ///     RenderPassDescriptor {
+    ///         viewport: Viewport::full(&extent),
+    ///         colour_load_op: LoadOp::Clear(Colour::BLACK),
+    ///         depth_load_op: None,
+    ///     },
     /// );
+    /// pass.draw_simd(
+    ///     &pipeline,
+    ///     DrawCall::new(&vertices, &[0, 1, 2], PrimitiveMode::TRIANGLES, Colour::RED),
+    ///     0.5,
+    /// );
+    /// pass.finish();
+    ///
+    /// let pixels = target.pixels();
+    /// assert_eq!(pixels[5 * 8 + 2], Colour::RED);
+    /// assert_eq!(pixels[0], Colour::BLACK);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn draw_simd<'pipeline, VS, FS>(
         &mut self,
@@ -928,12 +1718,27 @@ impl<'renderer, 'pass> RenderPass<'renderer, 'pass> {
         );
     }
 
-    /// Executes all queued draw calls and renders the completed render pass.
+    /// Renders the queued draw calls into the target and ends the pass.
     ///
-    /// This performs geometry processing, triangle binning, parallel tile rasterisation, and merges
-    /// the resulting tiles back into the renderer framebuffer.
+    /// This blocks until the target is complete; read it afterwards with
+    /// [`RenderTarget::pixels`] or [`RenderTarget::pixels_u32`]. The draws' shaders run during this
+    /// call, as the [`VertexShader`] and [`FragmentShader`] contracts describe.
     ///
-    /// After completion, rendered pixels can be accessed through the bound [`RenderTarget::pixels`].
+    /// # Panics
+    ///
+    /// Panics if an index that a draw call assembles into a primitive is out of range of its
+    /// vertex buffer.
+    ///
+    /// # Examples
+    ///
+    /// See [`RenderPass`] and [`Renderer`].
+    ///
+    /// # Known issues
+    ///
+    /// - A panic in a fragment shader is swallowed: `finish` returns normally, and the region of
+    ///   the target around the pixels it was shading keeps its previous contents, including
+    ///   what other draws in the pass drew there
+    ///   ([#58](https://github.com/costott/cpu_rasteriser/issues/58)).
     pub fn finish(mut self) {
         for draw in self.queued_draws {
             draw.execute(&mut self.tile_binner, &self.descriptor.viewport);
@@ -953,19 +1758,44 @@ impl std::fmt::Debug for RenderPass<'_, '_> {
     }
 }
 
-/// The topology used when assembling indexed geometry.
+/// How a draw call's indices are assembled into primitives.
+///
+/// # Examples
+///
+/// See [`DrawCall`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveMode {
-    /// Every group of three indices defines a triangle.
+    /// Each consecutive group of three indices is one triangle; leftover indices are ignored.
     TRIANGLES,
     // TODO: support other primitive modes (LINES, POINTS, etc.)
 }
 
-/// A geometry submission describing what to render and the associated fragment shader data.
+/// The geometry of one draw, and the uniforms its fragment shader receives.
 ///
-/// A draw call combines a primitive with the uniforms required when shading fragments.
+/// A draw call borrows a vertex buffer and an index buffer. `V` is the pipeline's vertex type
+/// ([`VertexShader::Vertex`]) and `U` its fragment shader's uniforms. Submit it with
+/// [`RenderPass::draw`] or [`RenderPass::draw_simd`].
 ///
-/// Draw calls are submitted through [`RenderPass::draw`].
+/// # Examples
+///
+/// A quad made of two triangles that share vertices through the index buffer:
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// let vertices = [
+///     Vec4::new(-0.5, -0.5, 0.0, 1.0),
+///     Vec4::new(0.5, -0.5, 0.0, 1.0),
+///     Vec4::new(0.5, 0.5, 0.0, 1.0),
+///     Vec4::new(-0.5, 0.5, 0.0, 1.0),
+/// ];
+/// let indices = [0, 1, 2, 0, 2, 3];
+///
+/// let quad = DrawCall::new(&vertices, &indices, PrimitiveMode::TRIANGLES, Colour::RED);
+/// # let _ = quad;
+/// ```
+///
+/// [`Renderer`] shows a draw call rendered in a pass.
 pub struct DrawCall<'a, V, U>
 where
     V: Clone,
@@ -977,14 +1807,21 @@ impl<'a, V, U> DrawCall<'a, V, U>
 where
     V: Clone,
 {
-    /// Creates a new draw call.
+    /// Creates a draw call that assembles `vertices` into primitives by `indices`, according to
+    /// `primitive_mode`.
     ///
-    /// # Arguments
+    /// `fragment_uniforms` is passed to the fragment shader for every fragment of the draw. Each
+    /// index selects an element of `vertices`.
     ///
-    /// * `vertices` - Vertex buffer containing geometry data.
-    /// * `indices` - Index buffer describing primitive connectivity.
-    /// * `primitive_mode` - Topology used to assemble primitives.
-    /// * `fragment_uniforms` - Uniform data passed to the fragment shader.
+    /// # Examples
+    ///
+    /// See [`DrawCall`].
+    ///
+    /// # Known issues
+    ///
+    /// - Indices aren't checked against `vertices`, so an out-of-range index panics later, in
+    ///   [`RenderPass::finish`], instead of here
+    ///   ([#59](https://github.com/costott/cpu_rasteriser/issues/59)).
     pub fn new(
         vertices: &'a [V],
         indices: &'a [u32],
@@ -1596,14 +2433,19 @@ impl TilePool {
     }
 }
 
-/// A rectangular pixel-space region.
+/// A rectangular region of the target, in pixels: the bounds of a tile.
 ///
-/// Used for tile boundaries, clipping regions, and intersection tests.
+/// The minimum edges are inclusive and the maximum edges exclusive, so the region is
+/// `max_x - min_x` pixels wide.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rect {
+    /// The left edge (inclusive).
     pub min_x: i32,
+    /// The top edge (inclusive).
     pub min_y: i32,
+    /// The right edge (exclusive).
     pub max_x: i32,
+    /// The bottom edge (exclusive).
     pub max_y: i32,
 }
 

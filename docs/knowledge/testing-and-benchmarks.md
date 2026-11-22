@@ -8,7 +8,10 @@ sources:
   - cpu_rasteriser/benches/raster_command.rs
   - engine/benches/texture_sampling.rs
   - engine/examples/bloom.rs
-verified: ffed0e7
+  - cpu_rasteriser/src/lib.rs
+  - engine/src/lib.rs
+  - rasteriser_macros/src/lib.rs
+verified: 3c44933
 ---
 
 # Testing, benchmarks and build flags
@@ -24,7 +27,8 @@ There is no custom `[profile.release]`. The only formatting configuration is rus
 - **Location:** unit tests sit in `#[cfg(test)] mod tests` beside the code. Names are descriptive behaviour phrases, e.g. `rasterise_respects_bounds`, `process_triangle_culls_back_facing_triangles`.
 - **Coverage:** concentrated on maths, geometry processing, triangle rasterisation, blending and SIMD/scalar equivalence. There are no integration tests that render a whole pass and compare images.
 - **Fakes:** the `graphics/triangle.rs` unit tests and the benches write `SimdInterpolate` implementations by hand; the `renderer.rs` tests use the derive. See `simd.md`.
-- **Doctests:** most doc examples are marked `ignore`. The one on `Renderer` isn't, and it doesn't compile ([#25](https://github.com/costott/cpu_rasteriser/issues/25)).
+- **Doctests:** every public item's examples run as doctests; examples that open a window are `no_run`, and none are `ignore`d. The `cpu_rasteriser` and `engine` READMEs are their crate docs (`#![doc = include_str!("../README.md")]`), so their Rust examples are doctests too. Doctests run from the package directory, so `engine` examples reach the tracked assets as `../assets/...`.
+- **Documentation lints:** each crate root warns on `missing_docs`, `clippy::missing_errors_doc` and `clippy::missing_panics_doc`, so a new public item without docs, or without the `# Errors` or `# Panics` section it needs, shows up in the build and in clippy.
 - **Baseline:** the current pass and fail baseline is in the project `CLAUDE.md`.
 
 ## Benchmarks (criterion 0.7, `harness = false`)

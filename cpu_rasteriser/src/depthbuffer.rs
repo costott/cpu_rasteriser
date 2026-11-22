@@ -4,31 +4,62 @@ use crate::extent::Extent;
 use crate::grid::Grid;
 use crate::maths::Vec2;
 
+/// A 2D buffer of depths: the depth attachment of a render target, and of each tile while a pass
+/// renders.
+///
+/// Depths are normalised device `z` values, as the [`VertexShader`](crate::VertexShader) contract
+/// defines them. A fragment passes the depth test when its depth is less than the stored one. The
+/// storage layout, including the row padding the unchecked 8-wide methods rely on, is that of
+/// [`FrameBuffer`](crate::framebuffer::FrameBuffer).
+///
+/// Methods that take a [`Vec2`](crate::Vec2) position truncate its coordinates towards zero, so
+/// a position addresses the pixel that contains it.
 pub struct DepthBuffer {
     depths: Grid<f32>,
 }
 impl DepthBuffer {
     const FAR: f32 = 1.0;
 
+    /// Creates a `width` × `height` depth buffer with every depth at the far plane, 1.0.
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             depths: Grid::new(width, height, Self::FAR),
         }
     }
 
+    /// Sets every depth, and the row padding, to `depth`.
     pub fn clear(&mut self, depth: f32) {
         self.depths.fill(depth);
     }
 
+    /// Changes the size to `width` × `height`, reusing the allocation where it is large enough.
+    ///
+    /// The depths are unspecified afterwards; clear the buffer before reading it.
     pub fn resize(&mut self, width: usize, height: usize) {
         self.depths.resize(width, height, Self::FAR);
     }
 
+    /// Returns the storage index of pixel (`x`, `y`) without checking that it is inside the buffer.
+    ///
+    /// The result is the `index` argument of the unchecked 8-wide methods.
     #[inline(always)]
     pub fn index_unchecked(&self, x: usize, y: usize) -> usize {
         self.depths.index_unchecked(x, y)
     }
 
+    /// Sets the depth of the pixel at `position`.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if `position`, after truncation, is outside the buffer. In release
+    /// builds, panics only if the computed index is past the end of the storage.
+    ///
+    /// # Known issues
+    ///
+    /// - A negative or NaN coordinate truncates to 0, so the call sets a depth in column or row 0
+    ///   instead of panicking. In release builds, a position just outside a row writes to the row's
+    ///   padding or the next row instead of panicking
+    ///   ([#60](https://github.com/costott/cpu_rasteriser/issues/60)).
     #[inline(always)]
     pub fn set_depth(&mut self, position: Vec2, depth: f32) {
         let x = position.x as usize;
@@ -38,6 +69,9 @@ impl DepthBuffer {
         self.depths.as_mut_slice()[index] = depth;
     }
 
+    /// Overwrites the eight consecutive depths starting at storage `index` with the lanes of
+    /// `depth`, without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
@@ -64,6 +98,12 @@ impl DepthBuffer {
         }
     }
 
+    /// Overwrites the lanes of the eight consecutive depths starting at storage `index` whose
+    /// `mask` is all ones with the lanes of `depth`, without bounds checks.
+    ///
+    /// Lanes whose `mask` is zero are rewritten with their current values. Mask lanes must be all
+    /// ones or all zeros.
+    ///
     /// # Safety
     ///
     /// The same as [`set8_unchecked`](Self::set8_unchecked).
@@ -78,6 +118,19 @@ impl DepthBuffer {
         unsafe { self.set8_unchecked(index, new_depth) };
     }
 
+    /// Returns the depth of the pixel at `position`.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if `position`, after truncation, is outside the buffer. In release
+    /// builds, panics only if the computed index is past the end of the storage.
+    ///
+    /// # Known issues
+    ///
+    /// - A negative or NaN coordinate truncates to 0, so the call reads a depth in column or row 0
+    ///   instead of panicking. In release builds, a position just outside a row reads the row's
+    ///   padding or the next row instead of panicking
+    ///   ([#60](https://github.com/costott/cpu_rasteriser/issues/60)).
     #[inline(always)]
     pub fn get(&self, position: Vec2) -> f32 {
         let x = position.x as usize;
@@ -91,6 +144,9 @@ impl DepthBuffer {
         self.depths.index(x, y)
     }
 
+    /// Returns the eight consecutive depths starting at storage `index`, one per lane, without
+    /// bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
@@ -132,6 +188,7 @@ impl DepthBuffer {
 }
 /// Unused methods, kept for now.
 impl DepthBuffer {
+    /// Returns the width in pixels.
     #[cfg_attr(
         not(feature = "internals"),
         expect(dead_code, reason = "unused; kept rather than deleted for now")
@@ -140,6 +197,7 @@ impl DepthBuffer {
         self.depths.width()
     }
 
+    /// Returns the height in pixels.
     #[cfg_attr(
         not(feature = "internals"),
         expect(dead_code, reason = "unused; kept rather than deleted for now")
@@ -148,6 +206,8 @@ impl DepthBuffer {
         self.depths.height()
     }
 
+    /// Sets the depth of the pixel at `p`, without bounds checks.
+    ///
     /// # Safety
     ///
     /// `p` must lie inside the buffer: `p.x as usize < self.width()` and
@@ -165,6 +225,8 @@ impl DepthBuffer {
         }
     }
 
+    /// Returns the depth of the pixel at `p`, without bounds checks.
+    ///
     /// # Safety
     ///
     /// `p` must lie inside the buffer: `p.x as usize < self.width()` and

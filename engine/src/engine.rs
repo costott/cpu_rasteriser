@@ -1,3 +1,22 @@
+//! The windowing backends that run an [`Application`].
+//!
+//! [`EngineBackend`] is the trait for a windowing backend. The engine provides two,
+//! [`WinitEngine`] and [`MinifbEngine`], so an app runs on either without change. Each backend
+//! opens a window, runs the app's frames, and translates the window system's input into
+//! [`InputEvent`]s.
+//!
+//! The provided backends differ in what they support:
+//!
+//! | | [`WinitEngine`] | [`MinifbEngine`] |
+//! |---|---|---|
+//! | Frame rate | Renders as fast as it can | Limited to 60 frames per second |
+//! | Raw mouse motion ([`InputEvent::MouseMotion`]) | Yes | No |
+//! | Cursor grab ([`CursorGrab`]) | Yes | No; only visibility applies |
+//! | [`AppEvent::Suspended`] and [`AppEvent::RedrawRequested`] | Yes | No |
+//! | Configuration | winit's `WindowAttributes` | Title, size, and minifb's `WindowOptions` |
+//!
+//! See [`Application`] for a complete app.
+
 use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -15,19 +34,86 @@ use crate::input::{ButtonState, InputEvent, InputKey, InputState, MouseButton};
 use crate::{AppHandle, RenderContext};
 
 /// A windowing backend that runs an [`Application`].
+///
+/// Implemented by [`WinitEngine`] and [`MinifbEngine`]. Code generic over the backend lets the
+/// choice be made in one place.
+///
+/// A backend that can't supply an event, such as [`AppEvent::Suspended`] or
+/// [`InputEvent::MouseMotion`], doesn't send it, so apps shouldn't depend on those events.
+///
+/// # Examples
+///
+/// ```no_run
+/// use engine::prelude::*;
+///
+/// struct App;
+/// impl Application for App {}
+///
+/// fn launch(backend: impl EngineBackend) -> Result<(), EngineError> {
+///     backend.run(App)
+/// }
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// if std::env::args().any(|arg| arg == "--minifb") {
+///     launch(MinifbEngine::new())?;
+/// } else {
+///     launch(WinitEngine::new())?;
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Known issues
+///
+/// - The trait can't be implemented outside `engine`: a backend has no way to create the
+///   [`RenderContext`] that [`Application::render`] takes
+///   ([#65](https://github.com/costott/cpu_rasteriser/issues/65)).
 pub trait EngineBackend: Sized {
-    /// Opens a window and runs `app` until it exits or the window is closed.
+    /// Opens a window and runs `app` on the calling thread until it exits or the window is
+    /// closed.
+    ///
+    /// Returns `Ok(())` once the app has requested exit with [`AppHandle::request_exit`] or the
+    /// user has closed the window. See [`Application`] for what the backend calls in between.
     ///
     /// # Errors
     ///
     /// Returns an [`EngineError`] if the backend fails to start, or fails while running. A
     /// failure while running ends the application.
+    ///
+    /// # Examples
+    ///
+    /// See [`Application`].
     fn run<A>(self, app: A) -> Result<(), EngineError>
     where
         A: Application + 'static;
 }
 
 /// An error raised by an [`EngineBackend`] while starting or running an application.
+///
+/// Each variant wraps the error that caused it, available through
+/// [`Error::source`](std::error::Error::source).
+///
+/// # Examples
+///
+/// Report the error with its causes:
+///
+/// ```no_run
+/// use std::error::Error;
+///
+/// use engine::prelude::*;
+///
+/// struct App;
+/// impl Application for App {}
+///
+/// if let Err(error) = WinitEngine::new().run(App) {
+///     eprintln!("error: {error}");
+///     let mut source = error.source();
+///     while let Some(cause) = source {
+///         eprintln!("caused by: {cause}");
+///         source = cause.source();
+///     }
+/// }
+/// ```
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum EngineError {
@@ -48,12 +134,39 @@ pub enum EngineError {
     Minifb(#[from] minifb::Error),
 }
 
+/// An [`EngineBackend`] built on winit.
+///
+/// It renders a new frame as soon as the previous one is shown, and supports raw mouse motion
+/// and cursor grabs. The presentation target has the window's inner size in physical pixels.
+///
+/// winit allows one event loop per process, so [`run`](EngineBackend::run) can succeed only
+/// once; a second call returns [`EngineError::EventLoop`]. Some platforms also require it to be
+/// called on the main thread.
+///
+/// # Examples
+///
+/// ```no_run
+/// use engine::prelude::*;
+///
+/// struct App;
+/// impl Application for App {}
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// WinitEngine::new().run(App)?;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct WinitEngine {
     window_attributes: winit::window::WindowAttributes,
 }
 
 impl WinitEngine {
+    /// Creates a backend whose window is titled "Engine" and is 640 × 360 logical pixels.
+    ///
+    /// # Examples
+    ///
+    /// See [`WinitEngine`].
     pub fn new() -> Self {
         Self {
             window_attributes: Window::default_attributes()
@@ -62,6 +175,26 @@ impl WinitEngine {
         }
     }
 
+    /// Sets the attributes the window is created with, such as its title, size, and whether it
+    /// can be resized.
+    ///
+    /// The attributes replace the defaults from [`new`](WinitEngine::new) entirely, so set the
+    /// title and size here too. Building them needs a direct dependency on `winit` 0.30.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engine::prelude::*;
+    /// use winit::dpi::PhysicalSize;
+    /// use winit::window::Window;
+    ///
+    /// let engine = WinitEngine::new().with_window_attributes(
+    ///     Window::default_attributes()
+    ///         .with_title("Teapot")
+    ///         .with_inner_size(PhysicalSize::new(1280, 720))
+    ///         .with_resizable(false),
+    /// );
+    /// ```
     pub fn with_window_attributes(mut self, attrs: winit::window::WindowAttributes) -> Self {
         self.window_attributes = attrs;
         self
@@ -406,6 +539,37 @@ fn apply_winit_cursor_settings(settings: crate::app::WindowCursorSettings, windo
     };
 }
 
+/// An [`EngineBackend`] built on minifb.
+///
+/// It runs at up to 60 frames per second and reads the keyboard and mouse once per frame, so a
+/// press and release within one frame may not be reported. It doesn't send
+/// [`InputEvent::MouseMotion`], [`AppEvent::Suspended`], or [`AppEvent::RedrawRequested`], and
+/// ignores [`CursorGrab`].
+///
+/// # Examples
+///
+/// ```no_run
+/// use engine::prelude::*;
+///
+/// struct App;
+/// impl Application for App {}
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// MinifbEngine::new()
+///     .with_title("My app")
+///     .with_size(1280, 720)
+///     .run(App)?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Known issues
+///
+/// - It calls [`Application::resize`] and sends [`AppEvent::Resized`] every frame, whether or not
+///   the window's size has changed ([#56](https://github.com/costott/cpu_rasteriser/issues/56)).
+/// - It sends [`AppEvent::CloseRequested`] once its loop has ended, however it ended, including
+///   after [`AppHandle::request_exit`]
+///   ([#57](https://github.com/costott/cpu_rasteriser/issues/57)).
 #[derive(Debug)]
 pub struct MinifbEngine {
     title: String,
@@ -415,6 +579,12 @@ pub struct MinifbEngine {
 }
 
 impl MinifbEngine {
+    /// Creates a backend whose window is titled "Engine", is 640 × 360 pixels, and has minifb's
+    /// default window options.
+    ///
+    /// # Examples
+    ///
+    /// See [`MinifbEngine`].
     pub fn new() -> Self {
         Self {
             title: "Engine".into(),
@@ -424,17 +594,49 @@ impl MinifbEngine {
         }
     }
 
+    /// Sets the window's title.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engine::prelude::*;
+    ///
+    /// let engine = MinifbEngine::new().with_title("Teapot viewer");
+    /// ```
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
 
+    /// Sets the window's initial size in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engine::prelude::*;
+    ///
+    /// let engine = MinifbEngine::new().with_size(1280, 720);
+    /// ```
     pub fn with_size(mut self, width: usize, height: usize) -> Self {
         self.width = width;
         self.height = height;
         self
     }
 
+    /// Sets minifb's window options, such as whether the window can be resized.
+    ///
+    /// Building them needs a direct dependency on `minifb` 0.28.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engine::prelude::*;
+    ///
+    /// let engine = MinifbEngine::new().with_options(minifb::WindowOptions {
+    ///     resize: true,
+    ///     ..minifb::WindowOptions::default()
+    /// });
+    /// ```
     pub fn with_options(mut self, options: minifb::WindowOptions) -> Self {
         self.options = options;
         self

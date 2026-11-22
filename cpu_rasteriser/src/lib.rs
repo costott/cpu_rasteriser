@@ -1,4 +1,6 @@
-#![warn(missing_debug_implementations)]
+#![doc = include_str!("../README.md")]
+#![warn(missing_debug_implementations, missing_docs)]
+#![warn(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 // The `rasteriser_macros` derives emit `::cpu_rasteriser` paths; this lets the unit tests use them.
 #[cfg(test)]
@@ -33,6 +35,10 @@ mod maths;
 mod renderer;
 mod viewport;
 
+/// Internal types re-exported for the crate's benchmarks.
+///
+/// Compiled only with the `internals` feature. This is not public API: its contents can change or
+/// disappear in any release.
 #[cfg(feature = "internals")]
 #[doc(hidden)]
 pub mod internals {

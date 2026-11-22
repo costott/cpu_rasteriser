@@ -455,3 +455,15 @@ From then on, the project is developed with an agentic workflow using [Claude Co
 Graphics APIs hide much of the complexity involved in rendering. Building a rasteriser from scratch provides a deeper understanding of the algorithms and engineering decisions behind real-time graphics.
 
 This project was built to explore the intersection of mathematics, computer graphics, and performance-focused systems programming.
+
+---
+
+## Getting started
+
+Clone the repository and run the teapot demo from the workspace root:
+
+```bash
+cargo run --release -p engine --example teapot
+```
+
+`cargo doc --open` builds and opens the API documentation for the whole workspace. The full lists of examples, with what each one demonstrates, are in [`cpu_rasteriser/README.md`](./cpu_rasteriser/README.md) and [`engine/README.md`](./engine/README.md).

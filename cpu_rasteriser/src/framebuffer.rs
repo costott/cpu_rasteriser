@@ -3,30 +3,47 @@ use wide::{f32x8, i32x8};
 use crate::grid::Grid;
 use crate::prelude::*;
 
+/// A 2D buffer of [`Colour`] pixels: the colour attachment of a render target, and of each tile
+/// while a pass renders.
+///
+/// Pixels are stored row by row, top row first. Each row is padded to a stride of at least
+/// `width + 7` elements, a multiple of 8, so that an 8-wide access starting at any pixel of the row
+/// stays inside the allocation; the unchecked 8-wide methods rely on this. Padding elements aren't
+/// part of the buffer's contents and hold unspecified values.
+///
+/// Methods that take a [`Vec2`](crate::Vec2) position truncate its coordinates towards zero, so
+/// a position addresses the pixel that contains it.
 pub struct FrameBuffer {
     pixels: Grid<Colour>, // TODO: change to SoA layout for better SIMD performance - separate Vec<f32> for each channel, as rn profiling shows performance is dominated by branch misprediction in scalar loop of rasteriser callback, so need a set8_unchecked_with_mask
 }
 impl FrameBuffer {
+    /// Creates a `width` × `height` framebuffer with every pixel
+    /// [`Colour::BLACK`](crate::Colour::BLACK).
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             pixels: Grid::new(width, height, Colour::BLACK),
         }
     }
 
+    /// Returns the width in pixels.
     #[inline(always)]
     pub fn width(&self) -> usize {
         self.pixels.width()
     }
 
+    /// Returns the height in pixels.
     #[inline(always)]
     pub fn height(&self) -> usize {
         self.pixels.height()
     }
 
+    /// Returns the width and height as an [`Extent`](crate::Extent).
     pub fn extent(&self) -> Extent {
         Extent::new(self.width(), self.height())
     }
 
+    /// Returns a copy of the pixels without the row padding: `width * height` colours, row by row
+    /// from the top.
     pub fn pixels_compact(&self) -> Vec<Colour> {
         let mut pixels = Vec::with_capacity(self.width() * self.height());
 
@@ -37,25 +54,40 @@ impl FrameBuffer {
         pixels
     }
 
+    /// Returns the pixels without the row padding, each packed by
+    /// [`Colour::to_u32`](crate::Colour::to_u32): `width * height` values, row by row from the top.
     pub fn pixels_u32(&self) -> Vec<u32> {
         let mut pixels = vec![0; self.width() * self.height()];
         self.write_pixels_u32(&mut pixels);
         pixels
     }
 
+    /// Sets every pixel, and the row padding, to `colour`.
     pub fn clear(&mut self, colour: Colour) {
         self.pixels.fill(colour);
     }
 
+    /// Changes the size to `width` × `height`, reusing the allocation where it is large enough.
+    ///
+    /// The pixels' contents are unspecified afterwards; clear the buffer before reading it.
     pub fn resize(&mut self, width: usize, height: usize) {
         self.pixels.resize(width, height, Colour::BLACK);
     }
 
+    /// Returns the storage index of pixel (`x`, `y`) without checking that it is inside the buffer.
+    ///
+    /// The result is the `index` argument of the unchecked 8-wide methods.
     #[inline(always)]
     pub fn index_unchecked(&self, x: usize, y: usize) -> usize {
         self.pixels.index_unchecked(x, y)
     }
 
+    /// Sets the pixel at `p` to `colour`, or does nothing if `p` is outside the buffer.
+    ///
+    /// # Known issues
+    ///
+    /// - A negative or NaN coordinate truncates to 0, so the call sets a pixel in column or row 0
+    ///   instead of doing nothing ([#60](https://github.com/costott/cpu_rasteriser/issues/60)).
     pub fn set_pixel(&mut self, p: Vec2, colour: Colour) {
         let x = p.x as usize;
         let y = p.y as usize;
@@ -68,11 +100,13 @@ impl FrameBuffer {
         self.pixels.as_mut_slice()[index] = colour;
     }
 
+    /// Sets the element at storage `index` to `colour`, without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,
     /// `y < self.height()` and `i < 8`. An index past the end of row `y` writes into the row's
-    /// padding, which isn't part of the image.
+    /// padding, which isn't part of the buffer's contents.
     pub unsafe fn set_pixel_index_unchecked(&mut self, index: usize, colour: Colour) {
         debug_assert!(index < self.pixels.as_slice().len());
 
@@ -83,6 +117,12 @@ impl FrameBuffer {
         }
     }
 
+    /// Returns the colour of the pixel at `p`, or `None` if `p` is outside the buffer.
+    ///
+    /// # Known issues
+    ///
+    /// - A negative or NaN coordinate truncates to 0, so the call reads a pixel in column or row 0
+    ///   instead of returning `None` ([#60](https://github.com/costott/cpu_rasteriser/issues/60)).
     #[inline(always)]
     pub fn get_pixel(&self, p: Vec2) -> Option<Colour> {
         let x = p.x as usize;
@@ -101,6 +141,9 @@ impl FrameBuffer {
         self.pixels.index(x, y)
     }
 
+    /// Returns the eight consecutive elements starting at storage `index`, one per lane, without
+    /// bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
@@ -208,6 +251,8 @@ impl FrameBuffer {
 }
 /// Unused methods, kept for now.
 impl FrameBuffer {
+    /// Sets the pixel at `p` to `colour`, without bounds checks.
+    ///
     /// # Safety
     ///
     /// `p` must lie inside the framebuffer: `p.x as usize < self.width()` and
@@ -225,11 +270,19 @@ impl FrameBuffer {
         }
     }
 
+    /// Writes the lanes of `reds` to the red channels of the eight consecutive elements starting at
+    /// storage `index`, without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
     /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
-    /// isn't part of the image.
+    /// isn't part of the buffer's contents.
+    ///
+    /// # Known issues
+    ///
+    /// - The other channels are overwritten too: green and blue become 0 and alpha 1
+    ///   ([#23](https://github.com/costott/cpu_rasteriser/issues/23)).
     #[inline(always)]
     #[cfg_attr(
         not(feature = "internals"),
@@ -255,9 +308,19 @@ impl FrameBuffer {
         }
     }
 
+    /// Like [`set8_r_unchecked`](Self::set8_r_unchecked), but lanes whose `mask` is zero keep their
+    /// current red value.
+    ///
+    /// Mask lanes must be all ones or all zeros.
+    ///
     /// # Safety
     ///
     /// The same as [`set8_r_unchecked`](Self::set8_r_unchecked).
+    ///
+    /// # Known issues
+    ///
+    /// - Every lane, masked or not, has its green and blue set to 0 and its alpha to 1
+    ///   ([#23](https://github.com/costott/cpu_rasteriser/issues/23)).
     #[inline(always)]
     #[cfg_attr(
         not(feature = "internals"),
@@ -273,11 +336,19 @@ impl FrameBuffer {
         // SAFETY: as above.
         unsafe { self.set8_r_unchecked(index, new_pixels) };
     }
+    /// Writes the lanes of `greens` to the eight consecutive elements starting at storage `index`,
+    /// without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
     /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
-    /// isn't part of the image.
+    /// isn't part of the buffer's contents.
+    ///
+    /// # Known issues
+    ///
+    /// - Each lane is written to the red channel, not green, and green and blue become 0 and
+    ///   alpha 1 ([#23](https://github.com/costott/cpu_rasteriser/issues/23)).
     #[inline(always)]
     #[cfg_attr(
         not(feature = "internals"),
@@ -303,9 +374,19 @@ impl FrameBuffer {
         }
     }
 
+    /// Like [`set8_g_unchecked`](Self::set8_g_unchecked), but lanes whose `mask` is zero take their
+    /// current green value instead of the lane of `greens`.
+    ///
+    /// Mask lanes must be all ones or all zeros.
+    ///
     /// # Safety
     ///
     /// The same as [`set8_g_unchecked`](Self::set8_g_unchecked).
+    ///
+    /// # Known issues
+    ///
+    /// - Each selected value is written to the red channel, not green, and green and blue become 0
+    ///   and alpha 1 ([#23](https://github.com/costott/cpu_rasteriser/issues/23)).
     #[inline(always)]
     #[cfg_attr(
         not(feature = "internals"),
@@ -321,11 +402,19 @@ impl FrameBuffer {
         // SAFETY: as above.
         unsafe { self.set8_g_unchecked(index, new_pixels) };
     }
+    /// Writes the lanes of `blues` to the eight consecutive elements starting at storage `index`,
+    /// without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
     /// `y < self.height()`. Lanes past the end of row `y` write into the row's padding, which
-    /// isn't part of the image.
+    /// isn't part of the buffer's contents.
+    ///
+    /// # Known issues
+    ///
+    /// - Each lane is written to the red channel, not blue, and green and blue become 0 and alpha 1
+    ///   ([#23](https://github.com/costott/cpu_rasteriser/issues/23)).
     #[inline(always)]
     #[cfg_attr(
         not(feature = "internals"),
@@ -351,9 +440,19 @@ impl FrameBuffer {
         }
     }
 
+    /// Like [`set8_b_unchecked`](Self::set8_b_unchecked), but lanes whose `mask` is zero take their
+    /// current blue value instead of the lane of `blues`.
+    ///
+    /// Mask lanes must be all ones or all zeros.
+    ///
     /// # Safety
     ///
     /// The same as [`set8_b_unchecked`](Self::set8_b_unchecked).
+    ///
+    /// # Known issues
+    ///
+    /// - Each selected value is written to the red channel, not blue, and green and blue become 0
+    ///   and alpha 1 ([#23](https://github.com/costott/cpu_rasteriser/issues/23)).
     #[inline(always)]
     #[cfg_attr(
         not(feature = "internals"),
@@ -370,6 +469,8 @@ impl FrameBuffer {
         unsafe { self.set8_b_unchecked(index, new_pixels) };
     }
 
+    /// Returns the colour of the pixel at `p`, without bounds checks.
+    ///
     /// # Safety
     ///
     /// `p` must lie inside the framebuffer: `p.x as usize < self.width()` and
@@ -386,6 +487,9 @@ impl FrameBuffer {
         unsafe { *self.pixels.as_slice().get_unchecked(index) }
     }
 
+    /// Returns the red channels of the eight consecutive elements starting at storage `index`,
+    /// without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
@@ -417,6 +521,9 @@ impl FrameBuffer {
         };
         f32x8::new(values)
     }
+    /// Returns the green channels of the eight consecutive elements starting at storage `index`,
+    /// without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
@@ -448,6 +555,9 @@ impl FrameBuffer {
         };
         f32x8::new(values)
     }
+    /// Returns the blue channels of the eight consecutive elements starting at storage `index`,
+    /// without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y)` for some `x < self.width()` and
@@ -483,10 +593,13 @@ impl FrameBuffer {
 /// Raw pixel access for the benchmarks.
 #[cfg(feature = "internals")]
 impl FrameBuffer {
+    /// Returns the whole storage, row padding included: `height` rows of the padded stride.
     pub fn pixels(&self) -> &[Colour] {
         self.pixels.as_slice()
     }
 
+    /// Returns the element at storage `index`, without bounds checks.
+    ///
     /// # Safety
     ///
     /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,

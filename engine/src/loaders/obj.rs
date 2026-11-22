@@ -1,3 +1,5 @@
+//! Loading Wavefront OBJ models.
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -7,13 +9,81 @@ use crate::loaders::mtl::load_mtl;
 use crate::loaders::values::{ValuesError, parse_floats};
 use crate::prelude::*;
 
-/// Load a 3D model from an OBJ file (should really be called load_model)
+/// Loads a model from a Wavefront OBJ file, with the material libraries it names.
+///
+/// The file is read as statements, one per line, of whitespace-separated values:
+///
+/// - `v x y z`, `vt u v`, and `vn x y z` define positions, texture coordinates, and normals.
+///   Values after the ones listed are ignored.
+/// - `f` defines a face from three or more vertices, each written `v/vt/vn`: indices, counting
+///   from 1, into the attributes defined so far. Faces with more than three vertices are split
+///   into a fan of triangles from the first vertex, which is correct for convex faces.
+/// - `o` and `g` start a new mesh.
+/// - `mtllib path` loads a material library with [`load_mtl`]. The path is a single value,
+///   relative to the OBJ file's directory.
+/// - `usemtl name` gives the faces that follow the named material, from a library loaded by an
+///   earlier `mtllib`. They form a new mesh.
+/// - Lines whose first value is `#` are comments.
+///
+/// Other statements, including smoothing groups (`s`) and lines (`l`), are skipped with a
+/// warning on standard error. So is a `usemtl` naming a material no library defines.
+///
+/// Each mesh stores a vertex once per distinct `v/vt/vn` combination, and every vertex is
+/// white. The model's transform is the identity.
 ///
 /// # Errors
 ///
-/// Returns an [`ObjError`] if the file can't be read, a statement is malformed or refers to an
-/// undefined attribute, a material library it names can't be loaded, or the result isn't a valid
-/// [`Model`].
+/// Returns, for the first problem in the file:
+///
+/// - [`ObjError::Io`] if the file can't be read, or isn't valid UTF-8.
+/// - [`ObjError::MissingValues`] if a `v` or `vn` statement has fewer than three values, a `vt`
+///   fewer than two, an `f` fewer than three vertices, or an `mtllib` or `usemtl` no name.
+/// - [`ObjError::InvalidNumber`] if a `v`, `vt`, or `vn` value isn't a number.
+/// - [`ObjError::InvalidFaceVertex`] if a face vertex doesn't start with three `/`-separated
+///   non-negative integers. Negative (relative) indices and the short forms `v`, `v/vt`, and
+///   `v//vn` aren't supported.
+/// - [`ObjError::IndexOutOfBounds`] if a face index is 0 or greater than the number of
+///   attributes of its kind defined before the face.
+/// - [`ObjError::MaterialLibrary`] if [`load_mtl`] fails for an `mtllib` statement.
+/// - [`ObjError::Model`] if the meshes and materials don't form a valid [`Model`].
+///
+/// # Examples
+///
+/// The cube in the workspace's `assets` directory has one face per material:
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use engine::prelude::*;
+///
+/// let model = load_obj("../assets/cube/cube.obj")?;
+///
+/// assert_eq!(model.materials.len(), 6);
+/// assert_eq!(model.meshes.len(), 6);
+/// let first = &model.meshes[0];
+/// assert_eq!(model.materials[first.material_index.unwrap()].name, "Red");
+/// // A square face, as two triangles.
+/// assert_eq!((first.vertices.len(), first.indices.len()), (4, 6));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// A missing file is an [`ObjError::Io`]:
+///
+/// ```
+/// use engine::prelude::*;
+///
+/// let error = load_obj("missing.obj").unwrap_err();
+/// assert!(matches!(error, ObjError::Io { .. }));
+/// ```
+///
+/// # Known issues
+///
+/// - Only one material library is kept: each `mtllib` replaces the materials loaded before it and
+///   reads only its first file name. Meshes can then get the wrong material, or loading fails with
+///   [`ObjError::Model`], which nothing else causes
+///   ([#44](https://github.com/costott/cpu_rasteriser/issues/44)).
+/// - An `o` or `g` after faces drops the material in force, so the faces that follow have no
+///   material until the next `usemtl` ([#54](https://github.com/costott/cpu_rasteriser/issues/54)).
 pub fn load_obj(file_path: impl AsRef<std::path::Path>) -> Result<Model<ObjVertex>, ObjError> {
     let obj_data = std::fs::read_to_string(&file_path).map_err(|source| ObjError::Io {
         path: file_path.as_ref().to_path_buf(),
@@ -213,6 +283,17 @@ impl ObjMesh {
 }
 
 /// The vertex attribute an OBJ face index refers to.
+///
+/// Its [`Display`](std::fmt::Display) form is the attribute's name in lower case: `position`,
+/// `texture coordinate`, or `normal`.
+///
+/// # Examples
+///
+/// ```
+/// use engine::prelude::*;
+///
+/// assert_eq!(ObjAttribute::TextureCoordinate.to_string(), "texture coordinate");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ObjAttribute {
@@ -235,7 +316,39 @@ impl std::fmt::Display for ObjAttribute {
 
 /// An error loading an OBJ file with [`load_obj`].
 ///
-/// Line numbers count from 1.
+/// Line numbers count from 1. [`load_obj`] lists when each variant occurs.
+///
+/// Its [`Display`](std::fmt::Display) form is a one-line message that starts with the line
+/// number, where there is one, and doesn't include the cause, such as
+/// `line 12: position index 9 is out of bounds`. The cause is the
+/// [`source`](std::error::Error::source): the [`std::io::Error`] for [`ObjError::Io`], the
+/// [`std::num::ParseFloatError`] for [`ObjError::InvalidNumber`], the [`MtlError`] for
+/// [`ObjError::MaterialLibrary`], and the [`ModelError`] for [`ObjError::Model`]. The other
+/// variants have no source.
+///
+/// # Examples
+///
+/// Report the whole chain of causes:
+///
+/// ```
+/// use std::error::Error;
+///
+/// use engine::prelude::*;
+///
+/// # let dir = tempfile::tempdir().unwrap();
+/// # let path = dir.path().join("model.obj");
+/// # std::fs::write(&path, "mtllib missing.mtl\n").unwrap();
+/// // `model.obj` holds `mtllib missing.mtl`, and there is no `missing.mtl`.
+/// let error = load_obj(&path).unwrap_err();
+///
+/// let mut message = error.to_string();
+/// let mut source = error.source();
+/// while let Some(cause) = source {
+///     message += &format!(": {cause}");
+///     source = cause.source();
+/// }
+/// assert!(message.starts_with("line 1: failed to load the material library: failed to read"));
+/// ```
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ObjError {

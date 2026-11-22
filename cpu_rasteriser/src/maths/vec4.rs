@@ -2,32 +2,122 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub};
 
 use crate::prelude::*;
 
-/// Represents a 4D (column) vector
+/// A 4D vector of `f32`: a homogeneous coordinate, or any four-component value.
+///
+/// As a homogeneous coordinate it is a column vector transformed by `m * v` (see [`Mat4`]). A
+/// point has w = 1 and a direction w = 0; after a projection, clip-space positions have any w and
+/// [`Vec4::homogenize`] performs the perspective divide. A [`VertexShader`](crate::VertexShader)
+/// returns its clip-space position as a `Vec4`. Colours convert to and from `Vec4` through
+/// [`Colour`]'s `From` impls.
+///
+/// The operators are component-wise over all four components, w included: `a + b`, `a += b`,
+/// `a - b`, `v * s`, and `v / s` with `s: f32`. `From` converts four-element tuples of `f32`,
+/// `usize`, or `i32`. `Vec4` implements [`Interpolate`](crate::Interpolate), so it can be a
+/// varying.
+///
+/// # Examples
+///
+/// ```
+/// use cpu_rasteriser::prelude::*;
+///
+/// let clip = Vec4::new(2.0, -4.0, 1.0, 2.0);
+/// let ndc = clip.homogenize_to_vec3();
+/// assert_eq!(ndc, Vec3::new(1.0, -2.0, 0.5));
+///
+/// let colour: Colour = Vec4::new(1.0, 0.5, 0.0, 1.0).into();
+/// assert_eq!(colour, Colour::rgb(1.0, 0.5, 0.0));
+/// ```
 #[derive(Debug, Copy, PartialEq, Interpolate)]
 pub struct Vec4 {
+    /// The x component.
     pub x: f32,
+    /// The y component.
     pub y: f32,
+    /// The z component.
     pub z: f32,
+    /// The w component: 1 for a point, 0 for a direction.
     pub w: f32,
 }
 impl Vec4 {
+    /// Creates a vector from its components.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let clip = Vec4::new(1.0, 2.0, 3.0, 4.0);
+    /// assert_eq!((clip.x, clip.y, clip.z, clip.w), (1.0, 2.0, 3.0, 4.0));
+    /// ```
     pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
     }
 
+    /// Linearly interpolates all four components from `self` (at `t = 0`) to `other` (at
+    /// `t = 1`).
+    ///
+    /// `t` is not clamped, so values outside `0.0..=1.0` extrapolate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let a = Vec4::new(0.0, 0.0, 0.0, 1.0);
+    /// let b = Vec4::new(4.0, 2.0, 0.0, 1.0);
+    /// assert_eq!(a.lerp(b, 0.25), Vec4::new(1.0, 0.5, 0.0, 1.0));
+    /// ```
     pub fn lerp(self, other: Self, t: f32) -> Self {
         self * (1.0 - t) + other * t
     }
 
+    /// Returns the dot product over all four components.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let a = Vec4::new(1.0, 2.0, 3.0, 4.0);
+    /// assert_eq!(a.dot(Vec4::new(1.0, 1.0, 1.0, 1.0)), 10.0);
+    /// ```
     pub fn dot(self, other: Self) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z + self.w * other.w
     }
 
+    /// Returns the vector scaled to length 1 over all four components, w included.
+    ///
+    /// Because w counts towards the length, normalise a homogeneous point's direction as a
+    /// [`Vec3`] instead. A zero-length vector is returned unchanged, as the zero vector, rather
+    /// than producing NaN; there is no tolerance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// assert_eq!(Vec4::new(0.0, 3.0, 0.0, 4.0).normalise(), Vec4::new(0.0, 0.6, 0.0, 0.8));
+    /// assert_eq!(Vec4::new(0.0, 0.0, 0.0, 0.0).normalise(), Vec4::new(0.0, 0.0, 0.0, 0.0));
+    /// ```
     pub fn normalise(self) -> Self {
         let length = self.dot(self).sqrt();
         if length > 0.0 { self / length } else { self }
     }
 
+    /// Performs the perspective divide: returns `(x/w, y/w, z/w, 1)`.
+    ///
+    /// A vector with w = 0 (a direction, or a point at infinity) is returned unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// assert_eq!(Vec4::new(2.0, 4.0, 6.0, 2.0).homogenize(), Vec4::new(1.0, 2.0, 3.0, 1.0));
+    ///
+    /// let direction = Vec4::new(1.0, 0.0, 0.0, 0.0);
+    /// assert_eq!(direction.homogenize(), direction);
+    /// ```
     pub fn homogenize(self) -> Self {
         if self.w != 0.0 {
             Self::new(self.x / self.w, self.y / self.w, self.z / self.w, 1.0)
@@ -36,6 +126,22 @@ impl Vec4 {
         }
     }
 
+    /// Performs the perspective divide and drops w: returns `(x/w, y/w, z/w)`.
+    ///
+    /// For a clip-space position this gives normalised device coordinates. A vector with w = 0
+    /// gives `(x, y, z)` without dividing.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let clip = Vec4::new(3.0, -3.0, 1.5, 3.0);
+    /// assert_eq!(clip.homogenize_to_vec3(), Vec3::new(1.0, -1.0, 0.5));
+    ///
+    /// let direction = Vec4::new(1.0, 2.0, 3.0, 0.0);
+    /// assert_eq!(direction.homogenize_to_vec3(), Vec3::new(1.0, 2.0, 3.0));
+    /// ```
     pub fn homogenize_to_vec3(self) -> Vec3 {
         if self.w != 0.0 {
             Vec3::new(self.x / self.w, self.y / self.w, self.z / self.w)
@@ -44,10 +150,31 @@ impl Vec4 {
         }
     }
 
+    /// Returns the x, y, and z components, dropping w without dividing by it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let v = Vec4::new(2.0, 4.0, 6.0, 2.0);
+    /// assert_eq!(v.xyz(), Vec3::new(2.0, 4.0, 6.0));
+    /// assert_eq!(v.xy(), Vec2::new(2.0, 4.0));
+    /// ```
     pub fn xyz(self) -> Vec3 {
         Vec3::new(self.x, self.y, self.z)
     }
 
+    /// Returns the x and y components, dropping z and w without dividing.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let screen = Vec4::new(320.0, 240.0, 0.5, 1.0);
+    /// assert_eq!(screen.xy(), Vec2::new(320.0, 240.0));
+    /// ```
     pub fn xy(self) -> Vec2 {
         Vec2::new(self.x, self.y)
     }
