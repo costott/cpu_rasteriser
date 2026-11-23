@@ -4,16 +4,27 @@ use crate::graphics::fragment::{Fragment, FragmentSimd};
 use crate::graphics::vertex::{ClipVertex, RasterVertex};
 use crate::prelude::*;
 
+/// A triangle in screen space, ready to rasterise: the output of vertex processing, clipping,
+/// and culling.
+///
+/// Its vertices are [`RasterVertex`] values. The rasterisation methods fill the pixels whose
+/// centres the triangle covers, and give each one varyings interpolated as [`Interpolate`]
+/// describes. The order of the vertices doesn't matter.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triangle2D<V>
 where
     V: Interpolate,
 {
+    /// The first vertex.
     pub a: RasterVertex<V>,
+    /// The second vertex.
     pub b: RasterVertex<V>,
+    /// The third vertex.
     pub c: RasterVertex<V>,
 }
 impl<V: Interpolate> Triangle2D<V> {
+    /// Returns the minimum and maximum corners of the axis-aligned box around the vertices'
+    /// screen positions, in pixels.
     pub fn bounding_box(&self) -> (Vec2, Vec2) {
         let min_x = self
             .a
@@ -42,6 +53,11 @@ impl<V: Interpolate> Triangle2D<V> {
         (Vec2::new(min_x, min_y), Vec2::new(max_x, max_y))
     }
 
+    /// Returns whether the triangle's bounding box, widened to whole pixels, overlaps `rect`.
+    ///
+    /// The test is conservative: it can return `true` for a triangle that covers no pixel of
+    /// `rect`, but never `false` for one that does. It treats `rect.max_x` and `rect.max_y` as
+    /// inclusive.
     pub fn intersects_rect(&self, rect: crate::renderer::Rect) -> bool {
         let (min, max) = self.bounding_box();
 
@@ -62,7 +78,20 @@ impl<V: Interpolate> Triangle2D<V> {
     //     draw_line(renderer, self.c, self.a);
     // }
 
-    /// Uses a scanline algorithm to fill the triangle and interpolate vertex attributes.
+    /// Rasterises the part of the triangle inside `bounds`, calling `callback` with one fragment
+    /// per covered pixel.
+    ///
+    /// A pixel is covered when its centre lies inside the triangle, with half-open ranges on each
+    /// row and column so that pixels on an edge shared by two triangles are drawn by exactly one.
+    /// Rows are visited top to bottom and pixels left to right. Each fragment carries the pixel's
+    /// column and row in screen space (not relative to `bounds`), its interpolated depth, and its
+    /// perspective-correct varyings. A triangle with zero height produces no fragments.
+    ///
+    /// `bounds` is inclusive of `min_x` and `min_y` and exclusive of `max_x` and `max_y`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `y` position of a vertex is NaN.
     pub fn rasterise_segment<F>(&self, bounds: crate::renderer::Rect, mut callback: F)
     where
         F: FnMut(Fragment<V>),
@@ -157,6 +186,26 @@ impl<V> Triangle2D<V>
 where
     V: Interpolate + SimdInterpolate,
 {
+    /// Rasterises the part of the triangle inside `bounds` eight pixels at a time, calling
+    /// `simd_callback` with one group of fragments per call.
+    ///
+    /// Coverage and the visiting order are those of [`rasterise_segment`](Self::rasterise_segment).
+    /// Each covered run of pixels in a row is split into groups of eight from its first pixel, so
+    /// groups aren't aligned to multiples of eight. A group carries the screen-space column and row
+    /// of its first pixel, the depths and perspective-correct varyings of all eight lanes, and a
+    /// mask whose lanes are all ones for covered pixels and zero for the rest. Only the last group
+    /// of a run can be partial. See [`FragmentShaderSimd`] for the mapping of lanes to pixels and
+    /// for masked lanes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `y` position of a vertex is NaN.
+    ///
+    /// # Known issues
+    ///
+    /// - The varyings can differ from those [`rasterise_segment`](Self::rasterise_segment) gives
+    ///   the same pixel by more than expected; the cause hasn't been investigated
+    ///   ([#21](https://github.com/costott/cpu_rasteriser/issues/21)).
     pub fn rasterise_segment_simd<F>(&self, bounds: crate::renderer::Rect, mut simd_callback: F)
     where
         F: FnMut(FragmentSimd<V>),
@@ -288,6 +337,7 @@ where
 /// Constructor for the unit tests and benchmarks.
 #[cfg(any(test, feature = "internals"))]
 impl<V: Interpolate> Triangle2D<V> {
+    /// Creates a triangle from its three vertices.
     pub fn new(a: RasterVertex<V>, b: RasterVertex<V>, c: RasterVertex<V>) -> Self {
         Self { a, b, c }
     }
@@ -414,18 +464,50 @@ impl<V: Interpolate> TriangleClip<V> {
     }
 }
 
+/// A triangle of three vertices of any type, before vertex shading.
+///
+/// The renderer assembles triangles from a draw's vertices and indices itself, so drawing doesn't
+/// take this type. With [`ObjVertex`] vertices it can compute the triangle's face normal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triangle3D<V: Clone> {
+    /// The first vertex.
     pub a: V,
+    /// The second vertex.
     pub b: V,
+    /// The third vertex.
     pub c: V,
 }
 impl<V: Clone> Triangle3D<V> {
+    /// Creates a triangle from its three vertices.
+    ///
+    /// See [`normal`](Triangle3D::normal) for an example.
     pub fn new(a: V, b: V, c: V) -> Self {
         Self { a, b, c }
     }
 }
 impl Triangle3D<ObjVertex> {
+    /// Returns the unit normal of the triangle's face, from its vertex positions.
+    ///
+    /// The normal is `(b - a) × (c - a)`, normalised. With the crate's right-handed coordinates it
+    /// points towards a viewer who sees `a`, `b`, and `c` counter-clockwise, the winding the
+    /// renderer treats as front-facing (see [`VertexShader`]). A degenerate triangle, whose
+    /// vertices are collinear, gives [`Vec3::ZERO`].
+    ///
+    /// # Examples
+    ///
+    /// Finding which way a triangle faces, for example to compute flat shading:
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    ///
+    /// let triangle = Triangle3D::new(
+    ///     ObjVertex::simple(Vec3::new(0.0, 0.0, 0.0), Colour::RED),
+    ///     ObjVertex::simple(Vec3::new(2.0, 0.0, 0.0), Colour::RED),
+    ///     ObjVertex::simple(Vec3::new(0.0, 2.0, 0.0), Colour::RED),
+    /// );
+    ///
+    /// assert_eq!(triangle.normal(), Vec3::new(0.0, 0.0, 1.0));
+    /// ```
     pub fn normal(&self) -> Vec3 {
         let ab = self.b.position - self.a.position;
         let ac = self.c.position - self.a.position;

@@ -1,20 +1,67 @@
+//! Textures, and samplers that read them at texture coordinates.
+//!
+//! A [`Texture`] holds an image's pixels; a [`TextureSampler`] made from it reads them in a
+//! shader, with a [`WrapMode`] and a [`FilterMode`].
+//!
+//! # Coordinate conventions
+//!
+//! - Pixels are stored row by row, and row 0 is the top of the image.
+//! - Texture coordinates (`uv`) have their origin at the bottom-left of the image, with u
+//!   increasing to the right and v upwards.
+//! - u = 0 and u = 1 are the centres of the first and last columns, and v = 0 and v = 1 the
+//!   centres of the bottom and top rows: the texel position is `u * (width - 1)` across and
+//!   `(1 - v) * (height - 1)` down. This differs from the GPU convention, which puts 0 and 1 at
+//!   the image's outer edges.
+
 use std::sync::Arc;
 
 use cpu_rasteriser::prelude::*;
 use cpu_rasteriser::wide::f32x8;
 
+/// An image held in memory, to be read through a [`TextureSampler`].
+///
+/// Load one from an image file with [`Texture::from_image`], or copy a render target's pixels
+/// with [`Texture::from_render_target`] to sample an earlier render pass. The pixels are shared:
+/// cloning the texture or making a sampler doesn't copy them.
+///
+/// [`pixels`](Texture::pixels) should hold `width * height` colours, in the order the
+/// [module documentation](self) describes. This isn't checked until a sampler is made.
+///
+/// # Examples
+///
+/// See [`Texture::from_image`] and [`Texture::update_from`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Texture {
+    /// The width in pixels.
     pub width: u32,
+    /// The height in pixels.
     pub height: u32,
+    /// The pixels, row by row from the top.
     pub pixels: Arc<[Colour]>,
 }
 impl Texture {
     /// Loads a texture from an image file, in any format the `image` crate supports.
     ///
+    /// Each channel is the file's 8-bit value divided by 255, so the colours lie in `0..=1`. No
+    /// colour-space conversion is made, so an sRGB image's colours stay sRGB-encoded.
+    ///
     /// # Errors
     ///
     /// Returns [`TextureError::Image`] if the file can't be opened or decoded.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use engine::prelude::*;
+    ///
+    /// let texture = Texture::from_image("../assets/dice/texture.png")?;
+    /// let sampler = texture.sampler(WrapMode::Repeat, FilterMode::Linear);
+    ///
+    /// assert_eq!((sampler.width(), sampler.height()), (320, 320));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn from_image(path: impl AsRef<std::path::Path>) -> Result<Self, TextureError> {
         let path = path.as_ref();
         let image = image::open(path)
@@ -48,6 +95,10 @@ impl Texture {
     ///
     /// To copy from the same target repeatedly, keep the texture and refill it with
     /// [`Texture::update_from`].
+    ///
+    /// # Examples
+    ///
+    /// See [`Texture::update_from`].
     pub fn from_render_target(render_target: &RenderTarget) -> Self {
         Self {
             width: render_target.width() as u32,
@@ -58,9 +109,9 @@ impl Texture {
 
     /// Replaces the texture's contents with the render target's current pixels.
     ///
-    /// Samplers and clones made earlier keep the pixels they were made with. The existing storage
-    /// is reused only when nothing else shares it, so drop the previous samplers before calling
-    /// this to avoid a new allocation each time.
+    /// Samplers and clones made earlier keep the pixels they were made with. This allocates new
+    /// storage if the size has changed or any of them is still alive, so drop them first to
+    /// refill the texture without allocating.
     ///
     /// # Examples
     ///
@@ -98,9 +149,19 @@ impl Texture {
         pixels
     }
 
+    /// Returns a sampler that reads the texture's pixels with the given wrap and filter modes.
+    ///
+    /// The sampler keeps the pixels as they are now: a later
+    /// [`update_from`](Texture::update_from) doesn't change what it reads.
+    ///
     /// # Panics
     ///
-    /// Panics if the texture's size or pixels break the requirements of [`TextureSampler::new`].
+    /// Panics if `width` or `height` is zero or greater than 2^24, or if `pixels` holds fewer than
+    /// `width * height` colours, as [`TextureSampler::new`] does.
+    ///
+    /// # Examples
+    ///
+    /// See [`Texture::from_image`].
     pub fn sampler(&self, wrap_mode: WrapMode, filter_mode: FilterMode) -> TextureSampler {
         TextureSampler::new(
             self.pixels.clone(),
@@ -112,6 +173,32 @@ impl Texture {
     }
 }
 
+/// Reads a texture's pixels at texture coordinates, with a [`WrapMode`] and a [`FilterMode`].
+///
+/// [`sample`](TextureSampler::sample) applies the sampler's own modes. The `_clamp` methods always
+/// clamp, with a fixed filter, whatever the sampler's modes; the `_simd` ones sample eight
+/// coordinates at once for a [`FragmentShaderSimd`]. See the [module documentation](self) for
+/// how coordinates map to texels.
+///
+/// A sampler is cheap to clone.
+///
+/// # Examples
+///
+/// A 1×2 texture, red on top of blue:
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use cpu_rasteriser::prelude::*;
+/// use engine::prelude::*;
+///
+/// let pixels: Arc<[Colour]> = Arc::from([Colour::RED, Colour::BLUE]);
+/// let sampler = TextureSampler::new(pixels, 1, 2, WrapMode::Clamp, FilterMode::Linear);
+///
+/// assert_eq!(sampler.sample(Vec2::new(0.0, 1.0)), Colour::RED);
+/// assert_eq!(sampler.sample(Vec2::new(0.0, 0.0)), Colour::BLUE);
+/// assert_eq!(sampler.sample(Vec2::new(0.0, 0.5)), Colour::new(0.5, 0.0, 0.5, 1.0));
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextureSampler {
     pixels: Arc<[Colour]>,
@@ -126,10 +213,18 @@ impl TextureSampler {
     /// computed in `f32` inside the texture.
     const MAX_DIMENSION: u32 = 1 << f32::MANTISSA_DIGITS;
 
+    /// Creates a sampler of `width` by `height` pixels, stored row by row from the top.
+    ///
+    /// Pixels beyond the first `width * height` are ignored.
+    ///
     /// # Panics
     ///
     /// Panics if `width` or `height` is zero or greater than 2^24, or if `pixels` holds fewer
     /// than `width * height` pixels.
+    ///
+    /// # Examples
+    ///
+    /// See [`TextureSampler`].
     pub fn new(
         pixels: Arc<[Colour]>,
         width: u32,
@@ -160,14 +255,62 @@ impl TextureSampler {
         }
     }
 
+    /// Returns the texture's width in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let pixels: Arc<[Colour]> = Arc::from([Colour::RED; 6]);
+    /// let sampler = TextureSampler::new(pixels, 3, 2, WrapMode::Clamp, FilterMode::Nearest);
+    ///
+    /// assert_eq!(sampler.width(), 3);
+    /// ```
     pub fn width(&self) -> u32 {
         self.width
     }
 
+    /// Returns the texture's height in pixels.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let pixels: Arc<[Colour]> = Arc::from([Colour::RED; 6]);
+    /// let sampler = TextureSampler::new(pixels, 3, 2, WrapMode::Clamp, FilterMode::Nearest);
+    ///
+    /// assert_eq!(sampler.height(), 2);
+    /// ```
     pub fn height(&self) -> u32 {
         self.height
     }
 
+    /// Returns the colour at `uv`, applying the sampler's wrap mode and then its filter mode.
+    ///
+    /// # Examples
+    ///
+    /// A repeating texture tiles: coordinates a whole number apart give the same colour.
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let pixels: Arc<[Colour]> = Arc::from([Colour::RED, Colour::GREEN, Colour::BLUE]);
+    /// let sampler = TextureSampler::new(pixels, 3, 1, WrapMode::Repeat, FilterMode::Nearest);
+    ///
+    /// assert_eq!(sampler.sample(Vec2::new(0.5, 0.0)), Colour::GREEN);
+    /// assert_eq!(sampler.sample(Vec2::new(2.5, 0.0)), Colour::GREEN);
+    /// ```
     #[inline(always)]
     pub fn sample(&self, uv: Vec2) -> Colour {
         let uv = self.apply_wrap_mode(uv);
@@ -216,6 +359,28 @@ impl TextureSampler {
         }
     }
 
+    /// Returns the colour at `uv` with [`WrapMode::Clamp`] and [`FilterMode::Linear`], whatever
+    /// the sampler's own modes.
+    ///
+    /// It gives the same result as [`sample`](TextureSampler::sample) on a clamping, linear
+    /// sampler.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let pixels: Arc<[Colour]> = Arc::from([Colour::BLACK, Colour::WHITE]);
+    /// let sampler = TextureSampler::new(pixels, 2, 1, WrapMode::Clamp, FilterMode::Linear);
+    ///
+    /// for u in [-1.0, 0.0, 0.25, 0.5, 1.0, 2.0] {
+    ///     let uv = Vec2::new(u, 0.0);
+    ///     assert_eq!(sampler.sample_linear_clamp(uv), sampler.sample(uv));
+    /// }
+    /// ```
     #[inline(always)]
     pub fn sample_linear_clamp(&self, uv: Vec2) -> Colour {
         let u = uv.x.clamp(0.0, 1.0);
@@ -251,6 +416,27 @@ impl TextureSampler {
         Colour::lerp(c0, c1, ty)
     }
 
+    /// Returns the colour at `uv` with [`WrapMode::Clamp`] and [`FilterMode::Nearest`], whatever
+    /// the sampler's own modes.
+    ///
+    /// It gives the same result as [`sample`](TextureSampler::sample) on a clamping, nearest
+    /// sampler. A coordinate exactly between two texels takes the one further from 0.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let pixels: Arc<[Colour]> = Arc::from([Colour::BLACK, Colour::WHITE]);
+    /// let sampler = TextureSampler::new(pixels, 2, 1, WrapMode::Repeat, FilterMode::Linear);
+    ///
+    /// assert_eq!(sampler.sample_nearest_clamp(Vec2::new(0.4, 0.0)), Colour::BLACK);
+    /// assert_eq!(sampler.sample_nearest_clamp(Vec2::new(0.5, 0.0)), Colour::WHITE);
+    /// assert_eq!(sampler.sample_nearest_clamp(Vec2::new(1.5, 0.0)), Colour::WHITE);
+    /// ```
     #[inline(always)]
     pub fn sample_nearest_clamp(&self, uv: Vec2) -> Colour {
         let u = uv.x.clamp(0.0, 1.0);
@@ -270,10 +456,34 @@ impl TextureSampler {
         self.pixels[(y * self.width + x) as usize]
     }
 
-    /// Samples eight horizontally adjacent fragments using bilinear filtering.
+    /// Returns the colours at eight coordinates with [`WrapMode::Clamp`] and
+    /// [`FilterMode::Linear`], whatever the sampler's own modes.
     ///
-    /// The eight lanes are expected to correspond to consecutive screen-space
-    /// fragments: x, x + 1, ..., x + 7.
+    /// `uv[0]` holds the eight u coordinates and `uv[1]` the eight v coordinates, one per lane;
+    /// [`FragmentShaderSimd`] describes how lanes map to pixels. Each lane is sampled
+    /// independently, and lane `i` of the result is
+    /// [`sample_linear_clamp`](TextureSampler::sample_linear_clamp) of lane `i` of `uv`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use cpu_rasteriser::prelude::*;
+    /// use cpu_rasteriser::wide::f32x8;
+    /// use engine::prelude::*;
+    ///
+    /// let pixels: Arc<[Colour]> = Arc::from([Colour::BLACK, Colour::WHITE]);
+    /// let sampler = TextureSampler::new(pixels, 2, 1, WrapMode::Clamp, FilterMode::Linear);
+    ///
+    /// let us = [-0.5, 0.0, 0.125, 0.25, 0.5, 0.75, 1.0, 1.5];
+    /// let colours = sampler.sample_linear_clamp_simd([f32x8::new(us), f32x8::splat(0.0)]);
+    ///
+    /// let reds = colours.r.to_array();
+    /// for (u, red) in us.into_iter().zip(reds) {
+    ///     assert!((red - sampler.sample_linear_clamp(Vec2::new(u, 0.0)).r).abs() < 1e-6);
+    /// }
+    /// ```
     #[inline(always)]
     pub fn sample_linear_clamp_simd(&self, uv: [f32x8; 2]) -> ColourSimd {
         let zero = f32x8::splat(0.0);
@@ -324,6 +534,33 @@ impl TextureSampler {
         c0.lerp(c1, ty)
     }
 
+    /// Returns the colours at eight coordinates with [`WrapMode::Clamp`] and
+    /// [`FilterMode::Nearest`], whatever the sampler's own modes.
+    ///
+    /// `uv[0]` holds the eight u coordinates and `uv[1]` the eight v coordinates, one per lane;
+    /// [`FragmentShaderSimd`] describes how lanes map to pixels. Each lane is sampled
+    /// independently, and lane `i` of the result is
+    /// [`sample_nearest_clamp`](TextureSampler::sample_nearest_clamp) of lane `i` of `uv`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use cpu_rasteriser::prelude::*;
+    /// use cpu_rasteriser::wide::f32x8;
+    /// use engine::prelude::*;
+    ///
+    /// let pixels: Arc<[Colour]> = Arc::from([Colour::BLACK, Colour::WHITE]);
+    /// let sampler = TextureSampler::new(pixels, 2, 1, WrapMode::Clamp, FilterMode::Linear);
+    ///
+    /// // Each lane takes the nearer texel, so the colours are only black or white.
+    /// let us = [-0.5, 0.0, 0.4, 0.5, 0.6, 0.75, 1.0, 1.5];
+    /// let colours = sampler.sample_nearest_clamp_simd([f32x8::new(us), f32x8::splat(0.0)]);
+    ///
+    /// let reds = colours.r.to_array();
+    /// assert_eq!(reds, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+    /// ```
     #[inline(always)]
     pub fn sample_nearest_clamp_simd(&self, uv: [f32x8; 2]) -> ColourSimd {
         let zero = f32x8::splat(0.0);
@@ -390,6 +627,20 @@ impl TextureSampler {
 }
 
 /// An error loading a [`Texture`].
+///
+/// Its [`Display`](std::fmt::Display) form names the image file; the cause is its
+/// [`source`](std::error::Error::source).
+///
+/// # Examples
+///
+/// ```
+/// use engine::prelude::*;
+///
+/// let error = Texture::from_image("missing.png").unwrap_err();
+///
+/// assert_eq!(error.to_string(), "failed to load the image `missing.png`");
+/// assert!(matches!(error, TextureError::Image { .. }));
+/// ```
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum TextureError {
@@ -404,15 +655,34 @@ pub enum TextureError {
     },
 }
 
+/// How a [`TextureSampler`] treats texture coordinates outside [0, 1].
+///
+/// # Examples
+///
+/// See [`TextureSampler::sample`].
+///
+/// # Known issues
+///
+/// - [`WrapMode::Repeat`] doesn't wrap negative coordinates: they clamp to the texture's edge
+///   instead ([#24](https://github.com/costott/cpu_rasteriser/issues/24)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WrapMode {
+    /// Tiles the texture by wrapping each coordinate into [0, 1), so 1 reads the same texels as 0.
     Repeat,
+    /// Clamps each coordinate to [0, 1], so the edge texels extend outwards.
     Clamp,
 }
 
+/// How a [`TextureSampler`] turns a texture coordinate into a colour.
+///
+/// # Examples
+///
+/// See [`TextureSampler`] and [`TextureSampler::sample`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterMode {
+    /// Takes the texel nearest the coordinate, rounding halfway cases away from 0.
     Nearest,
+    /// Interpolates bilinearly between the four texels around the coordinate.
     Linear,
 }
 

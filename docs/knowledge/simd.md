@@ -24,7 +24,7 @@ The SIMD path uses portable SIMD from the `wide` crate (`f32x8`), not `std::arch
 
 The path is selected at compile time per draw. `SimdPipeline` plus `RenderPass::draw_simd` produces a `TriangleRasterCommandSimd`. There is no runtime dispatch and no automatic fallback.
 
-`FragmentShaderSimd` is independent of `FragmentShader`: `SimdPipeline`'s bounds only require `FragmentShaderSimd` ([#26](https://github.com/costott/cpu_rasteriser/issues/26)).
+`FragmentShaderSimd` is independent of `FragmentShader`: `SimdPipeline`'s bounds only require `FragmentShaderSimd`.
 
 ## Rasterisation (`Triangle2D::rasterise_segment_simd`)
 

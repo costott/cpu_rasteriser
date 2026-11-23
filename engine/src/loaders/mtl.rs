@@ -1,3 +1,5 @@
+//! Loading MTL material libraries.
+
 use std::path::{Path, PathBuf};
 
 use cpu_rasteriser::prelude::*;
@@ -7,10 +9,51 @@ use crate::prelude::*;
 
 /// Loads the materials of an MTL material library, with the textures it names.
 ///
+/// The file is read as statements, one per line, of whitespace-separated values:
+///
+/// - `newmtl name` starts a material, with the defaults of [`Material::named`].
+/// - `Ka`, `Kd`, and `Ks`, each followed by `r g b`, set the ambient, diffuse, and specular
+///   colours, with alpha 1. `Ns` sets the shininess.
+/// - `map_Ka`, `map_Kd`, and `map_Ks` set the ambient, diffuse, and specular textures, and
+///   `map_Bump`, `bump`, or `norm` the normal texture. The path is a single value, relative to
+///   the library's directory; options such as `-bm` aren't supported. Each texture is loaded
+///   with [`Texture::from_image`] and sampled with [`WrapMode::Repeat`] and
+///   [`FilterMode::Linear`].
+///
+/// Other statements, such as `illum`, `d`, and comments, are ignored silently, and so is any
+/// statement before the first `newmtl`. Values after the ones listed are ignored. The materials
+/// are returned in file order.
+///
 /// # Errors
 ///
-/// Returns an [`MtlError`] if the file can't be read, a statement is malformed, or a texture it
-/// names can't be loaded.
+/// Returns, for the first problem in the file:
+///
+/// - [`MtlError::Io`] if the file can't be read, or isn't valid UTF-8.
+/// - [`MtlError::MissingValues`] if a `newmtl` has no name, a colour fewer than three values, an
+///   `Ns` no value, or a texture map no path.
+/// - [`MtlError::InvalidNumber`] if a colour or `Ns` value isn't a number.
+/// - [`MtlError::Texture`] if a texture map's image can't be loaded.
+///
+/// # Examples
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use cpu_rasteriser::prelude::*;
+/// use engine::prelude::*;
+///
+/// let materials = load_mtl("../assets/cube/cube.mtl")?;
+///
+/// let red = &materials[0];
+/// assert_eq!(red.name, "Red");
+/// assert_eq!(red.diffuse, Colour::RED);
+/// assert_eq!(red.shininess, 32.0);
+///
+/// // Texture maps are loaded relative to the library.
+/// let dice = load_mtl("../assets/dice/cube.mtl")?;
+/// assert!(dice[0].diffuse_texture.is_some());
+/// # Ok(())
+/// # }
+/// ```
 pub fn load_mtl(path: impl AsRef<std::path::Path>) -> Result<Vec<Material>, MtlError> {
     let path = path.as_ref();
     let mtl_data = std::fs::read_to_string(path).map_err(|source| MtlError::Io {
@@ -122,7 +165,24 @@ fn load_texture(texture_path: &str, mtl_path: &Path) -> Result<TextureSampler, T
 
 /// An error loading an MTL material library with [`load_mtl`].
 ///
-/// Line numbers count from 1.
+/// Line numbers count from 1. [`load_mtl`] lists when each variant occurs.
+///
+/// Its [`Display`](std::fmt::Display) form is a one-line message that starts with the line number,
+/// where there is one, and doesn't include the cause, such as ``line 2: `Kd` statement has too few
+/// values``. The cause is the [`source`](std::error::Error::source): the [`std::io::Error`] for
+/// [`MtlError::Io`], the [`std::num::ParseFloatError`] for [`MtlError::InvalidNumber`], and the
+/// [`TextureError`] for [`MtlError::Texture`]. [`MtlError::MissingValues`] has no source.
+///
+/// # Examples
+///
+/// ```
+/// use engine::prelude::*;
+///
+/// let error = load_mtl("missing.mtl").unwrap_err();
+///
+/// assert_eq!(error.to_string(), "failed to read `missing.mtl`");
+/// assert!(matches!(error, MtlError::Io { .. }));
+/// ```
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum MtlError {
