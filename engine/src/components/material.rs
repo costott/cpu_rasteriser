@@ -17,13 +17,11 @@ use crate::prelude::*;
 /// use cpu_rasteriser::prelude::*;
 /// use engine::prelude::*;
 ///
-/// let gold = Material::new_simple(
-///     "gold".to_owned(),
-///     Colour::new(0.25, 0.2, 0.07, 1.0),
-///     Colour::new(0.75, 0.6, 0.23, 1.0),
-///     Colour::new(0.63, 0.56, 0.37, 1.0),
-///     51.2,
-/// );
+/// let gold = Material::new("gold".to_owned())
+///     .with_ambient(Colour::new(0.25, 0.2, 0.07, 1.0))
+///     .with_diffuse(Colour::new(0.75, 0.6, 0.23, 1.0))
+///     .with_specular(Colour::new(0.63, 0.56, 0.37, 1.0))
+///     .with_shininess(51.2);
 ///
 /// // A Blinn-Phong specular term, where `n_dot_h` is the cosine of the angle between the normal
 /// // and the half vector.
@@ -55,7 +53,101 @@ pub struct Material {
     pub normal_texture: Option<TextureSampler>,
 }
 impl Material {
-    /// Creates a material with the given colours, shininess, and textures.
+    /// Creates a material with white ambient, diffuse, and specular colours, zero shininess, and
+    /// no textures.
+    ///
+    /// These are the values [`load_mtl`] starts each material with. Set the others with the
+    /// `with_` methods, such as [`with_diffuse`](Material::with_diffuse).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let red = Material::new("red".to_owned());
+    /// assert_eq!(red.ambient, Colour::WHITE);
+    /// assert_eq!(red.shininess, 0.0);
+    /// assert!(red.diffuse_texture.is_none());
+    /// ```
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            ambient: Colour::WHITE,
+            diffuse: Colour::WHITE,
+            specular: Colour::WHITE,
+            shininess: 0.0,
+            ambient_texture: None,
+            diffuse_texture: None,
+            specular_texture: None,
+            normal_texture: None,
+        }
+    }
+
+    /// Sets the ambient colour.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let dim = Material::new("dim".to_owned()).with_ambient(Colour::new(0.1, 0.1, 0.1, 1.0));
+    /// assert_eq!(dim.ambient, Colour::new(0.1, 0.1, 0.1, 1.0));
+    /// ```
+    pub fn with_ambient(mut self, ambient: Colour) -> Self {
+        self.ambient = ambient;
+        self
+    }
+
+    /// Sets the diffuse colour.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let red = Material::new("red".to_owned()).with_diffuse(Colour::RED);
+    /// assert_eq!(red.diffuse, Colour::RED);
+    /// ```
+    pub fn with_diffuse(mut self, diffuse: Colour) -> Self {
+        self.diffuse = diffuse;
+        self
+    }
+
+    /// Sets the specular colour.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let matte = Material::new("matte".to_owned()).with_specular(Colour::BLACK);
+    /// assert_eq!(matte.specular, Colour::BLACK);
+    /// ```
+    pub fn with_specular(mut self, specular: Colour) -> Self {
+        self.specular = specular;
+        self
+    }
+
+    /// Sets the shininess.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engine::prelude::*;
+    ///
+    /// let glossy = Material::new("glossy".to_owned()).with_shininess(64.0);
+    /// assert_eq!(glossy.shininess, 64.0);
+    /// ```
+    pub fn with_shininess(mut self, shininess: f32) -> Self {
+        self.shininess = shininess;
+        self
+    }
+
+    /// Sets the ambient colour texture.
     ///
     /// # Examples
     ///
@@ -73,98 +165,89 @@ impl Material {
     ///     FilterMode::Nearest,
     /// );
     ///
-    /// let floor = Material::new(
-    ///     "floor".to_owned(),
-    ///     Colour::BLACK,
-    ///     Colour::WHITE,
-    ///     Colour::BLACK,
-    ///     1.0,
-    ///     None,
-    ///     Some(checker),
-    ///     None,
-    ///     None,
+    /// let floor = Material::new("floor".to_owned()).with_ambient_texture(checker);
+    /// assert!(floor.ambient_texture.is_some());
+    /// ```
+    pub fn with_ambient_texture(mut self, texture: TextureSampler) -> Self {
+        self.ambient_texture = Some(texture);
+        self
+    }
+
+    /// Sets the diffuse colour texture.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use cpu_rasteriser::prelude::*;
+    /// use engine::prelude::*;
+    ///
+    /// let checker = TextureSampler::new(
+    ///     Arc::from([Colour::BLACK, Colour::WHITE, Colour::WHITE, Colour::BLACK]),
+    ///     2,
+    ///     2,
+    ///     WrapMode::Repeat,
+    ///     FilterMode::Nearest,
     /// );
+    ///
+    /// let floor = Material::new("floor".to_owned()).with_diffuse_texture(checker);
     /// assert!(floor.diffuse_texture.is_some());
     /// ```
-    pub fn new(
-        name: String,
-        ambient: Colour,
-        diffuse: Colour,
-        specular: Colour,
-        shininess: f32,
-        ambient_texture: Option<TextureSampler>,
-        diffuse_texture: Option<TextureSampler>,
-        specular_texture: Option<TextureSampler>,
-        normal_texture: Option<TextureSampler>,
-    ) -> Self {
-        Self {
-            name,
-            ambient,
-            diffuse,
-            specular,
-            shininess,
-            ambient_texture,
-            diffuse_texture,
-            specular_texture,
-            normal_texture,
-        }
+    pub fn with_diffuse_texture(mut self, texture: TextureSampler) -> Self {
+        self.diffuse_texture = Some(texture);
+        self
     }
 
-    /// Creates an untextured material with the given colours and shininess.
+    /// Sets the specular colour texture.
     ///
     /// # Examples
     ///
     /// ```
+    /// use std::sync::Arc;
+    ///
     /// use cpu_rasteriser::prelude::*;
     /// use engine::prelude::*;
     ///
-    /// let matte = Material::new_simple(
-    ///     "matte".to_owned(),
-    ///     Colour::BLACK,
-    ///     Colour::new(0.5, 0.5, 0.5, 1.0),
-    ///     Colour::BLACK,
-    ///     0.0,
+    /// let checker = TextureSampler::new(
+    ///     Arc::from([Colour::BLACK, Colour::WHITE, Colour::WHITE, Colour::BLACK]),
+    ///     2,
+    ///     2,
+    ///     WrapMode::Repeat,
+    ///     FilterMode::Nearest,
     /// );
-    /// assert!(matte.diffuse_texture.is_none() && matte.normal_texture.is_none());
+    ///
+    /// let floor = Material::new("floor".to_owned()).with_specular_texture(checker);
+    /// assert!(floor.specular_texture.is_some());
     /// ```
-    pub fn new_simple(
-        name: String,
-        ambient: Colour,
-        diffuse: Colour,
-        specular: Colour,
-        shininess: f32,
-    ) -> Self {
-        Self::new(
-            name, ambient, diffuse, specular, shininess, None, None, None, None,
-        )
+    pub fn with_specular_texture(mut self, texture: TextureSampler) -> Self {
+        self.specular_texture = Some(texture);
+        self
     }
 
-    /// Creates a material with white ambient, diffuse, and specular colours, zero shininess, and
-    /// no textures.
-    ///
-    /// These are the values [`load_mtl`] starts each material with.
+    /// Sets the normal or bump texture.
     ///
     /// # Examples
     ///
     /// ```
+    /// use std::sync::Arc;
+    ///
     /// use cpu_rasteriser::prelude::*;
     /// use engine::prelude::*;
     ///
-    /// let mut red = Material::named("red".to_owned());
-    /// red.diffuse = Colour::RED;
-    /// assert_eq!(red.ambient, Colour::WHITE);
+    /// let checker = TextureSampler::new(
+    ///     Arc::from([Colour::BLACK, Colour::WHITE, Colour::WHITE, Colour::BLACK]),
+    ///     2,
+    ///     2,
+    ///     WrapMode::Repeat,
+    ///     FilterMode::Nearest,
+    /// );
+    ///
+    /// let floor = Material::new("floor".to_owned()).with_normal_texture(checker);
+    /// assert!(floor.normal_texture.is_some());
     /// ```
-    pub fn named(name: String) -> Self {
-        Self::new(
-            name,
-            Colour::WHITE,
-            Colour::WHITE,
-            Colour::WHITE,
-            0.0,
-            None,
-            None,
-            None,
-            None,
-        )
+    pub fn with_normal_texture(mut self, texture: TextureSampler) -> Self {
+        self.normal_texture = Some(texture);
+        self
     }
 }

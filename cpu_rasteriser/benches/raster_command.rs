@@ -355,14 +355,12 @@ where
 
                 let varyings = V::simd_extract_all(&fragment_simd.varyings);
 
-                for lane in 0..8 {
+                for (lane, varying) in varyings.iter().enumerate() {
                     if mask & (1 << lane) == 0 {
                         continue;
                     }
 
-                    let src = self
-                        .shader
-                        .shade(varyings[lane].clone(), self.uniforms.as_ref());
+                    let src = self.shader.shade(varying.clone(), self.uniforms.as_ref());
 
                     let colour = match self.blend_state {
                         Some(blend_state) => {

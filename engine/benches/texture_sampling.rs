@@ -399,9 +399,9 @@ fn make_random_uvs(count: usize) -> Vec<Vec2> {
 
 criterion_group!(
     benches,
-    // benchmark_sampling,
-    // benchmark_linear_implementations,
-    // benchmark_uv_patterns,
+    benchmark_sampling,
+    benchmark_linear_implementations,
+    benchmark_uv_patterns,
     benchmark_simd_sampling,
     benchmark_simd_linear_implementations,
     benchmark_simd_uv_patterns,

@@ -11,7 +11,7 @@ sources:
   - cpu_rasteriser/src/lib.rs
   - engine/src/lib.rs
   - rasteriser_macros/src/lib.rs
-verified: 3c44933
+verified: 4ad37b2
 ---
 
 # Testing, benchmarks and build flags
@@ -37,7 +37,7 @@ There is no custom `[profile.release]`. The only formatting configuration is rus
 |---|---|
 | `cpu_rasteriser/benches/rasterise_segment.rs` | Scanline rasterisation, scalar and SIMD, across triangle sizes, shapes and bounds: bare overhead and compute, fragment callbacks with depth writes and full shading, throughput, a scalar against SIMD shader comparison, and 8-pixel framebuffer stores |
 | `cpu_rasteriser/benches/raster_command.rs` | Whole raster commands in groups `pre_simd`, `simd_scalar_shader` and `simd_shader` |
-| `engine/benches/texture_sampling.rs` | Texture sampler variants. Some benchmark functions are defined but unused (clippy `dead_code`). |
+| `engine/benches/texture_sampling.rs` | Texture sampler variants, scalar and SIMD |
 
 **The `cpu_rasteriser` benches need the `internals` feature.** They use internal types (`FrameBuffer`, `DepthBuffer`, `Triangle2D`, `RasterVertex`, `Rect`) from the `#[doc(hidden)]` `internals` module, and declare `required-features = ["internals"]`, so cargo skips them, clippy included, unless the feature is on. Otherwise the feature only compiles in the three methods the benches use (`FrameBuffer::pixels`, `FrameBuffer::get_pixel_index_unchecked`, and `Triangle2D::new`, which the unit tests also use) and lifts the `expect(dead_code)` on items the re-exports make reachable, so it doesn't change the measured code.
 

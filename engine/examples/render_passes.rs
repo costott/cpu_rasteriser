@@ -255,7 +255,7 @@ impl FragmentShader<PostProcessVaryings> for GreyscaleFragmentShader {
     ) -> Colour {
         let colour = uniforms.texture.sample_linear_clamp(varyings.uv);
 
-        let luminance = colour.r as f32 * 0.299 + colour.g as f32 * 0.587 + colour.b as f32 * 0.114;
+        let luminance = colour.r * 0.299 + colour.g * 0.587 + colour.b * 0.114;
 
         Colour::new(luminance, luminance, luminance, colour.a)
     }
@@ -325,9 +325,9 @@ impl FragmentShader<PostProcessVaryings> for NaiveGaussianBlurFragmentShader {
             let sample_uv = uv + *offset * texel_size;
             let sample_colour = uniforms.texture.sample_nearest_clamp(sample_uv);
 
-            r += sample_colour.r as f32 * weight;
-            g += sample_colour.g as f32 * weight;
-            b += sample_colour.b as f32 * weight;
+            r += sample_colour.r * weight;
+            g += sample_colour.g * weight;
+            b += sample_colour.b * weight;
         }
 
         Colour::new(r, g, b, 1.0)
@@ -471,13 +471,11 @@ impl MultipassApp {
         teapot.transform.position = Vec3::new(0.0, -0.35, 0.0);
         teapot.calculate_vertex_normals();
 
-        let material = Material::new_simple(
-            "Polished Ceramic".to_string(),
-            Colour::from_u32(0x080c14),
-            Colour::from_u32(0xfcdcb8),
-            Colour::from_u32(0xffffff),
-            64.0,
-        );
+        let material = Material::new("Polished Ceramic".to_string())
+            .with_ambient(Colour::from_u32(0x080c14))
+            .with_diffuse(Colour::from_u32(0xfcdcb8))
+            .with_specular(Colour::from_u32(0xffffff))
+            .with_shininess(64.0);
 
         teapot.materials = vec![material];
         teapot.meshes[0].material_index = Some(0);
@@ -647,7 +645,7 @@ impl Application for MultipassApp {
 
         let scene = Arc::new(SceneUniforms {
             camera: self.camera,
-            light: self.light.clone(),
+            light: self.light,
         });
 
         let uniforms = PhongVertexUniforms {
