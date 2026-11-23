@@ -611,8 +611,8 @@ impl Mat4 {
             let mut pivot_row = col;
             let mut pivot_value = m[pivot_row][col].abs();
 
-            for row in (col + 1)..4 {
-                let value = m[row][col].abs();
+            for (row, m_row) in m.iter().enumerate().skip(col + 1) {
+                let value = m_row[col].abs();
                 if value > pivot_value {
                     pivot_row = row;
                     pivot_value = value;
@@ -670,6 +670,10 @@ impl Mat4 {
     /// let rotation = Mat4::rotate_y(0.5);
     /// assert_eq!(rotation.transpose(), Mat4::rotate_y(-0.5));
     /// ```
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "measured faster than the `array::from_fn` and `array::map` forms"
+    )]
     pub fn transpose(self) -> Self {
         let mut transposed = [[0.0; 4]; 4];
         for i in 0..4 {
@@ -684,6 +688,10 @@ impl Mat4 {
 impl Add for Mat4 {
     type Output = Self;
 
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "measured faster than the `array::from_fn` and `array::map` forms"
+    )]
     fn add(self, other: Self) -> Self {
         let mut result = [[0.0; 4]; 4];
         for i in 0..4 {
@@ -697,6 +705,10 @@ impl Add for Mat4 {
 impl Sub for Mat4 {
     type Output = Self;
 
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "measured faster than the `array::from_fn` and `array::map` forms"
+    )]
     fn sub(self, other: Self) -> Self {
         let mut result = [[0.0; 4]; 4];
         for i in 0..4 {
@@ -710,6 +722,10 @@ impl Sub for Mat4 {
 impl Mul<f32> for Mat4 {
     type Output = Self;
 
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "measured faster than the `array::from_fn` and `array::map` forms"
+    )]
     fn mul(self, scalar: f32) -> Self {
         let mut result = [[0.0; 4]; 4];
         for i in 0..4 {
@@ -723,6 +739,10 @@ impl Mul<f32> for Mat4 {
 impl Mul for Mat4 {
     type Output = Self;
 
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "measured faster than the `array::from_fn` and `array::map` forms"
+    )]
     fn mul(self, other: Self) -> Self {
         let mut result = [[0.0; 4]; 4];
         for i in 0..4 {
@@ -739,14 +759,9 @@ impl Mul<Vec4> for Mat4 {
     type Output = Vec4;
 
     fn mul(self, vec: Vec4) -> Vec4 {
-        let mut result = [0.0; 4];
-        for i in 0..4 {
-            result[i] = self.data[i][0] * vec.x
-                + self.data[i][1] * vec.y
-                + self.data[i][2] * vec.z
-                + self.data[i][3] * vec.w;
-        }
-        Vec4::new(result[0], result[1], result[2], result[3])
+        let [x, y, z, w] = self.data;
+        let dot = |row: [f32; 4]| row[0] * vec.x + row[1] * vec.y + row[2] * vec.z + row[3] * vec.w;
+        Vec4::new(dot(x), dot(y), dot(z), dot(w))
     }
 }
 

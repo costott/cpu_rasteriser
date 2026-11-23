@@ -534,13 +534,11 @@ impl BloomApp {
 
         teapot.calculate_vertex_normals();
 
-        let material = Material::new_simple(
-            "Polished Ceramic".to_string(),
-            Colour::new(0.01, 0.02, 0.04, 1.0),
-            Colour::new(0.08, 0.25, 0.5, 1.0),
-            Colour::WHITE,
-            64.0,
-        );
+        let material = Material::new("Polished Ceramic".to_string())
+            .with_ambient(Colour::new(0.01, 0.02, 0.04, 1.0))
+            .with_diffuse(Colour::new(0.08, 0.25, 0.5, 1.0))
+            .with_specular(Colour::WHITE)
+            .with_shininess(64.0);
 
         teapot.materials = vec![material];
         teapot.meshes[0].material_index = Some(0);
@@ -556,13 +554,11 @@ impl BloomApp {
 
         cube.calculate_vertex_normals();
 
-        let glass_material = Material::new_simple(
-            "Glass".to_string(),
-            Colour::new(0.01, 0.02, 0.04, 0.3),
-            Colour::new(0.08, 0.15, 0.2, 0.3),
-            Colour::new(1.0, 1.0, 1.0, 0.4),
-            128.0,
-        );
+        let glass_material = Material::new("Glass".to_string())
+            .with_ambient(Colour::new(0.01, 0.02, 0.04, 0.3))
+            .with_diffuse(Colour::new(0.08, 0.15, 0.2, 0.3))
+            .with_specular(Colour::new(1.0, 1.0, 1.0, 0.4))
+            .with_shininess(128.0);
 
         cube.materials = vec![glass_material];
         for mesh in cube.meshes.iter_mut() {
@@ -730,7 +726,7 @@ impl Application for BloomApp {
 
         let scene = Arc::new(SceneUniforms {
             camera: self.camera,
-            light: self.light.clone(),
+            light: self.light,
         });
 
         let uniforms = PhongVertexUniforms {

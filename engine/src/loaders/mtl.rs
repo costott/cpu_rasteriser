@@ -11,7 +11,7 @@ use crate::prelude::*;
 ///
 /// The file is read as statements, one per line, of whitespace-separated values:
 ///
-/// - `newmtl name` starts a material, with the defaults of [`Material::named`].
+/// - `newmtl name` starts a material, with the defaults of [`Material::new`].
 /// - `Ka`, `Kd`, and `Ks`, each followed by `r g b`, set the ambient, diffuse, and specular
 ///   colours, with alpha 1. `Ns` sets the shininess.
 /// - `map_Ka`, `map_Kd`, and `map_Ks` set the ambient, diffuse, and specular textures, and
@@ -99,7 +99,7 @@ pub fn load_mtl(path: impl AsRef<std::path::Path>) -> Result<Vec<Material>, MtlE
                         keyword: parts[0].to_owned(),
                     });
                 };
-                current_material = Some(Material::named(name.to_string()));
+                current_material = Some(Material::new(name.to_string()));
             }
             "Kd" => {
                 if let Some(material) = current_material.as_mut() {
@@ -258,14 +258,12 @@ mod tests {
 
         let materials = load_mtl(&path).unwrap();
 
-        let a = Material::new_simple(
-            "a".to_owned(),
-            Colour::new(0.1, 0.2, 0.3, 1.0),
-            Colour::new(0.4, 0.5, 0.6, 1.0),
-            Colour::new(0.7, 0.8, 0.9, 1.0),
-            32.0,
-        );
-        assert_eq!(materials, [a, Material::named("b".to_owned())]);
+        let a = Material::new("a".to_owned())
+            .with_ambient(Colour::new(0.1, 0.2, 0.3, 1.0))
+            .with_diffuse(Colour::new(0.4, 0.5, 0.6, 1.0))
+            .with_specular(Colour::new(0.7, 0.8, 0.9, 1.0))
+            .with_shininess(32.0);
+        assert_eq!(materials, [a, Material::new("b".to_owned())]);
     }
 
     #[test]

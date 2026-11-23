@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut frame = renderer.begin_render_pass(
             &mut render_target,
             RenderPassDescriptor {
-                viewport: viewport,
+                viewport,
                 colour_load_op: LoadOp::Clear(Colour::BLACK),
                 depth_load_op: None,
             },

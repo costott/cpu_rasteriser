@@ -404,14 +404,14 @@ where
                     .event(AppEvent::CloseRequested, &mut self.app_handle);
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    if let Some(key) = WinitInputMapper::map_winit_key_code(code) {
-                        let input_event = InputEvent::Key {
-                            key,
-                            state: WinitInputMapper::map_winit_element_state(event.state),
-                        };
-                        self.handle_input_event(input_event);
-                    }
+                if let PhysicalKey::Code(code) = event.physical_key
+                    && let Some(key) = WinitInputMapper::map_winit_key_code(code)
+                {
+                    let input_event = InputEvent::Key {
+                        key,
+                        state: WinitInputMapper::map_winit_element_state(event.state),
+                    };
+                    self.handle_input_event(input_event);
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -789,10 +789,10 @@ where
             self.handle_input_event(InputEvent::MouseMoved { x, y });
         }
 
-        if let Some((_, y)) = self.window.get_scroll_wheel() {
-            if y != 0.0 {
-                self.handle_input_event(InputEvent::MouseWheel { delta_y: y });
-            }
+        if let Some((_, y)) = self.window.get_scroll_wheel()
+            && y != 0.0
+        {
+            self.handle_input_event(InputEvent::MouseWheel { delta_y: y });
         }
     }
 

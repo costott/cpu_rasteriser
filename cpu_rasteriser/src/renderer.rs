@@ -1833,10 +1833,6 @@ where
             fragment_uniforms,
         }
     }
-
-    fn primitive_mode(&self) -> PrimitiveMode {
-        self.primitive.primitive_mode
-    }
 }
 impl<V: Clone, U> std::fmt::Debug for DrawCall<'_, V, U> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

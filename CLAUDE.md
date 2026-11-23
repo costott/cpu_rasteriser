@@ -39,20 +39,18 @@ Run these from the workspace root.
 | Task | Command |
 |---|---|
 | Format | `cargo fmt --all` |
-| Lint | `cargo clippy --workspace --all-targets --features cpu_rasteriser/internals` (there are existing warnings; changed code must add none; the feature includes the benches) |
+| Lint | `cargo clippy --workspace --all-targets --features cpu_rasteriser/internals -- -D warnings` (the workspace is clippy-clean and must stay so; the feature includes the benches) |
 | Test | `cargo test --workspace --no-fail-fast` |
 | Bench | `cargo bench -p cpu_rasteriser --features internals --bench rasterise_segment` (also `raster_command`, and `-p engine --bench texture_sampling`) |
 | Example | `cargo run --release -p <crate> --example <name>` (see the READMEs) |
 
 `target-cpu=native` applies to every build in the workspace, whichever directory cargo runs from; see `testing-and-benchmarks.md`. Compare performance only between builds with the same build configuration.
 
-**Test baseline**, so new failures can be told apart from old ones:
-- 88 tests pass in `cpu_rasteriser`.
-- 3 fail: `graphics::triangle::tests::rasterise_simd_matches_scalar` ([#21](https://github.com/costott/cpu_rasteriser/issues/21)), `renderer::tests::blend_factor_resolve` and `renderer::tests::blend_state_reverse_subtract` ([#18](https://github.com/costott/cpu_rasteriser/issues/18)).
-- 100 doctests pass in `cpu_rasteriser` and 84 in `engine`; none are ignored.
-- The `engine` tests pass.
+**Test baseline**, so new failures can be told apart from old ones: every test and doctest in the workspace passes, and none are ignored, except these known failures in `cpu_rasteriser`:
+- `graphics::triangle::tests::rasterise_simd_matches_scalar` ([#21](https://github.com/costott/cpu_rasteriser/issues/21)).
+- `renderer::tests::blend_factor_resolve` and `renderer::tests::blend_state_reverse_subtract` ([#18](https://github.com/costott/cpu_rasteriser/issues/18)).
 
-Update this baseline whenever it changes.
+Update this list when a known failure is fixed or a new one is accepted.
 
 ## Project conventions
 

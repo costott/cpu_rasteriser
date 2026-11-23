@@ -108,29 +108,23 @@ impl TestSceneApp {
         );
         let camera_controller = FirstPersonControls::new(&camera);
 
-        let floor_material = Material::new_simple(
-            "Floor".to_string(),
-            Colour::from_u32(0x808080),
-            Colour::from_u32(0x404040),
-            Colour::from_u32(0xffffff),
-            1.0,
-        );
+        let floor_material = Material::new("Floor".to_string())
+            .with_ambient(Colour::from_u32(0x808080))
+            .with_diffuse(Colour::from_u32(0x404040))
+            .with_specular(Colour::from_u32(0xffffff))
+            .with_shininess(1.0);
 
-        let red_plastic = Material::new_simple(
-            "Red Plastic".to_string(),
-            Colour::from_u32(0xff0000),
-            Colour::from_u32(0x990000),
-            Colour::from_u32(0xffffff),
-            64.0,
-        );
+        let red_plastic = Material::new("Red Plastic".to_string())
+            .with_ambient(Colour::from_u32(0xff0000))
+            .with_diffuse(Colour::from_u32(0x990000))
+            .with_specular(Colour::from_u32(0xffffff))
+            .with_shininess(64.0);
 
-        let polished_brass = Material::new_simple(
-            "Polished Brass".to_string(),
-            Colour::from_u32(0x543808),
-            Colour::from_u32(0x8b7500),
-            Colour::from_u32(0xffffff),
-            21.8,
-        );
+        let polished_brass = Material::new("Polished Brass".to_string())
+            .with_ambient(Colour::from_u32(0x543808))
+            .with_diffuse(Colour::from_u32(0x8b7500))
+            .with_specular(Colour::from_u32(0xffffff))
+            .with_shininess(21.8);
 
         let mut floor_model = Model::new(
             vec![Mesh::cube(Colour::from_u32(0x808080), Some(0))],

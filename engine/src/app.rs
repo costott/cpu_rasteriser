@@ -72,18 +72,10 @@ pub enum CursorGrab {
 /// assert_eq!(game.window_state().cursor.grab, CursorGrab::Locked);
 /// assert!(WindowState::default().cursor.visible);
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WindowState {
     /// The cursor's visibility and grab mode.
     pub cursor: WindowCursorSettings,
-}
-
-impl Default for WindowState {
-    fn default() -> Self {
-        Self {
-            cursor: WindowCursorSettings::default(),
-        }
-    }
 }
 
 /// The cursor settings in a [`WindowState`].
@@ -569,7 +561,7 @@ pub enum AppEvent {
 /// handle.request_exit();
 /// assert!(handle.should_exit());
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct AppHandle {
     exit_requested: bool,
 }
@@ -594,12 +586,5 @@ impl AppHandle {
     /// See [`AppHandle`].
     pub fn should_exit(&self) -> bool {
         self.exit_requested
-    }
-}
-impl Default for AppHandle {
-    fn default() -> Self {
-        Self {
-            exit_requested: false,
-        }
     }
 }

@@ -22,7 +22,7 @@ use crate::prelude::*;
 /// use cpu_rasteriser::prelude::*;
 /// use engine::prelude::*;
 ///
-/// let red = Material::named("red".to_owned());
+/// let red = Material::new("red".to_owned());
 /// let model = Model::new(
 ///     vec![Mesh::cube(Colour::WHITE, Some(0)), Mesh::sphere(0.5, 8, 16, Colour::WHITE, None)],
 ///     vec![red],
@@ -81,14 +81,14 @@ impl<V: Clone> Model<V> {
 
     fn validate(&self) -> Result<(), ModelError> {
         for (i, mesh) in self.meshes.iter().enumerate() {
-            if let Some(material_index) = mesh.material_index {
-                if material_index >= self.materials.len() {
-                    return Err(ModelError::InvalidMaterialIndex {
-                        mesh: i,
-                        material: material_index,
-                        material_count: self.materials.len(),
-                    });
-                }
+            if let Some(material_index) = mesh.material_index
+                && material_index >= self.materials.len()
+            {
+                return Err(ModelError::InvalidMaterialIndex {
+                    mesh: i,
+                    material: material_index,
+                    material_count: self.materials.len(),
+                });
             }
         }
         Ok(())
@@ -110,7 +110,7 @@ impl<V: Clone> Model<V> {
     ///
     /// let model = Model::new(
     ///     vec![Mesh::cube(Colour::WHITE, Some(0)), Mesh::cube(Colour::WHITE, None)],
-    ///     vec![Material::named("red".to_owned())],
+    ///     vec![Material::new("red".to_owned())],
     ///     ModelTransform::new(Vec3::ZERO, Vec3::ZERO, Vec3::ONE),
     /// )?;
     ///
@@ -179,13 +179,11 @@ impl<V: Clone> Model<V> {
     /// }
     ///
     /// // A cube stretched to cover the whole view.
-    /// let red = Material::new_simple(
-    ///     "red".to_owned(),
-    ///     Colour::BLACK,
-    ///     Colour::RED,
-    ///     Colour::BLACK,
-    ///     1.0,
-    /// );
+    /// let red = Material::new("red".to_owned())
+    ///     .with_ambient(Colour::BLACK)
+    ///     .with_diffuse(Colour::RED)
+    ///     .with_specular(Colour::BLACK)
+    ///     .with_shininess(1.0);
     /// let model = Model::new(
     ///     vec![Mesh::cube(Colour::WHITE, Some(0))],
     ///     vec![red],
@@ -278,13 +276,11 @@ impl<V: Clone> Model<V> {
     /// }
     ///
     /// // A cube stretched to cover the whole view.
-    /// let red = Material::new_simple(
-    ///     "red".to_owned(),
-    ///     Colour::BLACK,
-    ///     Colour::RED,
-    ///     Colour::BLACK,
-    ///     1.0,
-    /// );
+    /// let red = Material::new("red".to_owned())
+    ///     .with_ambient(Colour::BLACK)
+    ///     .with_diffuse(Colour::RED)
+    ///     .with_specular(Colour::BLACK)
+    ///     .with_shininess(1.0);
     /// let model = Model::new(
     ///     vec![Mesh::cube(Colour::WHITE, Some(0))],
     ///     vec![red],

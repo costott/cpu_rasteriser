@@ -823,11 +823,11 @@ fn bench_framebuffer_set(c: &mut Criterion) {
         b.iter(|| {
             let index = 100_000;
 
-            for lane in 0..8 {
+            for (lane, &colour) in colours.iter().enumerate() {
                 // SAFETY: `100_000` is an in-bounds pixel of the 640 × 360 framebuffer, and
                 // `lane < 8`.
                 unsafe {
-                    framebuffer.set_pixel_index_unchecked(index + lane, colours[lane]);
+                    framebuffer.set_pixel_index_unchecked(index + lane, colour);
                 }
             }
 
@@ -840,8 +840,8 @@ fn bench_framebuffer_set(c: &mut Criterion) {
             let x = 100;
             let y = 150;
 
-            for lane in 0..8 {
-                framebuffer.set_pixel(Vec2::new((x + lane) as f32, y as f32), colours[lane]);
+            for (lane, &colour) in colours.iter().enumerate() {
+                framebuffer.set_pixel(Vec2::new((x + lane) as f32, y as f32), colour);
             }
 
             black_box(framebuffer.pixels());
