@@ -217,6 +217,21 @@ impl Renderer {
         self.tile_pool.recycle(framebuffer, depthbuffer);
     }
 }
+/// Tile machinery for the benchmarks.
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+impl Renderer {
+    /// Returns the pool the renderer's passes take tile buffers from and recycle them into.
+    pub fn tile_pool_mut(&mut self) -> &mut TilePool {
+        &mut self.tile_pool
+    }
+
+    /// Merges a rendered tile into `render_target` and recycles its buffers into the renderer's
+    /// pool, as a render pass does for each tile.
+    pub fn merge_tile_result(&mut self, result: TileResult, render_target: &mut RenderTarget) {
+        self.merge_tile(result, render_target);
+    }
+}
 impl std::fmt::Debug for Renderer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Renderer")
@@ -225,7 +240,8 @@ impl std::fmt::Debug for Renderer {
     }
 }
 
-fn render_tile(tile: Tile) -> TileResult {
+/// Rasterises every command binned into `tile`, in order, into the tile's own buffers.
+pub fn render_tile(tile: Tile) -> TileResult {
     let mut tile = tile;
 
     for command in tile.commands {
@@ -244,7 +260,8 @@ fn render_tile(tile: Tile) -> TileResult {
 }
 
 /// A tile result is the output of rendering a single tile, used for merging into the main framebuffer.
-struct TileResult {
+#[derive(Debug)]
+pub struct TileResult {
     bounds: Rect,
     framebuffer: FrameBuffer,
     depthbuffer: Option<DepthBuffer>,
@@ -2230,15 +2247,25 @@ trait RenderPassCommand {
 /// tile they overlap.
 ///
 /// Tiles can then be rasterised independently in parallel.
-struct TileBinner {
-    tiles: Vec<Tile>,
+#[derive(Debug)]
+pub struct TileBinner {
+    /// The tiles covering the render target, row by row from the top-left.
+    pub tiles: Vec<Tile>,
     tiles_x: usize,
     tiles_y: usize,
 }
 impl TileBinner {
-    const TILE_SIZE: i32 = 64;
+    /// The width and height of a tile, in pixels; tiles at the right and bottom edges can be
+    /// smaller.
+    pub const TILE_SIZE: i32 = 64;
 
-    fn new(
+    /// Creates the tiles covering `render_target`, each seeded by the load operations and
+    /// taking its buffers from `pool`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `depth_load_op` is `Some` and `render_target` has no depth buffer.
+    pub fn new(
         render_target: &RenderTarget,
         colour_load_op: &LoadOp<Colour>,
         depth_load_op: &Option<LoadOp<f32>>,
@@ -2276,7 +2303,8 @@ impl TileBinner {
         }
     }
 
-    fn bin_command(&mut self, command: Arc<dyn RasterCommand>) {
+    /// Adds `command` to every tile its bounding box overlaps, after the commands already there.
+    pub fn bin_command(&mut self, command: Arc<dyn RasterCommand>) {
         let (mins, maxs) = command.bounding_box();
 
         let min_tile_x = (mins.x as i32 / Self::TILE_SIZE).max(0);
@@ -2299,13 +2327,18 @@ impl TileBinner {
     }
 }
 
-struct Tile {
-    bounds: Rect,
+/// One tile of a render target: its region, its own buffers, and the commands binned into it.
+pub struct Tile {
+    /// The region of the render target the tile covers.
+    pub bounds: Rect,
 
-    framebuffer: FrameBuffer,
-    depthbuffer: Option<DepthBuffer>,
+    /// The tile's colour buffer, exactly `bounds` in size.
+    pub framebuffer: FrameBuffer,
+    /// The tile's depth buffer, exactly `bounds` in size, if the pass has one.
+    pub depthbuffer: Option<DepthBuffer>,
 
-    commands: Vec<Arc<dyn RasterCommand>>,
+    /// The commands binned into the tile, in submission order.
+    pub commands: Vec<Arc<dyn RasterCommand>>,
 }
 impl Tile {
     fn new(
@@ -2375,8 +2408,17 @@ impl Tile {
         }
     }
 }
+impl std::fmt::Debug for Tile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tile")
+            .field("bounds", &self.bounds)
+            .field("commands", &self.commands.len())
+            .finish_non_exhaustive()
+    }
+}
 
-trait RasterCommand: Send + Sync {
+/// A draw command that a tile rasterises.
+pub trait RasterCommand: Send + Sync {
     /// Rasterises the part of the command inside `bounds` into tile-local buffers.
     ///
     /// `framebuffer` and `depthbuffer` must be exactly `bounds` in size, with their origin at
@@ -2395,13 +2437,14 @@ trait RasterCommand: Send + Sync {
 
 /// Tile buffers reused across render passes. Buffers taken from the pool keep stale contents, so
 /// callers must overwrite or clear them.
-#[derive(Default)]
-struct TilePool {
+#[derive(Debug, Default)]
+pub struct TilePool {
     framebuffers: Vec<FrameBuffer>,
     depthbuffers: Vec<DepthBuffer>,
 }
 impl TilePool {
-    fn take_framebuffer(&mut self, width: usize, height: usize) -> FrameBuffer {
+    /// Returns a `width` × `height` framebuffer: a recycled one, resized, if the pool has any.
+    pub fn take_framebuffer(&mut self, width: usize, height: usize) -> FrameBuffer {
         match self.framebuffers.pop() {
             Some(mut framebuffer) => {
                 framebuffer.resize(width, height);
@@ -2411,7 +2454,8 @@ impl TilePool {
         }
     }
 
-    fn take_depthbuffer(&mut self, width: usize, height: usize) -> DepthBuffer {
+    /// Returns a `width` × `height` depth buffer: a recycled one, resized, if the pool has any.
+    pub fn take_depthbuffer(&mut self, width: usize, height: usize) -> DepthBuffer {
         match self.depthbuffers.pop() {
             Some(mut depthbuffer) => {
                 depthbuffer.resize(width, height);
@@ -2421,7 +2465,8 @@ impl TilePool {
         }
     }
 
-    fn recycle(&mut self, framebuffer: FrameBuffer, depthbuffer: Option<DepthBuffer>) {
+    /// Returns a tile's buffers to the pool, keeping their contents.
+    pub fn recycle(&mut self, framebuffer: FrameBuffer, depthbuffer: Option<DepthBuffer>) {
         self.framebuffers.push(framebuffer);
         if let Some(depthbuffer) = depthbuffer {
             self.depthbuffers.push(depthbuffer);

@@ -449,16 +449,22 @@ impl<V: Interpolate> Edge<V> {
     }
 }
 
+/// A triangle in clip space: the vertex shader's output for a triangle, and the form clipping
+/// returns its pieces in.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriangleClip<V>
 where
     V: Interpolate,
 {
+    /// The first vertex.
     pub a: ClipVertex<V>,
+    /// The second vertex.
     pub b: ClipVertex<V>,
+    /// The third vertex.
     pub c: ClipVertex<V>,
 }
 impl<V: Interpolate> TriangleClip<V> {
+    /// Creates a triangle from its three vertices.
     pub fn new(a: ClipVertex<V>, b: ClipVertex<V>, c: ClipVertex<V>) -> Self {
         Self { a, b, c }
     }

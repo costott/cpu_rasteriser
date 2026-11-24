@@ -36,23 +36,30 @@ impl<V: Interpolate> RasterVertex<V> {
     }
 }
 
+/// A vertex in clip space, before the perspective divide: the output of a
+/// [`VertexShader`] and a corner of a [`TriangleClip`](crate::graphics::triangle::TriangleClip).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipVertex<V>
 where
     V: Interpolate,
 {
+    /// The clip-space position.
     pub position: Vec4,
+    /// The vertex shader's varyings, not yet divided by `position.w`.
     pub varyings: V,
 }
 impl<V: Interpolate> ClipVertex<V> {
-    #[expect(
-        dead_code,
-        reason = "unused internally; kept rather than deleted for now"
+    /// Creates a vertex from its fields.
+    #[cfg_attr(
+        not(feature = "internals"),
+        expect(dead_code, reason = "unused; kept rather than deleted for now")
     )]
     pub fn new(position: Vec4, varyings: V) -> Self {
         Self { position, varyings }
     }
 
+    /// Linearly interpolates the position and the varyings from `self` (at `t = 0`) to `other`
+    /// (at `t = 1`).
     pub fn interpolate(&self, other: &Self, t: f32) -> Self
     where
         V: Interpolate,

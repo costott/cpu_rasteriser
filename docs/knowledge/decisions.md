@@ -11,44 +11,26 @@ sources:
   - engine/src/loaders/obj.rs
   - engine/src/loaders/mtl.rs
   - README.md
-verified: ffed0e7
+verified: b3b02d8
 ---
 
-# Design decisions and history
+# Design decisions
 
 Decisions whose reasoning isn't obvious from the current code. Each entry gives its evidence. **Inferred** marks reasoning that isn't stated anywhere.
 
-## Timeline
-
-| Date (2026) | Milestone | Evidence |
-|---|---|---|
-| 16–18 Jul | 2D triangle rasteriser, z-buffer, 3D pipeline, clipping, Gouraud and Phong shading, perspective-correct scanline interpolation | early commits |
-| 26 Jul | Tile-based multithreaded rasterisation; converted to a Cargo workspace | `multithreaded_rasterisation` branch |
-| 27–30 Jul | Generic shader traits and per-object uniforms (PR #1); draw-call design (PR #2) | |
-| 1 Aug | Pipelines with frame-based flow (PR #3) | |
-| 2 Aug | Engine split into its own crate (PR #4) | |
-| 3 Aug | Textures (PR #5) | |
-| 13 Aug | Vertex uniforms owned per draw, v0.3.0 (PR #6) | |
-| 14 Aug | Engine backends (PR #7); queued draw-call lifetime decoupled from the renderer, v0.4.0 | |
-| 17 Aug | Mandelbulb example (PR #11); depth and blend state | |
-| 18 Aug | Render targets and multipass, rasteriser v0.5.0 and engine v0.2.0 (PR #14); HDR float colour; bloom example | |
-| 25 Aug | Criterion benches | |
-| 30 Aug–1 Sep | SIMD pipeline (PR #17) | |
-
-## Decisions
-
 - **Tiles own their buffers.** This avoids all locking during fragment processing, at the cost of load and merge copies. *Evidence:* README "Parallel Tile-Based Rendering".
-  - Tiles were moved from per-triangle allocation to per-frame allocation in `e876c98` ("Preallocate tiles at the start of the frame…"). Their buffers now come from a pool that persists across passes, so a warm pass allocates none.
+  - Their buffers come from a pool that persists across passes, so a warm pass allocates none.
 - **`RenderTarget` holds no sampling state.** A render target is its framebuffer and depth buffer; it offers allocation-free reads (`write_pixels`, `write_pixels_u32`) and nothing shaped around one use. Reusing texture storage across frames is a texture concern, so it is part of `engine`'s `Texture` (`from_render_target`, `update_from`): a texture whose pixels come from a render target, not a separate type. *Evidence:* the commit that introduced `RenderTarget::write_pixels`.
 - **Raster commands are `Arc`-shared across tiles.** This avoids cloning triangles, shaders and uniforms into every overlapping tile. *Evidence:* `d1a643a` "Optimize tile command storage with Arc".
 - **Draw commands are type-erased (`Box<dyn RenderPassCommand>`)** so one pass can contain draws from pipelines with different shader types, scalar and SIMD. *Evidence:* the rustdoc on `RenderPassCommand`; README "multiple pipelines per render pass".
 - **Shaders are generic traits with associated types,** not runtime-configurable shading. This gives compile-time type safety between vertex output and fragment input. *Evidence:* README "Generic Shader Pipeline Architecture", which credits the `black` project as inspiration.
-- **Explicit render targets and passes** replaced frame-based rendering in v0.5.0. Rendering commands then no longer share a frame's lifetime, which enables multipass and render-to-texture. *Evidence:* `5e069d7`; README "Pipeline and Render Pass Architecture".
-- **Vertex uniforms are moved into each draw** (v0.3.0, `cad6fe3`), and the queued draw-call lifetime is decoupled from the renderer (v0.4.0, `a8a78bb`). **Inferred:** this lets callers build uniforms per draw without keeping them borrowed for the whole pass.
+- **Rendering is organised as explicit render targets and passes.** Rendering commands don't share a frame's lifetime, which enables multipass and render-to-texture. *Evidence:* `5e069d7`; README "Pipeline and Render Pass Architecture".
+- **Each draw owns its vertex uniforms,** and a queued draw call's lifetime is decoupled from the renderer (`cad6fe3`, `a8a78bb`). **Inferred:** this lets callers build uniforms per draw without keeping them borrowed for the whole pass.
 - **Rasteriser and engine are separate crates.** This mirrors graphics API versus engine separation; the rasteriser has no scene or asset concepts. *Evidence:* `5c64d3f`; README "Architecture".
 - **SIMD is a separate pipeline type, selected at compile time,** and `FragmentShaderSimd` is independent of `FragmentShader`. SIMD shaders don't have to provide a scalar version, and the API is explicit about which path runs. *Evidence:* README "SIMD Rendering"; trait docs.
 - **The SIMD depth variants are const-generic,** which removes per-group depth branches. *Evidence:* `rasterise_impl<TEST_DEPTH, WRITE_DEPTH>`. **Inferred:** the motivation was performance; no record of a measurement exists.
 - **The crate root is the public API.** All of `cpu_rasteriser`'s modules are private, and each public item is re-exported explicitly at the root, so the public surface is a deliberate list rather than a side effect of module visibility. The prelude repeats the list, minus `wide`, for glob import. The benches' internal types sit behind a default-off `internals` feature in a `#[doc(hidden)]` module, which keeps them out of the documented API. A feature was chosen over a `--cfg` flag because setting `RUSTFLAGS` overrides the workspace's `target-cpu=native`. *Evidence:* `cpu_rasteriser/src/lib.rs`; the `internals` feature in `cpu_rasteriser/Cargo.toml`.
+- **Benchmarks come in two tiers.** Microbenchmarks isolate one piece of the render path, so a regression points at its cause. Frame benchmarks time whole passes through the public API, because tiling and threading show only there, and they check their output so that a workload can't silently stop drawing. The raster commands have no microbenchmark: it would have to time a copy of them, which drifts from production, or call the real ones, and exposing those would make an unsound call reachable, since `RasterCommand::rasterise` is a safe function whose SIMD implementation needs buffers exactly `bounds` in size ([#69](https://github.com/costott/cpu_rasteriser/issues/69)). The frame benchmarks time the real commands instead. *Evidence:* `cpu_rasteriser/benches/`.
 - **Errors are for the environment, panics for bugs.** Failures a correct program can still meet (I/O, malformed files, the windowing system) return per-domain `thiserror` enums, `#[non_exhaustive]` and with causes chained through `source()`. A broken documented precondition panics where it is detected, on the calling thread, and is documented under `# Panics`. *Evidence:* `EngineError` (`engine/src/engine.rs`), `ObjError` and `MtlError` (`engine/src/loaders/`).
 - **`wide` is re-exported from `cpu_rasteriser`** so that code generated by `#[derive(SimdInterpolate)]` doesn't force users to depend on `wide`. *Evidence:* `6fbf4d4`.
 - **Colours are unclamped `f32` (HDR).** They are clamped only on conversion to `u32`, which allows bloom and similar effects. *Evidence:* `55bfb21` "add HDR floating-point colour support".

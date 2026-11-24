@@ -4,8 +4,17 @@ use crate::graphics::vertex::{ClipVertex, RasterVertex};
 use crate::prelude::*;
 use crate::renderer::CullingMode;
 
+/// Turns model-space triangles into screen-space ones: vertex shading, clipping, the viewport
+/// mapping, and back-face culling.
+#[derive(Debug)]
 pub struct GeometryProcessor;
 impl GeometryProcessor {
+    /// Runs `triangle` through `vertex_shader`, clips it against the view volume, maps the
+    /// pieces to `viewport`, and drops the back-facing ones when `culling_mode` is
+    /// [`CullingMode::BackFace`].
+    ///
+    /// Returns no triangles for one that is culled or lies outside the view volume, and more
+    /// than one when clipping splits it.
     pub fn process_triangle<VS>(
         triangle: Triangle3D<VS::Vertex>,
         vertex_shader: &VS,
