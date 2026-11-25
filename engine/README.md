@@ -166,6 +166,7 @@ cargo run --release -p engine --example pipelines
 cargo run --release -p engine --example textured_cube
 cargo run --release -p engine --example render_passes
 cargo run --release -p engine --example bloom
+cargo run --release -p engine --example silicon_01
 ```
 
 - `teapot`: the minimal scene. Loads an OBJ model and renders it with a basic shader and orbit camera controls.
@@ -174,6 +175,19 @@ cargo run --release -p engine --example bloom
 - `textured_cube`: OBJ and MTL loading with textured materials.
 - `render_passes`: multipass rendering. Clouds and a lit teapot are composited into an offscreen render target, then run through a swappable post-processing pass (press Space to cycle effects).
 - `bloom`: SIMD multipass bloom. Renders a glass teapot, extracts its bright areas, applies a Gaussian blur, and composites the blurred result back onto the scene.
+- `silicon_01`: SILICON 01: FIRST LIGHT, a looping trailer-style short and the first of the `silicon` showcase series. A procedural CPU with a floorplanned die, HDR bloom and captions set from a signed-distance-field font, which render in as the screen's tiles do (traced in lines, shaded, then inked) and cut away; the Utah teapot assembling itself from triangles streaming out of the die; a warping, ray-marched mandelbulb hologram; a montage of 56 worlds, each with its own scene, shadow maps or screen-space stylisation; and the screen's tiles powering on and off, as the renderer's threads take them. Space pauses the director and lets you orbit the camera, Left and Right skip between acts, and Escape quits. Flags, after `--`:
+  - `--window <width>x<height>` sets the window's size (default 1280x720).
+  - `--scale <factor>` renders the scene at that fraction of the window's resolution (default 0.6, for smooth playback). Above 1 supersamples.
+  - `--from <seconds>` starts at that time.
+  - `--record <dir> [--fps <n>] [--to <seconds>]` renders every frame at a fixed time step to numbered PNGs, for encoding as a GIF or video, then exits. Frames are saved at the window's size. Frame time doesn't matter, so `--scale 2` gives the best quality.
+  - `--shots <dir> --at <t1,t2,…>` saves stills at the listed times, then exits.
+  - `--theme <name>` shows only that world whenever the montage is on screen.
+  - `--no-captions` leaves out every caption.
+  - `--soundtrack <file.wav> [--from <seconds>] [--to <seconds>]` renders the soundtrack to a WAV file without opening a window, then exits.
+
+  The film has an original score and sound effects, timed by the code that times the picture. They are heard in the rendered video; the window plays silently. The recordings they use are credited in [`assets/silicon_01/audio/CREDITS.md`](../assets/silicon_01/audio/CREDITS.md).
+
+  `engine/examples/silicon_01/media.sh` records the whole loop as a video with its soundtrack (`media.sh video <out.mp4> [fps] [size]`, 1080p by default) or the README's silent GIF (`media.sh gif <out.gif> [fps] [width]`) at full quality and encodes it with ffmpeg. `media.sh audio <video.mp4> <out.mp4>` renders the soundtrack afresh onto an existing video of the whole loop without recording it again. Run it from the workspace root.
 
 ## Relationship to `cpu_rasteriser`
 
