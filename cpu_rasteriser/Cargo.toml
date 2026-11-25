@@ -19,11 +19,10 @@ internals = []
 criterion = "0.7"
 
 [[bench]]
-name = "rasterise_segment"
+name = "micro"
 harness = false
 required-features = ["internals"]
 
 [[bench]]
-name = "raster_command"
+name = "frame"
 harness = false
-required-features = ["internals"]

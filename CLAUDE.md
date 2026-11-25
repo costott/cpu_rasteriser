@@ -28,7 +28,7 @@ The public API, its features and the examples are documented in `README.md`, `cp
 Every document has `sources` (the files it describes) and `verified` (the commit it was last checked against) in its frontmatter.
 - Find out whether a document may be stale with `git log --oneline <verified>..HEAD -- <sources>`. Commits that also update the document are the sync itself and don't count.
 - When a change alters anything a document describes, update that document in the same commit, and set `verified` to the base commit of the change.
-- Documents describe the current design and behaviour of `master` and the reasoning behind it. Bugs live in GitHub issues: where behaviour departs from intent, link the issue in one line instead of describing the bug. Never refer to unmerged branches, local work or work in progress.
+- Documents describe the current design and behaviour of `master` and the reasoning behind it, never what a change replaced or how things used to be. Bugs live in GitHub issues: where behaviour departs from intent, link the issue in one line instead of describing the bug, and never link an issue the change resolves, its own ticket included. Never refer to unmerged branches, local work or work in progress.
 - Documents record invariants, conventions and reasoning. They refer to symbols rather than line numbers, and they never restate code.
 - Claims are marked **Inferred** where they couldn't be confirmed from the code or history.
 
@@ -41,7 +41,7 @@ Run these from the workspace root.
 | Format | `cargo fmt --all` |
 | Lint | `cargo clippy --workspace --all-targets --features cpu_rasteriser/internals -- -D warnings` (the workspace is clippy-clean and must stay so; the feature includes the benches) |
 | Test | `cargo test --workspace --no-fail-fast` |
-| Bench | `cargo bench -p cpu_rasteriser --features internals --bench rasterise_segment` (also `raster_command`, and `-p engine --bench texture_sampling`) |
+| Bench | `cargo bench -p cpu_rasteriser --features internals --bench micro` (microbenchmarks), `cargo bench -p cpu_rasteriser --bench frame` (whole frames, with output checks), and `-p engine --bench texture_sampling`; add a Criterion filter after `--` to select cases |
 | Example | `cargo run --release -p <crate> --example <name>` (see the READMEs) |
 
 `target-cpu=native` applies to every build in the workspace, whichever directory cargo runs from; see `testing-and-benchmarks.md`. Compare performance only between builds with the same build configuration.

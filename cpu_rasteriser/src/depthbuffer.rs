@@ -175,7 +175,14 @@ impl DepthBuffer {
         f32x8::new(values)
     }
 
-    pub(crate) fn blit_from(
+    /// Copies the `size` region of `src` whose top-left corner is `src_origin` to `dst_origin`.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if the region lies outside either buffer. In release builds, a
+    /// region that leaves a buffer is copied through the row padding and the next row, and the call
+    /// panics only if the region runs past the end of a buffer's storage.
+    pub fn blit_from(
         &mut self,
         dst_origin: (usize, usize),
         src: &DepthBuffer,

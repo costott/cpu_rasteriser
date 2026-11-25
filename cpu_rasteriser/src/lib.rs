@@ -44,7 +44,11 @@ mod viewport;
 pub mod internals {
     pub use crate::depthbuffer::DepthBuffer;
     pub use crate::framebuffer::FrameBuffer;
-    pub use crate::graphics::triangle::Triangle2D;
-    pub use crate::graphics::vertex::RasterVertex;
-    pub use crate::renderer::Rect;
+    pub use crate::graphics::clipping::clip_triangle;
+    pub use crate::graphics::geometry_processing::GeometryProcessor;
+    pub use crate::graphics::triangle::{Triangle2D, TriangleClip};
+    pub use crate::graphics::vertex::{ClipVertex, RasterVertex};
+    pub use crate::renderer::{
+        RasterCommand, Rect, Tile, TileBinner, TilePool, TileResult, render_tile,
+    };
 }

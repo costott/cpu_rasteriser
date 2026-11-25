@@ -178,6 +178,24 @@ impl FrameBuffer {
         }
     }
 
+    /// Copies the `size` region of `src` whose top-left corner is `src_origin` to `dst_origin`.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if the region lies outside either buffer. In release builds, a
+    /// region that leaves a buffer is copied through the row padding and the next row, and the call
+    /// panics only if the region runs past the end of a buffer's storage.
+    pub fn blit_from(
+        &mut self,
+        dst_origin: (usize, usize),
+        src: &FrameBuffer,
+        src_origin: (usize, usize),
+        size: Extent,
+    ) {
+        self.pixels
+            .blit_from(dst_origin, &src.pixels, src_origin, size);
+    }
+
     pub(crate) fn write_pixels(&self, out: &mut [Colour]) {
         let width = self.width();
         assert!(out.len() >= width * self.height());
@@ -236,17 +254,6 @@ impl FrameBuffer {
                 *d = s.to_u32();
             }
         }
-    }
-
-    pub(crate) fn blit_from(
-        &mut self,
-        dst_origin: (usize, usize),
-        src: &FrameBuffer,
-        src_origin: (usize, usize),
-        size: Extent,
-    ) {
-        self.pixels
-            .blit_from(dst_origin, &src.pixels, src_origin, size);
     }
 }
 /// Unused methods, kept for now.
@@ -588,28 +595,6 @@ impl FrameBuffer {
             ]
         };
         f32x8::new(values)
-    }
-}
-/// Raw pixel access for the benchmarks.
-#[cfg(feature = "internals")]
-impl FrameBuffer {
-    /// Returns the whole storage, row padding included: `height` rows of the padded stride.
-    pub fn pixels(&self) -> &[Colour] {
-        self.pixels.as_slice()
-    }
-
-    /// Returns the element at storage `index`, without bounds checks.
-    ///
-    /// # Safety
-    ///
-    /// `index` must be `self.index_unchecked(x, y) + i` for some `x < self.width()`,
-    /// `y < self.height()` and `i < 8`. An index past the end of row `y` reads the row's
-    /// padding, whose value is unspecified.
-    #[inline(always)]
-    pub unsafe fn get_pixel_index_unchecked(&self, index: usize) -> Colour {
-        // SAFETY: the caller guarantees `index` is one of the eight elements starting at an
-        // in-bounds pixel, and `Grid` pads every row so that all eight are inside the allocation.
-        unsafe { *self.pixels.as_slice().get_unchecked(index) }
     }
 }
 impl std::fmt::Debug for FrameBuffer {
