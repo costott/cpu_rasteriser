@@ -6,7 +6,21 @@
 
 ![Rust](https://img.shields.io/badge/Rust-Programming%20Language-orange)
 
-## Example
+## SILICON 01: FIRST LIGHT
+
+<p align="center">
+    <img src="./assets/silicon_01/first-light.gif" width="560">
+</p>
+
+A trailer-style short rendered entirely on the CPU by this engine. A chip powers on tile by tile, as the renderer's threads bin the screen; the Utah teapot assembles itself from triangles streaming out of the die; a warping, ray-marched mandelbulb hologram rises over it; then the chip erupts into a grid of the renderer's primitives and a montage of 56 worlds, from a neon city and a coral reef to sumi-e ink and a black hole, cutting faster and faster until re-picked worlds blur into a white-out, before the screen shuts down tile by tile. It is the first of the `silicon` showcase series, which will grow as the engine does.
+
+```bash
+cargo run --release -p engine --example silicon_01
+```
+
+It uses SIMD shaders throughout, shadow maps, HDR bloom, ray marching, screen-space stylisation (oil paint, hatching, halftone, CRT and more), signed-distance-field captions, and frame capture for rendering it as a video or GIF. See [`engine/README.md`](./engine/README.md#examples) for its controls and flags.
+
+## Multiple Pipelines
 
 The same Utah teapot rendered using two independent shader pipelines within a single render pass.
 
